@@ -2,17 +2,16 @@ version: "3.9"
 
 services:
   db:
-    image: bitnami/postgresql:16
+    image: postgres:latest
     restart: always
     environment:
-      - POSTGRESQL_USERNAME=admin
-      - POSTGRESQL_PASSWORD=SuperSecret
-      - POSTGRESQL_DATABASE=plazacms
+      - POSTGRES_DB=plazacms
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=SuperSecret
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/bitnami/postgresql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgdata:/var/lib/postgresql/data
 
   postgrest:
     image: postgrest/postgrest:latest
@@ -23,7 +22,7 @@ services:
     environment:
       - PGRST_DB_URI=postgres://admin:SuperSecret@db:5432/plazacms
       - PGRST_DB_SCHEMA=public
-      - PGRST_DB_ANON_ROLE=web_anon
+      - PGRST_DB_ANON_ROLE=admin
     ports:
       - "3000:3000"
 

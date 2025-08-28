@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "postgrest": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-postgrest@latest",
+        "--apiUrl",
+        "http://localhost:3000/",
+        "--apiKey",
+        "",
+        "--schema",
+        "public"
+      ],
+      "alwaysAllow": [
+        "postgrestRequest"
+      ]
+    }
+  }
+}
