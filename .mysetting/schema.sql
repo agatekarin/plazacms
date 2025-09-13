@@ -3,6 +3,114 @@
 CREATE SCHEMA public AUTHORIZATION pg_database_owner;
 
 COMMENT ON SCHEMA public IS 'standard public schema';
+
+-- DROP SEQUENCE public.cities_id_seq;
+
+CREATE SEQUENCE public.cities_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.countries_id_seq;
+
+CREATE SEQUENCE public.countries_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.order_global_seq;
+
+CREATE SEQUENCE public.order_global_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 9223372036854775807
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.states_id_seq;
+
+CREATE SEQUENCE public.states_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;-- public.countries definition
+
+-- Drop table
+
+-- DROP TABLE public.countries;
+
+CREATE TABLE public.countries (
+	id serial4 NOT NULL,
+	"name" varchar(100) NOT NULL,
+	iso3 bpchar(3) NOT NULL,
+	iso2 bpchar(2) NOT NULL,
+	numeric_code varchar(3) NULL,
+	phone_code varchar(255) NULL,
+	capital varchar(255) NULL,
+	currency varchar(255) NULL,
+	currency_name varchar(255) NULL,
+	currency_symbol varchar(255) NULL,
+	tld varchar(255) NULL,
+	native varchar(255) NULL,
+	region varchar(255) NULL,
+	subregion varchar(255) NULL,
+	timezones text NULL,
+	translations text NULL,
+	latitude numeric(10, 8) NULL,
+	longitude numeric(11, 8) NULL,
+	emoji varchar(191) NULL,
+	emojiu varchar(191) NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	flag varchar(6) NULL,
+	CONSTRAINT countries_iso2_key UNIQUE (iso2),
+	CONSTRAINT countries_iso3_key UNIQUE (iso3),
+	CONSTRAINT countries_pkey PRIMARY KEY (id)
+);
+CREATE INDEX idx_countries_iso2 ON public.countries USING btree (iso2);
+CREATE INDEX idx_countries_iso3 ON public.countries USING btree (iso3);
+CREATE INDEX idx_countries_name ON public.countries USING btree (name);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_countries before
+update
+    on
+    public.countries for each row execute function set_updated_at();
+
+
+-- public.location_data_sync definition
+
+-- Drop table
+
+-- DROP TABLE public.location_data_sync;
+
+CREATE TABLE public.location_data_sync (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	data_version text NOT NULL,
+	sync_date timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	records_imported int4 NULL,
+	sync_status text DEFAULT 'success'::text NULL,
+	error_details text NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT location_data_sync_pkey PRIMARY KEY (id),
+	CONSTRAINT location_data_sync_sync_status_check CHECK ((sync_status = ANY (ARRAY['success'::text, 'failed'::text, 'partial'::text])))
+);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_location_data_sync before
+update
+    on
+    public.location_data_sync for each row execute function set_updated_at();
+
+
 -- public.product_attributes definition
 
 -- Drop table
@@ -27,6 +135,40 @@ update
     public.product_attributes for each row execute function set_updated_at();
 
 
+-- public.shipping_gateways definition
+
+-- Drop table
+
+-- DROP TABLE public.shipping_gateways;
+
+CREATE TABLE public.shipping_gateways (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	code varchar(30) NOT NULL,
+	"name" varchar(100) NOT NULL,
+	"type" varchar(20) DEFAULT 'manual'::character varying NULL,
+	logo_url text DEFAULT ''::text NULL,
+	tracking_url_template text DEFAULT ''::text NULL,
+	api_config jsonb DEFAULT '{}'::jsonb NULL,
+	status varchar(20) DEFAULT 'active'::character varying NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT shipping_gateways_code_key UNIQUE (code),
+	CONSTRAINT shipping_gateways_pkey PRIMARY KEY (id),
+	CONSTRAINT shipping_gateways_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying])::text[]))),
+	CONSTRAINT shipping_gateways_type_check CHECK (((type)::text = ANY ((ARRAY['manual'::character varying, 'api'::character varying, 'hybrid'::character varying])::text[])))
+);
+CREATE INDEX idx_shipping_gateways_code ON public.shipping_gateways USING btree (code);
+CREATE INDEX idx_shipping_gateways_status ON public.shipping_gateways USING btree (status);
+CREATE INDEX idx_shipping_gateways_type ON public.shipping_gateways USING btree (type);
+
+-- Table Triggers
+
+create trigger set_timestamp_shipping_gateways before
+update
+    on
+    public.shipping_gateways for each row execute function trigger_set_timestamp();
+
+
 -- public.shipping_zones definition
 
 -- Drop table
@@ -35,20 +177,27 @@ update
 
 CREATE TABLE public.shipping_zones (
 	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	"name" text NOT NULL,
-	description text NULL,
+	code varchar(20) NOT NULL,
+	"name" varchar(100) NOT NULL,
+	description text DEFAULT ''::text NULL,
+	priority int4 DEFAULT 1 NULL,
+	status varchar(20) DEFAULT 'active'::character varying NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	CONSTRAINT shipping_zones_name_key UNIQUE (name),
-	CONSTRAINT shipping_zones_pkey PRIMARY KEY (id)
+	CONSTRAINT shipping_zones_code_key UNIQUE (code),
+	CONSTRAINT shipping_zones_pkey PRIMARY KEY (id),
+	CONSTRAINT shipping_zones_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying])::text[])))
 );
+CREATE INDEX idx_shipping_zones_code ON public.shipping_zones USING btree (code);
+CREATE INDEX idx_shipping_zones_priority ON public.shipping_zones USING btree (priority DESC);
+CREATE INDEX idx_shipping_zones_status ON public.shipping_zones USING btree (status);
 
 -- Table Triggers
 
-create trigger trg_set_updated_at_shipping_zones before
+create trigger set_timestamp_shipping_zones before
 update
     on
-    public.shipping_zones for each row execute function set_updated_at();
+    public.shipping_zones for each row execute function trigger_set_timestamp();
 
 
 -- public.tax_classes definition
@@ -92,6 +241,7 @@ CREATE TABLE public.users (
 	"role" text DEFAULT 'customer'::text NOT NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	password_hash text NULL,
 	CONSTRAINT users_email_key UNIQUE (email),
 	CONSTRAINT users_pkey PRIMARY KEY (id),
 	CONSTRAINT users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'vendor'::text, 'customer'::text, 'guest'::text])))
@@ -183,100 +333,33 @@ update
     public.carts for each row execute function set_updated_at();
 
 
--- public.media definition
+-- public.media_folders definition
 
 -- Drop table
 
--- DROP TABLE public.media;
+-- DROP TABLE public.media_folders;
 
-CREATE TABLE public.media (
-	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	filename text NOT NULL,
-	file_url text NOT NULL,
-	file_type text NOT NULL,
-	"size" int4 NULL,
-	alt_text text NULL,
-	uploaded_by uuid NULL,
-	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	media_type text NULL,
-	entity_id uuid NULL,
-	CONSTRAINT media_media_type_check CHECK ((media_type = ANY (ARRAY['product_image'::text, 'product_variant_image'::text, 'user_profile'::text, 'review_image'::text, 'other'::text, 'site_asset'::text]))),
-	CONSTRAINT media_pkey PRIMARY KEY (id),
-	CONSTRAINT media_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id) ON DELETE SET NULL
-);
-CREATE INDEX idx_media_entity_id ON public.media USING btree (entity_id);
-CREATE INDEX idx_media_media_type ON public.media USING btree (media_type);
-
--- Table Triggers
-
-create trigger trg_set_updated_at_media before
-update
-    on
-    public.media for each row execute function set_updated_at();
-
-
--- public.payment_gateways definition
-
--- Drop table
-
--- DROP TABLE public.payment_gateways;
-
-CREATE TABLE public.payment_gateways (
+CREATE TABLE public.media_folders (
 	id uuid DEFAULT uuid_generate_v4() NOT NULL,
 	"name" text NOT NULL,
-	slug text NOT NULL,
+	parent_id uuid NULL,
+	"path" text NOT NULL,
 	description text NULL,
-	is_enabled bool DEFAULT true NOT NULL,
-	settings jsonb NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	logo_media_id uuid NULL,
-	CONSTRAINT payment_gateways_name_key UNIQUE (name),
-	CONSTRAINT payment_gateways_pkey PRIMARY KEY (id),
-	CONSTRAINT payment_gateways_slug_key UNIQUE (slug),
-	CONSTRAINT payment_gateways_logo_media_id_fkey FOREIGN KEY (logo_media_id) REFERENCES public.media(id) ON DELETE SET NULL
+	CONSTRAINT media_folders_path_key UNIQUE (path),
+	CONSTRAINT media_folders_pkey PRIMARY KEY (id),
+	CONSTRAINT media_folders_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.media_folders(id) ON DELETE CASCADE
 );
-CREATE INDEX idx_payment_gateways_slug ON public.payment_gateways USING btree (slug);
+CREATE INDEX idx_media_folders_parent_id ON public.media_folders USING btree (parent_id);
+CREATE INDEX idx_media_folders_path ON public.media_folders USING btree (path);
 
 -- Table Triggers
 
-create trigger trg_set_updated_at_payment_gateways before
+create trigger trg_set_updated_at_media_folders before
 update
     on
-    public.payment_gateways for each row execute function set_updated_at();
-
-
--- public.payment_methods definition
-
--- Drop table
-
--- DROP TABLE public.payment_methods;
-
-CREATE TABLE public.payment_methods (
-	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	gateway_id uuid NOT NULL,
-	"name" text NOT NULL,
-	slug text NOT NULL,
-	description text NULL,
-	is_enabled bool DEFAULT true NOT NULL,
-	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	logo_media_id uuid NULL,
-	CONSTRAINT payment_methods_gateway_id_slug_key UNIQUE (gateway_id, slug),
-	CONSTRAINT payment_methods_pkey PRIMARY KEY (id),
-	CONSTRAINT payment_methods_gateway_id_fkey FOREIGN KEY (gateway_id) REFERENCES public.payment_gateways(id) ON DELETE CASCADE,
-	CONSTRAINT payment_methods_logo_media_id_fkey FOREIGN KEY (logo_media_id) REFERENCES public.media(id) ON DELETE SET NULL
-);
-CREATE INDEX idx_payment_methods_gateway_id ON public.payment_methods USING btree (gateway_id);
-CREATE INDEX idx_payment_methods_slug ON public.payment_methods USING btree (slug);
-
--- Table Triggers
-
-create trigger trg_set_updated_at_payment_methods before
-update
-    on
-    public.payment_methods for each row execute function set_updated_at();
+    public.media_folders for each row execute function set_updated_at();
 
 
 -- public.product_attribute_values definition
@@ -332,33 +415,6 @@ update
     public.sessions for each row execute function set_updated_at();
 
 
--- public.shipping_carriers definition
-
--- Drop table
-
--- DROP TABLE public.shipping_carriers;
-
-CREATE TABLE public.shipping_carriers (
-	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	"name" text NOT NULL,
-	tracking_url_template text NULL,
-	is_active bool DEFAULT true NOT NULL,
-	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	logo_media_id uuid NULL,
-	CONSTRAINT shipping_carriers_name_key UNIQUE (name),
-	CONSTRAINT shipping_carriers_pkey PRIMARY KEY (id),
-	CONSTRAINT shipping_carriers_logo_media_id_fkey FOREIGN KEY (logo_media_id) REFERENCES public.media(id) ON DELETE SET NULL
-);
-
--- Table Triggers
-
-create trigger trg_set_updated_at_shipping_carriers before
-update
-    on
-    public.shipping_carriers for each row execute function set_updated_at();
-
-
 -- public.shipping_methods definition
 
 -- Drop table
@@ -367,84 +423,294 @@ update
 
 CREATE TABLE public.shipping_methods (
 	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	zone_id uuid NULL,
+	gateway_id uuid NULL,
+	"name" varchar(100) NOT NULL,
+	method_type varchar(20) NOT NULL,
+	base_cost numeric(10, 2) DEFAULT 0 NULL,
+	currency bpchar(3) DEFAULT 'USD'::bpchar NULL,
+	weight_unit varchar(10) DEFAULT 'g'::character varying NULL,
+	weight_threshold int4 DEFAULT 1000 NULL,
+	cost_per_kg numeric(10, 2) DEFAULT 0 NULL,
+	min_free_threshold numeric(10, 2) DEFAULT 0 NULL,
+	max_free_weight int4 DEFAULT 0 NULL,
+	max_weight_limit int4 DEFAULT 30000 NULL,
+	max_dimensions jsonb DEFAULT '{}'::jsonb NULL,
+	restricted_items jsonb DEFAULT '[]'::jsonb NULL,
+	description text DEFAULT ''::text NULL,
+	estimated_days_min int4 DEFAULT 1 NULL,
+	estimated_days_max int4 DEFAULT 7 NULL,
+	status varchar(20) DEFAULT 'active'::character varying NULL,
+	sort_order int4 DEFAULT 0 NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT shipping_methods_method_type_check CHECK (((method_type)::text = ANY ((ARRAY['flat'::character varying, 'weight_based'::character varying, 'free_shipping'::character varying, 'percentage'::character varying])::text[]))),
+	CONSTRAINT shipping_methods_pkey PRIMARY KEY (id),
+	CONSTRAINT shipping_methods_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying])::text[]))),
+	CONSTRAINT shipping_methods_weight_unit_check CHECK (((weight_unit)::text = ANY ((ARRAY['g'::character varying, 'kg'::character varying, 'lb'::character varying, 'oz'::character varying])::text[]))),
+	CONSTRAINT shipping_methods_zone_id_gateway_id_name_key UNIQUE (zone_id, gateway_id, name),
+	CONSTRAINT shipping_methods_gateway_id_fkey FOREIGN KEY (gateway_id) REFERENCES public.shipping_gateways(id) ON DELETE CASCADE,
+	CONSTRAINT shipping_methods_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.shipping_zones(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_shipping_methods_currency ON public.shipping_methods USING btree (currency);
+CREATE INDEX idx_shipping_methods_gateway ON public.shipping_methods USING btree (gateway_id);
+CREATE INDEX idx_shipping_methods_sort ON public.shipping_methods USING btree (sort_order);
+CREATE INDEX idx_shipping_methods_status ON public.shipping_methods USING btree (status);
+CREATE INDEX idx_shipping_methods_type ON public.shipping_methods USING btree (method_type);
+CREATE INDEX idx_shipping_methods_zone ON public.shipping_methods USING btree (zone_id);
+
+-- Table Triggers
+
+create trigger set_timestamp_shipping_methods before
+update
+    on
+    public.shipping_methods for each row execute function trigger_set_timestamp();
+
+
+-- public.shipping_zone_countries definition
+
+-- Drop table
+
+-- DROP TABLE public.shipping_zone_countries;
+
+CREATE TABLE public.shipping_zone_countries (
+	zone_id uuid NOT NULL,
+	country_code bpchar(2) NOT NULL,
+	country_name varchar(100) NOT NULL,
+	CONSTRAINT shipping_zone_countries_pkey PRIMARY KEY (zone_id, country_code),
+	CONSTRAINT shipping_zone_countries_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.shipping_zones(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_zone_countries_country ON public.shipping_zone_countries USING btree (country_code);
+
+
+-- public.states definition
+
+-- Drop table
+
+-- DROP TABLE public.states;
+
+CREATE TABLE public.states (
+	id serial4 NOT NULL,
+	"name" varchar(255) NOT NULL,
+	country_id int4 NOT NULL,
+	country_code bpchar(2) NOT NULL,
+	fips_code varchar(255) NULL,
+	iso2 varchar(255) NULL,
+	"type" varchar(191) NULL,
+	latitude numeric(10, 8) NULL,
+	longitude numeric(11, 8) NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	state_code varchar(10) NULL,
+	CONSTRAINT states_pkey PRIMARY KEY (id),
+	CONSTRAINT states_country_id_fkey FOREIGN KEY (country_id) REFERENCES public.countries(id)
+);
+CREATE INDEX idx_states_country ON public.states USING btree (country_id);
+CREATE INDEX idx_states_country_code ON public.states USING btree (country_code);
+CREATE INDEX idx_states_country_id ON public.states USING btree (country_id);
+CREATE INDEX idx_states_name ON public.states USING btree (name);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_states before
+update
+    on
+    public.states for each row execute function set_updated_at();
+
+
+-- public.user_addresses definition
+
+-- Drop table
+
+-- DROP TABLE public.user_addresses;
+
+CREATE TABLE public.user_addresses (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	user_id uuid NOT NULL,
+	address_name text NULL,
+	recipient_name text NULL,
+	phone_number text NULL,
+	street_address text NOT NULL,
+	city text NOT NULL,
+	state text NULL,
+	postal_code text NOT NULL,
+	country text NOT NULL,
+	is_default bool DEFAULT false NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT user_addresses_pkey PRIMARY KEY (id),
+	CONSTRAINT user_addresses_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_user_addresses_user_id ON public.user_addresses USING btree (user_id);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_user_addresses before
+update
+    on
+    public.user_addresses for each row execute function set_updated_at();
+
+
+-- public.zone_gateways definition
+
+-- Drop table
+
+-- DROP TABLE public.zone_gateways;
+
+CREATE TABLE public.zone_gateways (
+	zone_id uuid NOT NULL,
+	gateway_id uuid NOT NULL,
+	is_available bool DEFAULT true NULL,
+	priority int4 DEFAULT 1 NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT zone_gateways_pkey PRIMARY KEY (zone_id, gateway_id),
+	CONSTRAINT zone_gateways_gateway_id_fkey FOREIGN KEY (gateway_id) REFERENCES public.shipping_gateways(id) ON DELETE CASCADE,
+	CONSTRAINT zone_gateways_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.shipping_zones(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_zone_gateways_available ON public.zone_gateways USING btree (is_available);
+CREATE INDEX idx_zone_gateways_gateway ON public.zone_gateways USING btree (gateway_id);
+CREATE INDEX idx_zone_gateways_zone ON public.zone_gateways USING btree (zone_id);
+
+
+-- public.cities definition
+
+-- Drop table
+
+-- DROP TABLE public.cities;
+
+CREATE TABLE public.cities (
+	id serial4 NOT NULL,
+	"name" varchar(255) NOT NULL,
+	state_id int4 NOT NULL,
+	state_code varchar(255) NOT NULL,
+	country_id int4 NOT NULL,
+	country_code bpchar(2) NOT NULL,
+	latitude numeric(10, 8) NULL,
+	longitude numeric(11, 8) NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	wikidataid varchar(255) NULL,
+	CONSTRAINT cities_pkey PRIMARY KEY (id),
+	CONSTRAINT cities_country_id_fkey FOREIGN KEY (country_id) REFERENCES public.countries(id),
+	CONSTRAINT cities_state_id_fkey FOREIGN KEY (state_id) REFERENCES public.states(id)
+);
+CREATE INDEX idx_cities_coordinates ON public.cities USING btree (latitude, longitude);
+CREATE INDEX idx_cities_country_id ON public.cities USING btree (country_id);
+CREATE INDEX idx_cities_name ON public.cities USING btree (name);
+CREATE INDEX idx_cities_name_search ON public.cities USING gin (to_tsvector('english'::regconfig, (name)::text));
+CREATE INDEX idx_cities_state ON public.cities USING btree (state_id);
+CREATE INDEX idx_cities_state_id ON public.cities USING btree (state_id);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_cities before
+update
+    on
+    public.cities for each row execute function set_updated_at();
+
+
+-- public.media definition
+
+-- Drop table
+
+-- DROP TABLE public.media;
+
+CREATE TABLE public.media (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	filename text NOT NULL,
+	file_url text NOT NULL,
+	file_type text NOT NULL,
+	"size" int4 NULL,
+	alt_text text NULL,
+	uploaded_by uuid NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	media_type text NULL,
+	entity_id uuid NULL,
+	folder_id uuid NULL,
+	CONSTRAINT media_media_type_check CHECK ((media_type = ANY (ARRAY['product_image'::text, 'product_variant_image'::text, 'user_profile'::text, 'review_image'::text, 'other'::text, 'site_asset'::text]))),
+	CONSTRAINT media_pkey PRIMARY KEY (id),
+	CONSTRAINT media_folder_id_fkey FOREIGN KEY (folder_id) REFERENCES public.media_folders(id) ON DELETE SET NULL,
+	CONSTRAINT media_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_media_entity_id ON public.media USING btree (entity_id);
+CREATE INDEX idx_media_folder_id ON public.media USING btree (folder_id);
+CREATE INDEX idx_media_media_type ON public.media USING btree (media_type);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_media before
+update
+    on
+    public.media for each row execute function set_updated_at();
+
+
+-- public.payment_gateways definition
+
+-- Drop table
+
+-- DROP TABLE public.payment_gateways;
+
+CREATE TABLE public.payment_gateways (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
 	"name" text NOT NULL,
-	method_type text NOT NULL,
+	slug text NOT NULL,
+	description text NULL,
+	is_enabled bool DEFAULT true NOT NULL,
+	settings jsonb NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	logo_media_id uuid NULL,
+	CONSTRAINT payment_gateways_name_key UNIQUE (name),
+	CONSTRAINT payment_gateways_pkey PRIMARY KEY (id),
+	CONSTRAINT payment_gateways_slug_key UNIQUE (slug),
+	CONSTRAINT payment_gateways_logo_media_id_fkey FOREIGN KEY (logo_media_id) REFERENCES public.media(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_payment_gateways_is_enabled ON public.payment_gateways USING btree (is_enabled);
+CREATE INDEX idx_payment_gateways_slug ON public.payment_gateways USING btree (slug);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_payment_gateways before
+update
+    on
+    public.payment_gateways for each row execute function set_updated_at();
+
+
+-- public.payment_methods definition
+
+-- Drop table
+
+-- DROP TABLE public.payment_methods;
+
+CREATE TABLE public.payment_methods (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	gateway_id uuid NOT NULL,
+	"name" text NOT NULL,
+	slug text NOT NULL,
 	description text NULL,
 	is_enabled bool DEFAULT true NOT NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	logo_media_id uuid NULL,
-	CONSTRAINT shipping_methods_method_type_check CHECK ((method_type = ANY (ARRAY['flat_rate'::text, 'free_shipping'::text, 'local_pickup'::text, 'table_rate'::text]))),
-	CONSTRAINT shipping_methods_pkey PRIMARY KEY (id),
-	CONSTRAINT shipping_methods_logo_media_id_fkey FOREIGN KEY (logo_media_id) REFERENCES public.media(id) ON DELETE SET NULL
+	settings jsonb NULL,
+	display_order int4 DEFAULT 0 NOT NULL,
+	CONSTRAINT payment_methods_gateway_id_slug_key UNIQUE (gateway_id, slug),
+	CONSTRAINT payment_methods_pkey PRIMARY KEY (id),
+	CONSTRAINT payment_methods_gateway_id_fkey FOREIGN KEY (gateway_id) REFERENCES public.payment_gateways(id) ON DELETE CASCADE,
+	CONSTRAINT payment_methods_logo_media_id_fkey FOREIGN KEY (logo_media_id) REFERENCES public.media(id) ON DELETE SET NULL
 );
-CREATE INDEX idx_shipping_methods_method_type ON public.shipping_methods USING btree (method_type);
+CREATE INDEX idx_payment_methods_enabled_gateway ON public.payment_methods USING btree (gateway_id, is_enabled);
+CREATE INDEX idx_payment_methods_gateway_display ON public.payment_methods USING btree (gateway_id, display_order);
+CREATE INDEX idx_payment_methods_gateway_id ON public.payment_methods USING btree (gateway_id);
+CREATE INDEX idx_payment_methods_slug ON public.payment_methods USING btree (slug);
 
 -- Table Triggers
 
-create trigger trg_set_updated_at_shipping_methods before
+create trigger trg_set_updated_at_payment_methods before
 update
     on
-    public.shipping_methods for each row execute function set_updated_at();
-
-
--- public.shipping_zone_locations definition
-
--- Drop table
-
--- DROP TABLE public.shipping_zone_locations;
-
-CREATE TABLE public.shipping_zone_locations (
-	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	zone_id uuid NOT NULL,
-	location_type text NOT NULL,
-	location_code text NOT NULL,
-	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	CONSTRAINT shipping_zone_locations_pkey PRIMARY KEY (id),
-	CONSTRAINT shipping_zone_locations_zone_id_location_type_location_code_key UNIQUE (zone_id, location_type, location_code),
-	CONSTRAINT shipping_zone_locations_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.shipping_zones(id) ON DELETE CASCADE
-);
-CREATE INDEX idx_shipping_zone_locations_zone_id ON public.shipping_zone_locations USING btree (zone_id);
-
--- Table Triggers
-
-create trigger trg_set_updated_at_shipping_zone_locations before
-update
-    on
-    public.shipping_zone_locations for each row execute function set_updated_at();
-
-
--- public.shipping_zone_methods definition
-
--- Drop table
-
--- DROP TABLE public.shipping_zone_methods;
-
-CREATE TABLE public.shipping_zone_methods (
-	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	zone_id uuid NOT NULL,
-	method_id uuid NOT NULL,
-	"cost" numeric(10, 2) DEFAULT 0.00 NOT NULL,
-	min_order_amount numeric(10, 2) DEFAULT 0.00 NULL,
-	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	enable_free_shipping_threshold bool DEFAULT false NULL,
-	free_shipping_threshold_amount numeric(10, 2) NULL,
-	CONSTRAINT shipping_zone_methods_pkey PRIMARY KEY (id),
-	CONSTRAINT shipping_zone_methods_zone_id_method_id_key UNIQUE (zone_id, method_id),
-	CONSTRAINT shipping_zone_methods_method_id_fkey FOREIGN KEY (method_id) REFERENCES public.shipping_methods(id) ON DELETE CASCADE,
-	CONSTRAINT shipping_zone_methods_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.shipping_zones(id) ON DELETE CASCADE
-);
-CREATE INDEX idx_shipping_zone_methods_method_id ON public.shipping_zone_methods USING btree (method_id);
-CREATE INDEX idx_shipping_zone_methods_zone_id ON public.shipping_zone_methods USING btree (zone_id);
-
--- Table Triggers
-
-create trigger trg_set_updated_at_shipping_zone_methods before
-update
-    on
-    public.shipping_zone_methods for each row execute function set_updated_at();
+    public.payment_methods for each row execute function set_updated_at();
 
 
 -- public.site_settings definition
@@ -490,39 +756,6 @@ create trigger trg_set_updated_at_site_settings before
 update
     on
     public.site_settings for each row execute function set_updated_at();
-
-
--- public.user_addresses definition
-
--- Drop table
-
--- DROP TABLE public.user_addresses;
-
-CREATE TABLE public.user_addresses (
-	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	user_id uuid NOT NULL,
-	address_name text NULL,
-	recipient_name text NULL,
-	phone_number text NULL,
-	street_address text NOT NULL,
-	city text NOT NULL,
-	state text NULL,
-	postal_code text NOT NULL,
-	country text NOT NULL,
-	is_default bool DEFAULT false NULL,
-	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	CONSTRAINT user_addresses_pkey PRIMARY KEY (id),
-	CONSTRAINT user_addresses_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
-);
-CREATE INDEX idx_user_addresses_user_id ON public.user_addresses USING btree (user_id);
-
--- Table Triggers
-
-create trigger trg_set_updated_at_user_addresses before
-update
-    on
-    public.user_addresses for each row execute function set_updated_at();
 
 
 -- public.categories definition
@@ -581,18 +814,21 @@ CREATE TABLE public.orders (
 	payment_method_id uuid NULL,
 	shipping_zone_method_id uuid NULL,
 	carrier_id uuid NULL,
+	order_number text NULL,
+	CONSTRAINT orders_order_number_digits_check CHECK (((order_number IS NULL) OR (order_number ~ '^[0-9]+$'::text))),
+	CONSTRAINT orders_order_number_format_check CHECK (((order_number IS NULL) OR (order_number ~ '^[0-9]{10}$'::text))),
 	CONSTRAINT orders_payment_status_check CHECK ((payment_status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text, 'refunded'::text]))),
 	CONSTRAINT orders_pkey PRIMARY KEY (id),
 	CONSTRAINT orders_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'paid'::text, 'shipped'::text, 'delivered'::text, 'cancelled'::text, 'refunded'::text]))),
-	CONSTRAINT orders_carrier_id_fkey FOREIGN KEY (carrier_id) REFERENCES public.shipping_carriers(id) ON DELETE SET NULL,
 	CONSTRAINT orders_payment_method_id_fkey FOREIGN KEY (payment_method_id) REFERENCES public.payment_methods(id) ON DELETE SET NULL,
-	CONSTRAINT orders_shipping_zone_method_id_fkey FOREIGN KEY (shipping_zone_method_id) REFERENCES public.shipping_zone_methods(id) ON DELETE SET NULL,
 	CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE RESTRICT
 );
 CREATE INDEX idx_orders_carrier_id ON public.orders USING btree (carrier_id);
+CREATE UNIQUE INDEX idx_orders_order_number ON public.orders USING btree (order_number);
 CREATE INDEX idx_orders_payment_method_id ON public.orders USING btree (payment_method_id);
 CREATE INDEX idx_orders_shipping_zone_method_id ON public.orders USING btree (shipping_zone_method_id);
 CREATE INDEX idx_orders_status ON public.orders USING btree (status, payment_status, created_at DESC);
+CREATE INDEX idx_orders_transaction_id ON public.orders USING btree (transaction_id);
 CREATE INDEX idx_orders_user_id ON public.orders USING btree (user_id);
 
 -- Table Triggers
@@ -601,6 +837,70 @@ create trigger trg_set_updated_at_orders before
 update
     on
     public.orders for each row execute function set_updated_at();
+create trigger trg_set_order_number before
+insert
+    on
+    public.orders for each row execute function set_order_number_seq();
+
+
+-- public.payment_transactions definition
+
+-- Drop table
+
+-- DROP TABLE public.payment_transactions;
+
+CREATE TABLE public.payment_transactions (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	order_id uuid NOT NULL,
+	gateway_id uuid NOT NULL,
+	method_id uuid NULL,
+	provider_transaction_id text NULL,
+	status text NOT NULL,
+	amount numeric(10, 2) NOT NULL,
+	currency text NOT NULL,
+	is_test bool DEFAULT false NOT NULL,
+	meta jsonb NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT payment_transactions_pkey PRIMARY KEY (id),
+	CONSTRAINT payment_transactions_status_check CHECK ((status = ANY (ARRAY['requires_action'::text, 'pending'::text, 'authorized'::text, 'captured'::text, 'succeeded'::text, 'failed'::text, 'canceled'::text, 'refunded'::text]))),
+	CONSTRAINT payment_transactions_gateway_id_fkey FOREIGN KEY (gateway_id) REFERENCES public.payment_gateways(id) ON DELETE RESTRICT,
+	CONSTRAINT payment_transactions_method_id_fkey FOREIGN KEY (method_id) REFERENCES public.payment_methods(id) ON DELETE SET NULL,
+	CONSTRAINT payment_transactions_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_payment_transactions_order ON public.payment_transactions USING btree (order_id, created_at DESC);
+CREATE INDEX idx_payment_transactions_provider ON public.payment_transactions USING btree (provider_transaction_id);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_payment_transactions before
+update
+    on
+    public.payment_transactions for each row execute function set_updated_at();
+
+
+-- public.payment_webhook_events definition
+
+-- Drop table
+
+-- DROP TABLE public.payment_webhook_events;
+
+CREATE TABLE public.payment_webhook_events (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	gateway_id uuid NULL,
+	order_id uuid NULL,
+	event_type text NOT NULL,
+	status text NULL,
+	signature text NULL,
+	payload jsonb NOT NULL,
+	received_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	processed bool DEFAULT false NOT NULL,
+	CONSTRAINT payment_webhook_events_pkey PRIMARY KEY (id),
+	CONSTRAINT payment_webhook_events_gateway_id_fkey FOREIGN KEY (gateway_id) REFERENCES public.payment_gateways(id) ON DELETE SET NULL,
+	CONSTRAINT payment_webhook_events_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_payment_webhook_events_gateway_received ON public.payment_webhook_events USING btree (gateway_id, received_at DESC);
+CREATE INDEX idx_payment_webhook_events_order ON public.payment_webhook_events USING btree (order_id);
 
 
 -- public.products definition
@@ -628,18 +928,29 @@ CREATE TABLE public.products (
 	sale_start_date timestamptz NULL,
 	sale_end_date timestamptz NULL,
 	tax_class_id uuid NULL,
+	product_type text DEFAULT 'simple'::text NOT NULL, -- Type of product: simple (no variants) or variable (has variants)
+	featured_image_id uuid NULL, -- Direct reference to featured image media for faster queries
 	CONSTRAINT products_pkey PRIMARY KEY (id),
+	CONSTRAINT products_product_type_check CHECK ((product_type = ANY (ARRAY['simple'::text, 'variable'::text]))),
 	CONSTRAINT products_sku_key UNIQUE (sku),
 	CONSTRAINT products_slug_key UNIQUE (slug),
 	CONSTRAINT products_status_check CHECK ((status = ANY (ARRAY['published'::text, 'private'::text, 'draft'::text, 'archived'::text]))),
 	CONSTRAINT products_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE SET NULL,
+	CONSTRAINT products_featured_image_id_fkey FOREIGN KEY (featured_image_id) REFERENCES public.media(id) ON DELETE SET NULL,
 	CONSTRAINT products_tax_class_id_fkey FOREIGN KEY (tax_class_id) REFERENCES public.tax_classes(id) ON DELETE SET NULL,
 	CONSTRAINT products_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.users(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_products_category_id ON public.products USING btree (category_id);
+CREATE INDEX idx_products_featured_image_id ON public.products USING btree (featured_image_id);
+CREATE INDEX idx_products_product_type ON public.products USING btree (product_type);
 CREATE INDEX idx_products_slug ON public.products USING btree (slug);
 CREATE INDEX idx_products_status ON public.products USING btree (status);
 CREATE INDEX idx_products_vendor_id ON public.products USING btree (vendor_id);
+
+-- Column comments
+
+COMMENT ON COLUMN public.products.product_type IS 'Type of product: simple (no variants) or variable (has variants)';
+COMMENT ON COLUMN public.products.featured_image_id IS 'Direct reference to featured image media for faster queries';
 
 -- Table Triggers
 
@@ -684,51 +995,34 @@ update
     public.reviews for each row execute function set_updated_at();
 
 
--- public.shipping_method_carrier definition
+-- public.payment_refunds definition
 
 -- Drop table
 
--- DROP TABLE public.shipping_method_carrier;
+-- DROP TABLE public.payment_refunds;
 
-CREATE TABLE public.shipping_method_carrier (
-	method_id uuid NOT NULL,
-	carrier_id uuid NOT NULL,
-	CONSTRAINT shipping_method_carrier_pkey PRIMARY KEY (method_id, carrier_id),
-	CONSTRAINT shipping_method_carrier_carrier_id_fkey FOREIGN KEY (carrier_id) REFERENCES public.shipping_carriers(id) ON DELETE CASCADE,
-	CONSTRAINT shipping_method_carrier_method_id_fkey FOREIGN KEY (method_id) REFERENCES public.shipping_methods(id) ON DELETE CASCADE
-);
-CREATE INDEX idx_shipping_method_carrier_carrier_id ON public.shipping_method_carrier USING btree (carrier_id);
-CREATE INDEX idx_shipping_method_carrier_method_id ON public.shipping_method_carrier USING btree (method_id);
-
-
--- public.shipping_method_rates definition
-
--- Drop table
-
--- DROP TABLE public.shipping_method_rates;
-
-CREATE TABLE public.shipping_method_rates (
+CREATE TABLE public.payment_refunds (
 	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	zone_method_id uuid NOT NULL,
-	min_value numeric(10, 2) NOT NULL,
-	max_value numeric(10, 2) NOT NULL,
-	"cost" numeric(10, 2) NOT NULL,
-	rate_type text NOT NULL,
+	transaction_id uuid NOT NULL,
+	amount numeric(10, 2) NOT NULL,
+	reason text NULL,
+	provider_refund_id text NULL,
+	status text NOT NULL,
+	meta jsonb NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	CONSTRAINT shipping_method_rates_pkey PRIMARY KEY (id),
-	CONSTRAINT shipping_method_rates_rate_type_check CHECK ((rate_type = ANY (ARRAY['weight'::text, 'price'::text, 'item_count'::text]))),
-	CONSTRAINT shipping_method_rates_zone_method_id_fkey FOREIGN KEY (zone_method_id) REFERENCES public.shipping_zone_methods(id) ON DELETE CASCADE
+	CONSTRAINT payment_refunds_pkey PRIMARY KEY (id),
+	CONSTRAINT payment_refunds_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'succeeded'::text, 'failed'::text]))),
+	CONSTRAINT payment_refunds_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES public.payment_transactions(id) ON DELETE CASCADE
 );
-CREATE INDEX idx_shipping_method_rates_rate_type ON public.shipping_method_rates USING btree (rate_type);
-CREATE INDEX idx_shipping_method_rates_zone_method_id ON public.shipping_method_rates USING btree (zone_method_id);
+CREATE INDEX idx_payment_refunds_tx ON public.payment_refunds USING btree (transaction_id);
 
 -- Table Triggers
 
-create trigger trg_set_updated_at_shipping_method_rates before
+create trigger trg_set_updated_at_payment_refunds before
 update
     on
-    public.shipping_method_rates for each row execute function set_updated_at();
+    public.payment_refunds for each row execute function set_updated_at();
 
 
 -- public.product_images definition
@@ -894,6 +1188,419 @@ CREATE INDEX idx_product_variant_images_product_variant_id ON public.product_var
 
 
 
+-- DROP FUNCTION public.armor(bytea);
+
+CREATE OR REPLACE FUNCTION public.armor(bytea)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_armor$function$
+;
+
+-- DROP FUNCTION public.armor(bytea, _text, _text);
+
+CREATE OR REPLACE FUNCTION public.armor(bytea, text[], text[])
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_armor$function$
+;
+
+-- DROP FUNCTION public.calc_shipping_cost(uuid, numeric, int4);
+
+CREATE OR REPLACE FUNCTION public.calc_shipping_cost(p_method_id uuid, p_cart_total numeric, p_total_weight_g integer)
+ RETURNS numeric
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  method_rec RECORD;
+  final_cost DECIMAL(10,2) := 0;
+  weight_kg DECIMAL(10,3);
+  extra_weight_kg DECIMAL(10,3);
+BEGIN
+  -- Get method details
+  SELECT * INTO method_rec FROM shipping_methods WHERE id = p_method_id AND status = 'active';
+  
+  IF NOT FOUND THEN
+    RETURN NULL; -- Method not found or inactive
+  END IF;
+  
+  -- Check weight limits
+  IF p_total_weight_g > method_rec.max_weight_limit THEN
+    RETURN NULL; -- Exceeds weight limit
+  END IF;
+  
+  -- Check free shipping eligibility
+  IF method_rec.method_type = 'free_shipping' 
+     OR (method_rec.min_free_threshold > 0 AND p_cart_total >= method_rec.min_free_threshold
+         AND (method_rec.max_free_weight = 0 OR p_total_weight_g <= method_rec.max_free_weight)) THEN
+    RETURN 0;
+  END IF;
+  
+  -- Calculate based on method type
+  CASE method_rec.method_type
+    WHEN 'flat' THEN
+      final_cost := method_rec.base_cost;
+      
+    WHEN 'weight_based' THEN
+      final_cost := method_rec.base_cost;
+      
+      -- Add extra cost for weight over threshold
+      IF p_total_weight_g > method_rec.weight_threshold THEN
+        extra_weight_kg := CEIL((p_total_weight_g - method_rec.weight_threshold)::DECIMAL / 1000);
+        final_cost := final_cost + (extra_weight_kg * method_rec.cost_per_kg);
+      END IF;
+      
+    WHEN 'percentage' THEN
+      final_cost := p_cart_total * (method_rec.base_cost / 100);
+      
+    ELSE
+      final_cost := method_rec.base_cost;
+  END CASE;
+  
+  RETURN final_cost;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.crypt(text, text);
+
+CREATE OR REPLACE FUNCTION public.crypt(text, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_crypt$function$
+;
+
+-- DROP FUNCTION public.dearmor(text);
+
+CREATE OR REPLACE FUNCTION public.dearmor(text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_dearmor$function$
+;
+
+-- DROP FUNCTION public.decrypt(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.decrypt(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_decrypt$function$
+;
+
+-- DROP FUNCTION public.decrypt_iv(bytea, bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.decrypt_iv(bytea, bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_decrypt_iv$function$
+;
+
+-- DROP FUNCTION public.digest(text, text);
+
+CREATE OR REPLACE FUNCTION public.digest(text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_digest$function$
+;
+
+-- DROP FUNCTION public.digest(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.digest(bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_digest$function$
+;
+
+-- DROP FUNCTION public.encrypt(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.encrypt(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_encrypt$function$
+;
+
+-- DROP FUNCTION public.encrypt_iv(bytea, bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.encrypt_iv(bytea, bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_encrypt_iv$function$
+;
+
+-- DROP FUNCTION public.gen_random_bytes(int4);
+
+CREATE OR REPLACE FUNCTION public.gen_random_bytes(integer)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_random_bytes$function$
+;
+
+-- DROP FUNCTION public.gen_random_uuid();
+
+CREATE OR REPLACE FUNCTION public.gen_random_uuid()
+ RETURNS uuid
+ LANGUAGE c
+ PARALLEL SAFE
+AS '$libdir/pgcrypto', $function$pg_random_uuid$function$
+;
+
+-- DROP FUNCTION public.gen_salt(text);
+
+CREATE OR REPLACE FUNCTION public.gen_salt(text)
+ RETURNS text
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_gen_salt$function$
+;
+
+-- DROP FUNCTION public.gen_salt(text, int4);
+
+CREATE OR REPLACE FUNCTION public.gen_salt(text, integer)
+ RETURNS text
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_gen_salt_rounds$function$
+;
+
+-- DROP FUNCTION public.generate_order_number_seq();
+
+CREATE OR REPLACE FUNCTION public.generate_order_number_seq()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_seq bigint;
+  v_date text;
+BEGIN
+  v_seq := nextval('public.order_global_seq');
+  v_date := TO_CHAR(CURRENT_DATE, 'DDMMYY');
+  RETURN v_seq::text || v_date;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.hmac(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.hmac(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_hmac$function$
+;
+
+-- DROP FUNCTION public.hmac(text, text, text);
+
+CREATE OR REPLACE FUNCTION public.hmac(text, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_hmac$function$
+;
+
+-- DROP FUNCTION public.pgp_armor_headers(in text, out text, out text);
+
+CREATE OR REPLACE FUNCTION public.pgp_armor_headers(text, OUT key text, OUT value text)
+ RETURNS SETOF record
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_armor_headers$function$
+;
+
+-- DROP FUNCTION public.pgp_key_id(bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_key_id(bytea)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_key_id_w$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.set_order_number_seq();
+
+CREATE OR REPLACE FUNCTION public.set_order_number_seq()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.order_number IS NULL THEN
+    NEW.order_number := public.generate_order_number_seq();
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+
 -- DROP FUNCTION public.set_updated_at();
 
 CREATE OR REPLACE FUNCTION public.set_updated_at()
@@ -901,7 +1608,20 @@ CREATE OR REPLACE FUNCTION public.set_updated_at()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  NEW.updated_at := CURRENT_TIMESTAMP;
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.trigger_set_timestamp();
+
+CREATE OR REPLACE FUNCTION public.trigger_set_timestamp()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  NEW.updated_at = CURRENT_TIMESTAMP;
   RETURN NEW;
 END;
 $function$

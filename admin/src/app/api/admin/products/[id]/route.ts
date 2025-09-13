@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "../../../../../lib/auth";
 import { pool } from "../../../../../lib/db";
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const role = session?.user && (session.user as any).role;
   if (!session?.user || role !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const id = params.id;
+  const { id } = await params;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const body = await req.json().catch(() => ({}));
@@ -26,6 +26,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     "sale_start_date",
     "sale_end_date",
     "tax_class_id",
+    "product_type",
+    "featured_image_id",
   ] as const;
 
   const fields: string[] = [];
@@ -34,9 +36,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   for (const key of allowed) {
     if (key in body) {
       let val = (body as any)[key];
-      if (["regular_price", "stock", "weight", "sale_price"].includes(key) && val !== null && val !== undefined) {
+      if (["regular_price", "stock", "weight", "sale_price"].includes(key)) {
+        if (val === null || val === undefined || val === "") val = 0;
         val = Number(val);
         if (Number.isNaN(val)) return NextResponse.json({ error: `${key} must be a number` }, { status: 400 });
+        if (key === "weight") val = Math.max(0, Math.floor(val)); // grams integer
       }
       if (["sale_start_date", "sale_end_date"].includes(key) && val) {
         val = new Date(val);
@@ -47,7 +51,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   if (fields.length === 0) return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
 
-  const sql = `UPDATE public.products SET ${fields.join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE id = $${i} RETURNING id, name, slug, sku, status, stock, regular_price, currency, category_id, tax_class_id, updated_at`;
+  const sql = `UPDATE public.products SET ${fields.join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE id = $${i} RETURNING id, name, slug, sku, status, stock, (weight::int) AS weight, regular_price, currency, category_id, tax_class_id, updated_at`;
   values.push(id);
 
   try {
@@ -61,12 +65,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const role = session?.user && (session.user as any).role;
   if (!session?.user || role !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const id = params.id;
+  const { id } = await params;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   try {

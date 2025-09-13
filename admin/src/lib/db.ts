@@ -1,9 +1,21 @@
 import { Pool } from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  console.warn("[db] Missing DATABASE_URL env var. Database operations will fail.");
-}
+// Create database connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl:
+    process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
+      : false,
+});
 
-// Singleton Pool for the app
-export const pool = new Pool({ connectionString: databaseUrl });
+export const db = {
+  query: (text: string, params?: unknown[]) => pool.query(text, params),
+  getClient: () => pool.connect(),
+  end: () => pool.end(),
+};
+
+// Export pool for direct access (needed by auth.ts)
+export { pool };
+
+export default db;

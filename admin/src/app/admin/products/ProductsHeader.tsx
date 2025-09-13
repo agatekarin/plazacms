@@ -1,24 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import ProductEditorModal from "./ProductEditorModal";
-import type { CategoryOption, TaxClassOption } from "./ProductEditor";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 
-export default function ProductsHeader({ categories, taxClasses }: { categories: CategoryOption[]; taxClasses: TaxClassOption[] }) {
+export default function ProductsHeader() {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   return (
     <div className="flex items-center justify-between">
-      <h1 className="text-xl font-semibold">Products</h1>
-      <button onClick={() => setOpen(true)} className="rounded-md bg-gray-900 px-3 py-2 text-white">Add Product</button>
-      <ProductEditorModal
-        open={open}
-        onClose={() => { setOpen(false); router.refresh(); }}
-        mode="create"
-        categories={categories}
-        taxClasses={taxClasses}
-      />
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Products</h1>
+        <p className="text-sm text-gray-600 mt-1">Manage your product catalog</p>
+      </div>
+      <Button 
+        onClick={() => router.push('/admin/products/add')} 
+        className="flex items-center gap-2"
+      >
+        <Plus className="h-4 w-4" />
+        Add Product
+      </Button>
     </div>
   );
 }

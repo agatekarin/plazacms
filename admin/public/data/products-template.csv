@@ -1,0 +1,5 @@
+row_type,product_slug,name,description,status,currency,regular_price,sale_price,sale_start_date,sale_end_date,stock,weight,sku,category_id,tax_class_id,featured_image_id,product_images,variant_sku,variant_status,variant_stock,variant_weight,variant_regular_price,variant_sale_price,variant_sale_start_date,variant_sale_end_date,variant_attributes,variant_images
+product,tee-premium,"Soft cotton tee","<p>Soft tee</p>",published,USD,16,12,2025-08-25T10:28:00Z,2025-09-01T10:28:00Z,0,250,TSHRT-PRM,,,,imgA|imgB,,,,,,,,,,,
+variant,tee-premium,,,,,,,,,,,,,,,,RED-M,published,3,55,25,10,2025-08-25T10:28:00Z,2025-09-01T10:28:00Z,"Color=Red|Size=M",imgVar1
+variant,tee-premium,,,,,,,,,,,,,,,,BLUE-XL,published,50,100,15,11,,,,"Color=Blue|Size=XL",
+product,usb-c-cable,"USB-C Cable 1m","<p>Durable cable</p>",published,USD,9.5,,,,200,30,USB-1M,,,,imgC|imgD,,,,,,,,,,,

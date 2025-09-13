@@ -1,25 +1,34 @@
 import { NextResponse } from "next/server";
-import { auth } from "../../../../../../lib/auth";
-import { pool } from "../../../../../../lib/db";
+import { auth } from "@/lib/auth";
+import { pool } from "@/lib/db";
 
 // GET /api/admin/products/[id]/variants -> list variants with attribute values
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const role = session?.user && (session.user as any).role;
   if (!session?.user || role !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const productId = params.id;
+  const { id: productId } = await params;
   if (!productId) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const sql = `
-    SELECT v.id, v.sku, v.stock, v.status, v.regular_price, v.sale_price, v.created_at,
+    SELECT v.id, v.sku, v.stock, v.status, (v.weight::int) AS weight, v.regular_price, v.sale_price, v.sale_start_date, v.sale_end_date, v.created_at,
            COALESCE(json_agg(json_build_object('id', pav.id, 'attribute_id', pav.attribute_id, 'value', pav.value)
-             ORDER BY pav.value) FILTER (WHERE pav.id IS NOT NULL), '[]') AS attributes
+             ORDER BY pav.value) FILTER (WHERE pav.id IS NOT NULL), '[]') AS attributes,
+           i.file_url AS image_url, i.media_id AS image_id
       FROM public.product_variants v
+      LEFT JOIN LATERAL (
+        SELECT m.file_url, m.id AS media_id
+          FROM public.product_variant_images pvi
+          JOIN public.media m ON m.id = pvi.media_id
+         WHERE pvi.product_variant_id = v.id
+         ORDER BY pvi.display_order ASC
+         LIMIT 1
+      ) i ON true
       LEFT JOIN public.product_variant_attribute_values vv ON vv.product_variant_id = v.id
       LEFT JOIN public.product_attribute_values pav ON pav.id = vv.attribute_value_id
      WHERE v.product_id = $1
-     GROUP BY v.id
+     GROUP BY v.id, v.sale_start_date, v.sale_end_date, v.weight, i.file_url, i.media_id
      ORDER BY v.created_at DESC
   `;
   const { rows } = await pool.query(sql, [productId]);
@@ -27,12 +36,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 // POST /api/admin/products/[id]/variants -> create a single variant
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const role = session?.user && (session.user as any).role;
   if (!session?.user || role !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const productId = params.id;
+  const { id: productId } = await params;
   if (!productId) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const body = await req.json().catch(() => ({}));
@@ -48,7 +57,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!Array.isArray(attribute_value_ids) || attribute_value_ids.length === 0) {
     return NextResponse.json({ error: "attribute_value_ids must be a non-empty array" }, { status: 400 });
   }
-  if (!["published", "private", "draft", "archived"].includes(status)) {
+  if (["published", "private", "draft", "archived"].includes(status) === false) {
     return NextResponse.json({ error: "invalid status" }, { status: 400 });
   }
 

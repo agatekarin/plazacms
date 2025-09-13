@@ -38,9 +38,11 @@ export async function GET(req: Request) {
 
   const listSql = `
     SELECT p.id, p.name, p.slug, p.sku, p.status, p.stock, p.regular_price, p.currency, p.created_at,
-           c.name AS category_name
+           c.name AS category_name, p.featured_image_id,
+           m.file_url AS featured_image_url, m.filename AS featured_image_filename
       FROM public.products p
       LEFT JOIN public.categories c ON c.id = p.category_id
+      LEFT JOIN public.media m ON m.id = p.featured_image_id
       ${whereSql}
       ORDER BY p.created_at DESC
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -82,6 +84,8 @@ export async function POST(req: Request) {
     sale_start_date = null,
     sale_end_date = null,
     tax_class_id = null,
+    product_type = "simple",
+    featured_image_id = null,
   } = body || {};
 
   // Basic validations aligned with schema constraints
@@ -94,17 +98,20 @@ export async function POST(req: Request) {
   if (!["published", "private", "draft", "archived"].includes(status)) {
     return NextResponse.json({ error: "invalid status" }, { status: 400 });
   }
+  if (!["simple", "variable"].includes(product_type)) {
+    return NextResponse.json({ error: "invalid product_type" }, { status: 400 });
+  }
 
   try {
     const insertSql = `
       INSERT INTO public.products (
         name, slug, description, regular_price, currency, stock,
-        category_id, vendor_id, status, weight, sku, sale_price, sale_start_date, sale_end_date, tax_class_id
+        category_id, vendor_id, status, weight, sku, sale_price, sale_start_date, sale_end_date, tax_class_id, product_type, featured_image_id
       ) VALUES (
         $1, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10, $11, $12, $13, $14, $15
+        $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
       )
-      RETURNING id, name, slug, sku, status, stock, regular_price, currency, created_at
+      RETURNING id, name, slug, sku, status, stock, regular_price, currency, created_at, product_type, featured_image_id
     `;
     // vendor_id: for now set to null (created by admin)
     const values = [
@@ -115,7 +122,7 @@ export async function POST(req: Request) {
       currency,
       Number(stock) || 0,
       category_id || null,
-      null,
+      null, // vendor_id
       status,
       Number(weight) || 0,
       sku || null,
@@ -123,6 +130,8 @@ export async function POST(req: Request) {
       sale_start_date ? new Date(sale_start_date) : null,
       sale_end_date ? new Date(sale_end_date) : null,
       tax_class_id || null,
+      product_type,
+      featured_image_id || null,
     ];
 
     const { rows } = await pool.query(insertSql, values);

@@ -4,12 +4,12 @@ import { pool } from "../../../../../../../lib/db";
 
 // POST /api/admin/products/[id]/variants/generate
 // Body: { selections: Array<Array<string>> } // array of arrays of attribute_value_id
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const role = session?.user && (session.user as any).role;
   if (!session?.user || role !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const productId = params.id;
+  const { id: productId } = await params;
   if (!productId) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const body = await req.json().catch(() => ({}));

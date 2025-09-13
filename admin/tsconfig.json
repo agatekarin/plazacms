@@ -19,6 +19,9 @@
       }
     ],
     "paths": {
+      "@/components/ui/textarea": ["./src/components/ui/textarea.tsx"],
+      "@/components/ui/select": ["./src/components/ui/select.tsx"],
+      "@/components/*": ["./src/components/*"],
       "@/*": ["./src/*"]
     }
   },
