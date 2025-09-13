@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "plazacms-api",
+  "main": "dist/index.js",
+  "compatibility_date": "2025-02-04",
+  "observability": {
+    "enabled": true
+  },
+  "compatibility_flags": ["nodejs_compat"],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "b2bb82c692c5400d93641279d162c68d",
+      "localConnectionString": "postgres://neondb_owner:npg_aIuy0lwEGJ8S@ep-long-wildflower-ae91z3hf.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    }
+  ]
+}

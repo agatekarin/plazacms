@@ -33,3 +33,7 @@ yarn-error.log*
 # pnpm
 /pnpm-lock.yaml
 /dist/
+
+# Hidden files and directories
+.*
+*.donk

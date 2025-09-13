@@ -20,6 +20,9 @@ importers:
       '@heroicons/react':
         specifier: ^2.2.0
         version: 2.2.0(react@19.1.1)
+      '@neondatabase/serverless':
+        specifier: ^1.0.1
+        version: 1.0.1
       '@paypal/paypal-server-sdk':
         specifier: ^1.1.0
         version: 1.1.0
@@ -611,6 +614,10 @@ packages:
 
   '@napi-rs/wasm-runtime@0.2.12':
     resolution: {integrity: sha512-ZVWUcfwY4E/yPitQJl481FjFo3K22D6qF0DuFH6Y/nbnE11GY5uguDxZMGXPQ8WQ0128MXQD7TnfHyK4oWoIJQ==}
+
+  '@neondatabase/serverless@1.0.1':
+    resolution: {integrity: sha512-O6yC5TT0jbw86VZVkmnzCZJB0hfxBl0JJz6f+3KHoZabjb/X08r9eFA+vuY06z1/qaovykvdkrXYq3SPUuvogA==}
+    engines: {node: '>=19.0.0'}
 
   '@next/env@15.5.2':
     resolution: {integrity: sha512-Qe06ew4zt12LeO6N7j8/nULSOe3fMXE4dM6xgpBQNvdzyK1sv5y4oAP3bq4LamrvGCZtmRYnW8URFCeX5nFgGg==}
@@ -1563,6 +1570,9 @@ packages:
 
   '@types/node@20.19.11':
     resolution: {integrity: sha512-uug3FEEGv0r+jrecvUUpbY8lLisvIjg6AAic6a2bSP5OEOLeJsDSnvhCDov7ipFFMXS3orMpzlmi0ZcuGkBbow==}
+
+  '@types/node@22.18.3':
+    resolution: {integrity: sha512-gTVM8js2twdtqM+AE2PdGEe9zGQY4UvmFjan9rZcVb6FGdStfjWoWejdmy4CfWVO9rh5MiYQGZloKAGkJt8lMw==}
 
   '@types/pg@8.15.5':
     resolution: {integrity: sha512-LF7lF6zWEKxuT3/OR8wAZGzkg4ENGXFNyiV/JeOt9z5B+0ZVwbql9McqX5c/WStFq1GaGso7H1AzP/qSzmlCKQ==}
@@ -4160,6 +4170,11 @@ snapshots:
       '@tybys/wasm-util': 0.10.0
     optional: true
 
+  '@neondatabase/serverless@1.0.1':
+    dependencies:
+      '@types/node': 22.18.3
+      '@types/pg': 8.15.5
+
   '@next/env@15.5.2': {}
 
   '@next/eslint-plugin-next@15.5.2':
@@ -5218,6 +5233,10 @@ snapshots:
   '@types/mdurl@2.0.0': {}
 
   '@types/node@20.19.11':
+    dependencies:
+      undici-types: 6.21.0
+
+  '@types/node@22.18.3':
     dependencies:
       undici-types: 6.21.0
 
