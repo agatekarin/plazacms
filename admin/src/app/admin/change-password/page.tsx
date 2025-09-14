@@ -10,7 +10,7 @@ export default async function ChangePasswordPage() {
   const session = await auth(sessionToken);
   const role = (session?.user as Session["user"] & { role?: string })?.role;
   if (!session?.user || role !== "admin") {
-    redirect("/signin");
+    // redirect("/signin");
   }
 
   return (

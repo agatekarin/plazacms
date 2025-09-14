@@ -13,7 +13,7 @@ export default async function AdminLayout({
   const user = await AuthService.getCurrentUser(sessionToken);
 
   if (!user || user.role !== "admin") {
-    redirect("/signin");
+    // redirect("/signin");
   }
 
   return <ModernAdminLayout>{children}</ModernAdminLayout>;

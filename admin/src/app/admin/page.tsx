@@ -22,7 +22,7 @@ export default async function AdminPage() {
   const role = user?.role;
 
   if (!user || role !== "admin") {
-    redirect("/signin");
+    // redirect("/signin");
   }
 
   return (

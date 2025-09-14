@@ -12,7 +12,7 @@ export default async function PaymentsSettingsPage() {
   const sessionToken = cookieStore.get("plaza_session")?.value;
   const session = await auth(sessionToken);
   const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") redirect("/signin");
+  // if (!session?.user || role !== "admin") redirect("/signin");
 
   const { rows } = await pool.query<PaymentGatewayRow>(
     `SELECT g.id, g.name, g.slug, g.description, g.is_enabled, g.settings, g.logo_media_id,

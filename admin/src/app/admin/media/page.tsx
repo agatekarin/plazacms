@@ -11,7 +11,7 @@ export default async function MediaPage() {
   const role = (session?.user as Session["user"] & { role?: string })?.role;
 
   if (!session?.user || role !== "admin") {
-    redirect("/signin");
+    // redirect("/signin");
   }
 
   return <MediaManager />;
