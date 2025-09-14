@@ -1,0 +1,19 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "admin-hono"
+main = "src/index.ts"
+compatibility_date = "2024-12-05"
+compatibility_flags = ["nodejs_compat"]
+
+# Observability
+[observability.logs]
+enabled = true
+
+# Hyperdrive binding (same as with-hyperdrive)
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "279c708c1c1747d7ada5f1fe31c0df8f"
+
+# Environment variables
+[vars]
+JWT_SECRET = "a41472ad95172231e24b36db3cd45ae42e317ecc5f9872a002ab736d32ba1d49"
+ADMIN_EMAIL = "admin@local"

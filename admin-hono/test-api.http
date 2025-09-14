@@ -1,0 +1,74 @@
+### PlazaCMS Admin API Testing
+
+### Health Check
+GET http://127.0.0.1:8787
+
+### Login (create this user in your database first)
+POST http://127.0.0.1:8787/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@plazacms.com",
+  "password": "password123"
+}
+
+### Get current user info
+GET http://127.0.0.1:8787/api/auth/me
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Get all attributes
+GET http://127.0.0.1:8787/api/admin/attributes
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Create new attribute
+POST http://127.0.0.1:8787/api/admin/attributes
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+{
+  "name": "Color",
+  "values": ["Red", "Blue", "Green", "Black", "White"]
+}
+
+### Create another attribute
+POST http://127.0.0.1:8787/api/admin/attributes
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+{
+  "name": "Size",
+  "values": ["XS", "S", "M", "L", "XL", "XXL"]
+}
+
+### Get specific attribute
+GET http://127.0.0.1:8787/api/admin/attributes/ATTRIBUTE_ID_HERE
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Update attribute name
+PUT http://127.0.0.1:8787/api/admin/attributes/ATTRIBUTE_ID_HERE
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+{
+  "name": "Updated Color"
+}
+
+### Add value to attribute
+POST http://127.0.0.1:8787/api/admin/attributes/ATTRIBUTE_ID_HERE/values
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+{
+  "value": "Purple"
+}
+
+### Delete attribute value
+DELETE http://127.0.0.1:8787/api/admin/attributes/ATTRIBUTE_ID_HERE/values/VALUE_ID_HERE
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Delete attribute
+DELETE http://127.0.0.1:8787/api/admin/attributes/ATTRIBUTE_ID_HERE
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Logout
+POST http://127.0.0.1:8787/api/auth/logout

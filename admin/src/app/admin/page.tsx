@@ -1,6 +1,8 @@
-import { Session } from "next-auth";
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useState, useEffect } from "react";
+import { getCurrentUser, User } from "@/lib/auth";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageContainer from "../../components/PageContainer";
 import {
@@ -14,16 +16,46 @@ import {
   CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
 
-export default async function AdminPage() {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") {
-    redirect("/signin");
+export default function AdminPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (!currentUser || currentUser.role !== "admin") {
+          router.push("/signin");
+          return;
+        }
+        setUser(currentUser);
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        router.push("/signin");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Will redirect to signin
   }
 
   return (
     <PageContainer
-      title={`Welcome back, ${session.user?.name ?? session.user?.email}`}
+      title={`Welcome back, ${user.name ?? user.email}`}
       subtitle="Manage your e-commerce store from this admin dashboard"
     >
       {/* Overview Stats */}
