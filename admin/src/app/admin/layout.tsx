@@ -1,24 +1,17 @@
-import { Session } from "next-auth";
-import { auth } from "../../lib/auth";
 import { redirect } from "next/navigation";
-import SessionProviderWrapper from "../../components/auth/SessionProviderWrapper";
 import ModernAdminLayout from "../../components/ModernAdminLayout";
+import { AuthService } from "../../lib/auth/service";
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
+  const user = await AuthService.getCurrentUser();
 
-  if (!session?.user || role !== "admin") {
+  if (!user || user.role !== "admin") {
     redirect("/signin");
   }
 
-  return (
-    <SessionProviderWrapper session={session}>
-      <ModernAdminLayout>{children}</ModernAdminLayout>
-    </SessionProviderWrapper>
-  );
+  return <ModernAdminLayout>{children}</ModernAdminLayout>;
 }

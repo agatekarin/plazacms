@@ -1,5 +1,3 @@
-import { Session } from "next-auth";
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import PageContainer from "../../components/PageContainer";
@@ -13,17 +11,20 @@ import {
   ArrowTrendingUpIcon,
   CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
+import { AuthService } from "../../lib/auth/service";
+import { User } from "../../lib/auth/types";
 
 export default async function AdminPage() {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") {
+  const user = await AuthService.getCurrentUser();
+  const role = user?.role;
+
+  if (!user || role !== "admin") {
     redirect("/signin");
   }
 
   return (
     <PageContainer
-      title={`Welcome back, ${session.user?.name ?? session.user?.email}`}
+      title={`Welcome back, ${user?.name ?? user?.email}`}
       subtitle="Manage your e-commerce store from this admin dashboard"
     >
       {/* Overview Stats */}
