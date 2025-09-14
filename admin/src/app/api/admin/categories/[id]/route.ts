@@ -1,3 +1,40 @@
+// DISABLED: This API route is replaced by Hono backend
+// Use https://admin-hono.agatekarin.workers.dev instead
+
+import { NextResponse } from "next/server";
+
+export async function GET() {
+  return NextResponse.json({ 
+    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
+  }, { status: 410 }); // 410 Gone
+}
+
+export async function POST() {
+  return NextResponse.json({ 
+    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
+  }, { status: 410 }); // 410 Gone
+}
+
+export async function PUT() {
+  return NextResponse.json({ 
+    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
+  }, { status: 410 }); // 410 Gone
+}
+
+export async function PATCH() {
+  return NextResponse.json({ 
+    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
+  }, { status: 410 }); // 410 Gone
+}
+
+export async function DELETE() {
+  return NextResponse.json({ 
+    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
+  }, { status: 410 }); // 410 Gone
+}
+
+/*
+ORIGINAL CODE COMMENTED OUT:
 import { Session } from "next-auth";
 import { NextResponse } from "next/server";
 import { auth } from "../../../../../lib/auth";
@@ -59,3 +96,5 @@ export async function DELETE(
   await pool.query("DELETE FROM public.categories WHERE id = $1", [id]);
   return NextResponse.json({ ok: true });
 }
+
+*/

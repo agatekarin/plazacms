@@ -1,24 +1,51 @@
-import { Session } from "next-auth";
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
-import { pool } from "@/lib/db";
+"use client";
+
+import { useState, useEffect } from "react";
+import { getCurrentUser, User } from "@/lib/auth";
+import { useRouter } from "next/navigation";
 import PaymentsManager, { PaymentGatewayRow } from "./PaymentsManager";
 
-export const dynamic = "force-dynamic";
+export default function PaymentsSettingsPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [gateways, setGateways] = useState<PaymentGatewayRow[]>([]);
 
-export default async function PaymentsSettingsPage() {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") redirect("/signin");
+  useEffect(() => {
+    const checkAuthAndLoadData = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (!currentUser || currentUser.role !== "admin") {
+          router.push("/signin");
+          return;
+        }
+        setUser(currentUser);
 
-  const { rows } = await pool.query<PaymentGatewayRow>(
-    `SELECT g.id, g.name, g.slug, g.description, g.is_enabled, g.settings, g.logo_media_id,
-            m.file_url AS logo_url
-     FROM public.payment_gateways g
-     LEFT JOIN public.media m ON m.id = g.logo_media_id
-     ORDER BY g.name ASC`
-  );
-  const gateways = rows as unknown as PaymentGatewayRow[];
+        // TODO: Load payment gateways from Hono API
+        // For now, use empty array until API is implemented
+        setGateways([]);
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        router.push("/signin");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuthAndLoadData();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Will redirect to signin
+  }
 
   return (
     <div className="space-y-6">
