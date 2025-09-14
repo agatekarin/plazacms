@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
+export const runtime = "nodejs";
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user || session.user.role !== "admin")
