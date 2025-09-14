@@ -1,8 +1,11 @@
-export { auth as middleware } from "./src/lib/auth";
+import NextAuth from 'next-auth';
+import { authConfig } from './src/lib/auth.config';
+ 
+export default NextAuth(authConfig).auth;
+ 
 
 // Protect everything except these paths
 export const config = {
-  matcher: [
-    "/((?!api/auth|_next|favicon.ico|signin|public|assets).*)",
-  ],
+  // https://nextjs.org/docs/app/building-your-application/routing/middleware#matcher
+  matcher: ['/((?!api|_next/static|_next/image|.*\.png$).*)'],
 };

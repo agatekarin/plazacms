@@ -1,7 +1,9 @@
-import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import { pool } from "./db";
+import NextAuth, { type Session, type User } from 'next-auth';
+import { type JWT } from 'next-auth/jwt';
+import Credentials from 'next-auth/providers/credentials';
+import bcrypt from 'bcryptjs';
+import { pool } from './db';
+import { authConfig } from './auth.config';
 
 // Ensure DATABASE_URL is set (pool is created in ./db)
 if (!process.env.DATABASE_URL) {
@@ -11,6 +13,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   secret: process.env.AUTH_SECRET,
   session: {
     strategy: "jwt",
@@ -22,7 +25,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async (credentials) => {
+            authorize: async (credentials: Partial<Record<string, unknown>>): Promise<User | null> => {
         const email =
           typeof credentials?.email === "string"
             ? credentials.email
@@ -59,42 +62,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           image: user.image,
           role: user.role,
-        } as any;
+        } as User;
       },
     }),
   ],
   callbacks: {
     // Persist role on the JWT and session
-    async jwt({ token, user }) {
+        async jwt({ token, user }: { token: JWT; user: User }): Promise<JWT> {
       if (user) {
-        token.role = (user as any).role;
+                token.role = user.role;
         token.id = user.id;
       }
       return token;
     },
-    async session({ session, token }) {
+        async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
       session.user.role = token.role as string | undefined;
       session.user.id = token.id!;
       return session;
     },
-    // Middleware authorization: only admin for protected paths
-    authorized({ auth, request }) {
-      const { pathname } = request.nextUrl;
-      // Public paths
-      const publicPaths = [
-        "/signin",
-        "/api/auth",
-        "/_next/",
-        "/favicon.ico",
-        "/assets",
-        "/admin/signin",
-        "/admin",
-      ];
-      if (publicPaths.some((p) => pathname.startsWith(p))) return true;
-
-      // Admin-only by default
-      const user = auth?.user as any | undefined;
-      return !!user && user.role === "admin";
-    },
+    
   },
 });
