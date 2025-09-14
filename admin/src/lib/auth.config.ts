@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import type { Session } from "next-auth";
 import type { NextRequest } from "next/server";
 
 export const authConfig = {
@@ -6,7 +7,13 @@ export const authConfig = {
     signIn: "/signin",
   },
   callbacks: {
-    authorized({ auth, request }: { auth: any; request: NextRequest }) {
+    authorized({
+      auth,
+      request,
+    }: {
+      auth: Session | null;
+      request: NextRequest;
+    }) {
       const isLoggedIn = !!auth?.user;
       const isOnAdmin = request.nextUrl.pathname.startsWith("/admin");
 
