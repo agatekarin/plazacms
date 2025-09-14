@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { User } from "@/lib/auth";
+import { useSession } from "next-auth/react";
 import {
   HomeIcon,
   ShoppingBagIcon,
@@ -199,16 +199,15 @@ interface AdminSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   isMobile?: boolean;
-  user?: User;
 }
 
 export default function AdminSidebar({
   isOpen,
   onToggle,
   isMobile = false,
-  user,
 }: AdminSidebarProps) {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [siteLogoUrl, setSiteLogoUrl] = useState<string | null>(null);
   const [defaultAvatarUrl, setDefaultAvatarUrl] = useState<string | null>(null);
@@ -426,14 +425,14 @@ export default function AdminSidebar({
         </div>
 
         {/* User Info */}
-        {user && (isOpen || isMobile) && (
+        {session?.user && (isOpen || isMobile) && (
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
-                {defaultAvatarUrl ? (
+                {session.user.image || defaultAvatarUrl ? (
                   <img
-                    src={defaultAvatarUrl}
-                    alt={user.name || "User"}
+                    src={(session.user.image || defaultAvatarUrl) as string}
+                    alt={session.user.name || "User"}
                     className="w-10 h-10 object-cover"
                   />
                 ) : (
@@ -442,10 +441,11 @@ export default function AdminSidebar({
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">
-                  {user.name || user.email}
+                  {session.user.name || session.user.email}
                 </p>
                 <p className="text-xs text-gray-500 capitalize">
-                  {user.role || "Admin"}
+                  {(session.user as unknown as { role?: string }).role ||
+                    "Admin"}
                 </p>
               </div>
             </div>

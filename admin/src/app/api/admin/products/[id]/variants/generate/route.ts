@@ -1,40 +1,3 @@
-// DISABLED: This API route is replaced by Hono backend
-// Use https://admin-hono.agatekarin.workers.dev instead
-
-import { NextResponse } from "next/server";
-
-export async function GET() {
-  return NextResponse.json({ 
-    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
-  }, { status: 410 }); // 410 Gone
-}
-
-export async function POST() {
-  return NextResponse.json({ 
-    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
-  }, { status: 410 }); // 410 Gone
-}
-
-export async function PUT() {
-  return NextResponse.json({ 
-    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
-  }, { status: 410 }); // 410 Gone
-}
-
-export async function PATCH() {
-  return NextResponse.json({ 
-    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
-  }, { status: 410 }); // 410 Gone
-}
-
-export async function DELETE() {
-  return NextResponse.json({ 
-    error: "This API route has been migrated to Hono backend. Use https://admin-hono.agatekarin.workers.dev instead" 
-  }, { status: 410 }); // 410 Gone
-}
-
-/*
-ORIGINAL CODE COMMENTED OUT:
 import { NextResponse } from "next/server";
 import { auth } from "../../../../../../../lib/auth";
 import { pool } from "../../../../../../../lib/db";
@@ -110,5 +73,3 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     client.release();
   }
 }
-
-*/
