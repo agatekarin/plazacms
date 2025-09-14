@@ -1,10 +1,40 @@
-import NextAuth from 'next-auth';
+import { NextResponse } from 'next/server';
+import { jwtVerify } from 'jose/jwt';
 import { authConfig } from './src/lib/auth.config';
- 
-export default NextAuth(authConfig).auth;
 
+const AUTH_SECRET = process.env.AUTH_SECRET;
 
-// Protect everything except these paths
+export async function middleware(request: Request) {
+  const tokenCookie = request.headers.get('cookie')?.split('; ').find(row => row.startsWith('next-auth.session-token='));
+  const token = tokenCookie ? tokenCookie.split('=')[1] : undefined;
+
+  let auth: any = null;
+  if (token && AUTH_SECRET) {
+    try {
+      const { payload } = await jwtVerify(token, new TextEncoder().encode(AUTH_SECRET));
+      auth = {
+        user: {
+          id: payload.id as string,
+          role: payload.role as string,
+        },
+      };
+    } catch (error) {
+      console.error('JWT verification failed:', error);
+      // Token invalid, treat as unauthenticated
+    }
+  }
+
+  const authorized = authConfig.callbacks.authorized;
+  const response = await authorized({ auth, request: { nextUrl: new URL(request.url) as any } });
+
+  if (response === false) {
+    const url = new URL('/signin', request.url);
+    url.searchParams.set('callbackUrl', request.url);
+    return NextResponse.redirect(url);
+  }
+  return NextResponse.next();
+}
+
 export const config = {
   matcher: ['/((?!api|_next/static|_next/image|.*\.png$).*)'],
 };
