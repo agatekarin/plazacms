@@ -1,8 +1,7 @@
-import { Session } from "../../../lib/auth/types";
+import { Session } from "next-auth";
 import { Category } from "./CategoriesManager"; // Category is now exported from CategoriesManager
 import { auth } from "../../../lib/auth";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { pool } from "../../../lib/db";
 import CategoriesManager from "./CategoriesManager";
 import { Button } from "@/components/ui/button";
@@ -11,11 +10,9 @@ import { Plus, Tag } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function CategoriesPage() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("plaza_session")?.value;
-  const session = await auth(sessionToken);
+  const session = await auth();
   const role = (session?.user as Session["user"] & { role?: string })?.role;
-  // if (!session?.user || role !== "admin") redirect("/signin");
+  if (!session?.user || role !== "admin") redirect("/signin");
 
   const { rows } = await pool.query(`
     SELECT c.id, c.name, c.slug, c.description, c.image_id, c.created_at,

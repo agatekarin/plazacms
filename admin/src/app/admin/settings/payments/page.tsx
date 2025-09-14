@@ -1,18 +1,15 @@
-import { Session } from "../../../../lib/auth/types";
+import { Session } from "next-auth";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { pool } from "@/lib/db";
 import PaymentsManager, { PaymentGatewayRow } from "./PaymentsManager";
 
 export const dynamic = "force-dynamic";
 
 export default async function PaymentsSettingsPage() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("plaza_session")?.value;
-  const session = await auth(sessionToken);
+  const session = await auth();
   const role = (session?.user as Session["user"] & { role?: string })?.role;
-  // if (!session?.user || role !== "admin") redirect("/signin");
+  if (!session?.user || role !== "admin") redirect("/signin");
 
   const { rows } = await pool.query<PaymentGatewayRow>(
     `SELECT g.id, g.name, g.slug, g.description, g.is_enabled, g.settings, g.logo_media_id,

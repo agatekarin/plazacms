@@ -1,4 +1,4 @@
-import { Session } from "../../../lib/auth/types";
+import { Session } from "next-auth";
 
 interface ProductAttribute {
   id: string;
@@ -18,7 +18,6 @@ interface AttributeItem {
 }
 import { auth } from "../../../lib/auth";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { pool } from "../../../lib/db";
 import AttributesManager from "./AttributesManager";
 import { Button } from "@/components/ui/button";
@@ -27,11 +26,9 @@ import { Plus, Settings } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function AttributesPage() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("plaza_session")?.value;
-  const session = await auth(sessionToken);
+  const session = await auth();
   const role = (session?.user as Session["user"] & { role?: string })?.role;
-  // if (!session?.user || role !== "admin") redirect("/signin");
+  if (!session?.user || role !== "admin") redirect("/signin");
 
   let items: AttributeItem[] = [];
   try {

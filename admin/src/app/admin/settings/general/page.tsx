@@ -1,4 +1,4 @@
-import { Session } from "../../../../lib/auth/types";
+import { Session } from "next-auth";
 import { auth } from "../../../../lib/auth";
 import { redirect } from "next/navigation";
 import GeneralSettingsManager from "./GeneralSettingsManager";
@@ -8,11 +8,9 @@ import { headers, cookies } from "next/headers";
 export const dynamic = "force-dynamic";
 
 export default async function GeneralSettingsPage() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("plaza_session")?.value;
-  const session = await auth(sessionToken);
+  const session = await auth();
   const role = (session?.user as Session["user"] & { role?: string })?.role;
-  // if (!session?.user || role !== "admin") redirect("/signin");
+  if (!session?.user || role !== "admin") redirect("/signin");
 
   // Fetch settings from API
   let settings = null;

@@ -1,7 +1,6 @@
-import { Session } from "../../../../lib/auth/types";
+import { Session } from "next-auth";
 import { auth } from "../../../../lib/auth";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { pool } from "../../../../lib/db";
 import TaxClassesManager from "../tax-classes/TaxClassesManager";
 
@@ -15,11 +14,9 @@ interface TaxClassRow {
 }
 
 export default async function TaxSettingsPage() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("plaza_session")?.value;
-  const session = await auth(sessionToken);
+  const session = await auth();
   const role = (session?.user as Session["user"] & { role?: string })?.role;
-  // if (!session?.user || role !== "admin") redirect("/signin");
+  if (!session?.user || role !== "admin") redirect("/signin");
 
   const { rows } = await pool.query<TaxClassRow>(
     "SELECT id, name, rate, is_active FROM public.tax_classes ORDER BY name ASC"
