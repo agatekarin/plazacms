@@ -1,4 +1,4 @@
-export { auth as middleware } from "next-auth/middleware";
+export { auth as middleware } from "./src/lib/auth";
 
 // Protect everything except these paths
 export const config = {
