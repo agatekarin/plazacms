@@ -234,12 +234,12 @@ export class AuthService {
   }
 
   // Get session token from cookies
-  static async getSessionToken(): Promise<string | null> {
+  static async getSessionToken(): Promise<string | undefined> {
     try {
       const cookieStore = await cookies();
-      return cookieStore.get(this.SESSION_COOKIE_NAME)?.value || null;
+      return cookieStore.get(this.SESSION_COOKIE_NAME)?.value;
     } catch {
-      return null;
+      return undefined;
     }
   }
 

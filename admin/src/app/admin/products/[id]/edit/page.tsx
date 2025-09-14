@@ -2,6 +2,7 @@ import { Session } from "../../../../../lib/auth/types";
 import { Product } from "../../ProductEditor";
 import { auth } from "../../../../../lib/auth";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { pool } from "../../../../../lib/db";
 import ProductEditor from "../../ProductEditor";
 import { getActiveTaxClasses } from "../../../../../lib/tax-classes";
@@ -15,7 +16,9 @@ export default async function EditProductPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const session = await auth();
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get("plaza_session")?.value;
+  const session = await auth(sessionToken);
   const role = session?.user && (session.user as any).role;
   if (!session?.user || role !== "admin") redirect("/signin");
 

@@ -8,7 +8,9 @@ import { headers, cookies } from "next/headers";
 export const dynamic = "force-dynamic";
 
 export default async function GeneralSettingsPage() {
-  const session = await auth();
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get("plaza_session")?.value;
+  const session = await auth(sessionToken);
   const role = (session?.user as Session["user"] & { role?: string })?.role;
   if (!session?.user || role !== "admin") redirect("/signin");
 

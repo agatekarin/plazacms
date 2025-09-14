@@ -5,9 +5,12 @@ import { AuthService } from "./auth/service";
 import { User } from "./auth/types";
 
 // Export auth function for backward compatibility
-export async function auth(): Promise<{ user?: User } | null> {
+export async function auth(
+  sessionToken?: string
+): Promise<{ user?: User } | null> {
   try {
-    const user = await AuthService.getCurrentUser();
+    const token = sessionToken || (await AuthService.getSessionToken());
+    const user = await AuthService.getCurrentUser(token);
     if (user) {
       return { user };
     }

@@ -12,10 +12,13 @@ import {
   CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
 import { AuthService } from "../../lib/auth/service";
-import { User } from "../../lib/auth/types";
+import { User } from "@/lib/auth/types";
+import { cookies } from "next/headers";
 
 export default async function AdminPage() {
-  const user = await AuthService.getCurrentUser();
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get("plaza_session")?.value;
+  const user = await AuthService.getCurrentUser(sessionToken);
   const role = user?.role;
 
   if (!user || role !== "admin") {
