@@ -1,4 +1,4 @@
-import { Session } from "next-auth";
+import { Session } from "../../../../../lib/auth/types";
 import { NextResponse } from "next/server";
 import { auth } from "../../../../../lib/auth";
 import { pool } from "../../../../../lib/db";

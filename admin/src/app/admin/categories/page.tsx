@@ -1,4 +1,4 @@
-import { Session } from "next-auth";
+import { Session } from "../../../lib/auth/types";
 import { Category } from "./CategoriesManager"; // Category is now exported from CategoriesManager
 import { auth } from "../../../lib/auth";
 import { redirect } from "next/navigation";

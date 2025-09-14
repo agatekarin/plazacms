@@ -1,4 +1,4 @@
-import { Session } from "next-auth";
+import { Session } from "../../../lib/auth/types";
 
 interface ProductAttribute {
   id: string;

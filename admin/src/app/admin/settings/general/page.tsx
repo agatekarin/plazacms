@@ -1,4 +1,4 @@
-import { Session } from "next-auth";
+import { Session } from "../../../../lib/auth/types";
 import { auth } from "../../../../lib/auth";
 import { redirect } from "next/navigation";
 import GeneralSettingsManager from "./GeneralSettingsManager";

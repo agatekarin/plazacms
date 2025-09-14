@@ -1,5 +1,5 @@
 import { auth } from "../../../lib/auth";
-import { Session } from "next-auth";
+import { Session } from "../../../lib/auth/types";
 import { redirect } from "next/navigation";
 import { pool } from "../../../lib/db";
 import ProductsToolbar from "./ProductsToolbar";

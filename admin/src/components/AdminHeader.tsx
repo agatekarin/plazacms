@@ -1,8 +1,8 @@
 "use client";
 
-import { User } from "next-auth";
+import { User } from "@/lib/auth/types";
 import Link from "next/link";
-import { 
+import {
   MagnifyingGlassIcon,
   BellIcon,
   Bars3Icon,
@@ -11,7 +11,7 @@ import {
   MoonIcon,
   CogIcon,
   PowerIcon,
-  ChevronDownIcon
+  ChevronDownIcon,
 } from "@heroicons/react/24/outline";
 import { useEffect, useRef, useState } from "react";
 
@@ -23,12 +23,12 @@ interface AdminHeaderProps {
   user?: User;
 }
 
-export default function AdminHeader({ 
-  title, 
-  onToggleSidebar, 
-  sidebarOpen, 
-  isMobile, 
-  user 
+export default function AdminHeader({
+  title,
+  onToggleSidebar,
+  sidebarOpen,
+  isMobile,
+  user,
 }: AdminHeaderProps) {
   const [showSearch, setShowSearch] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -50,7 +50,6 @@ export default function AdminHeader({
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
       <div className="flex items-center justify-between px-4 py-3 lg:px-6 min-h-[64px]">
-        
         {/* Left Section */}
         <div className="flex items-center gap-4">
           {/* Mobile Menu Button */}
@@ -68,26 +67,28 @@ export default function AdminHeader({
             className="hidden md:flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
             aria-label="Toggle sidebar"
           >
-            <svg 
-              className="w-5 h-5 text-gray-600" 
-              fill="none" 
-              stroke="currentColor" 
+            <svg
+              className="w-5 h-5 text-gray-600"
+              fill="none"
+              stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={1.5} 
-                d={sidebarOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"}
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d={
+                  sidebarOpen
+                    ? "M6 18L18 6M6 6l12 12"
+                    : "M4 6h16M4 12h16M4 18h16"
+                }
               />
             </svg>
           </button>
-          
+
           {/* Page Title */}
           <div className="hidden sm:block">
-            <h1 className="text-xl font-semibold text-gray-900">
-              {title}
-            </h1>
+            <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
           </div>
         </div>
 
@@ -105,9 +106,8 @@ export default function AdminHeader({
 
         {/* Right Section */}
         <div className="flex items-center gap-2">
-          
           {/* Mobile Search Toggle */}
-          <button 
+          <button
             onClick={() => setShowSearch(!showSearch)}
             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors lg:hidden"
           >
@@ -115,7 +115,7 @@ export default function AdminHeader({
           </button>
 
           {/* Theme Toggle */}
-          <button 
+          <button
             onClick={() => setDarkMode(!darkMode)}
             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
@@ -126,7 +126,7 @@ export default function AdminHeader({
               <MoonIcon className="h-5 w-5" />
             )}
           </button>
-          
+
           {/* Notifications */}
           <button className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
             <BellIcon className="h-5 w-5" />
@@ -138,15 +138,15 @@ export default function AdminHeader({
           {/* User Menu */}
           <div ref={menuRef} className="relative ml-2">
             <button
-              onClick={() => setUserMenuOpen(v => !v)}
+              onClick={() => setUserMenuOpen((v) => !v)}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               aria-haspopup="menu"
               aria-expanded={userMenuOpen}
             >
               {user?.image ? (
-                <img 
-                  src={user.image} 
-                  alt={user.name || 'User'} 
+                <img
+                  src={user.image}
+                  alt={user.name || "User"}
                   className="w-8 h-8 rounded-full border border-gray-200"
                 />
               ) : (
@@ -157,10 +157,14 @@ export default function AdminHeader({
                   {user?.name || user?.email}
                 </div>
                 <div className="text-xs text-gray-500 capitalize">
-                  {(user as unknown as { role?: string })?.role || 'Admin'}
+                  {(user as unknown as { role?: string })?.role || "Admin"}
                 </div>
               </div>
-              <ChevronDownIcon className={`h-4 w-4 text-gray-400 hidden md:block transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+              <ChevronDownIcon
+                className={`h-4 w-4 text-gray-400 hidden md:block transition-transform ${
+                  userMenuOpen ? "rotate-180" : ""
+                }`}
+              />
             </button>
 
             {userMenuOpen && (
@@ -169,8 +173,12 @@ export default function AdminHeader({
                 className="absolute right-0 mt-2 w-56 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg focus:outline-none z-40"
               >
                 <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-sm font-medium text-gray-900 truncate">{user?.name || user?.email}</p>
-                  <p className="text-xs text-gray-500 capitalize">{(user as unknown as { role?: string })?.role || 'Admin'}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user?.name || user?.email}
+                  </p>
+                  <p className="text-xs text-gray-500 capitalize">
+                    {(user as unknown as { role?: string })?.role || "Admin"}
+                  </p>
                 </div>
                 <div className="py-1">
                   <Link
