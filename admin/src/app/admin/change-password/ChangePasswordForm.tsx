@@ -24,15 +24,18 @@ export default function ChangePasswordForm() {
       setMessage("Password updated successfully.");
       setCurrentPassword("");
       setNewPassword("");
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form onSubmit={onSubmit} style={{ display: "grid", gap: 12, maxWidth: 420 }}>
+    <form
+      onSubmit={onSubmit}
+      style={{ display: "grid", gap: 12, maxWidth: 420 }}
+    >
       <label>
         <div>Current password</div>
         <input
@@ -41,7 +44,12 @@ export default function ChangePasswordForm() {
           onChange={(e) => setCurrentPassword(e.target.value)}
           required
           minLength={1}
-          style={{ width: "100%", padding: 8, border: "1px solid #e5e7eb", borderRadius: 6 }}
+          style={{
+            width: "100%",
+            padding: 8,
+            border: "1px solid #e5e7eb",
+            borderRadius: 6,
+          }}
         />
       </label>
       <label>
@@ -52,10 +60,24 @@ export default function ChangePasswordForm() {
           onChange={(e) => setNewPassword(e.target.value)}
           required
           minLength={8}
-          style={{ width: "100%", padding: 8, border: "1px solid #e5e7eb", borderRadius: 6 }}
+          style={{
+            width: "100%",
+            padding: 8,
+            border: "1px solid #e5e7eb",
+            borderRadius: 6,
+          }}
         />
       </label>
-      <button disabled={loading} type="submit" style={{ padding: "10px 14px", borderRadius: 6, background: "#111827", color: "white" }}>
+      <button
+        disabled={loading}
+        type="submit"
+        style={{
+          padding: "10px 14px",
+          borderRadius: 6,
+          background: "#111827",
+          color: "white",
+        }}
+      >
         {loading ? "Updating..." : "Update password"}
       </button>
       {message && <p style={{ color: "#059669" }}>{message}</p>}

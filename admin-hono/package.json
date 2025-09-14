@@ -1,0 +1,35 @@
+{
+  "name": "admin-hono",
+  "version": "1.0.0",
+  "description": "PlazaCMS Admin API with Hono + Hyperdrive",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "hono": "^4.9.7",
+    "@hono/zod-validator": "^0.7.2",
+    "zod": "^3.23.8",
+    "postgres": "^3.4.7",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250913.0",
+    "@types/bcryptjs": "^2.4.6",
+    "wrangler": "^4.36.0",
+    "typescript": "^5.9.2"
+  },
+  "keywords": [
+    "hono",
+    "cloudflare-workers",
+    "hyperdrive",
+    "postgresql",
+    "cms",
+    "api"
+  ],
+  "author": "PlazaCMS",
+  "license": "MIT"
+}

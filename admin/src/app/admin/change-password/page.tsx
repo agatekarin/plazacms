@@ -1,10 +1,11 @@
+import { Session } from "next-auth";
 import { auth } from "../../../lib/auth";
 import { redirect } from "next/navigation";
 import ChangePasswordForm from "./ChangePasswordForm";
 
 export default async function ChangePasswordPage() {
   const session = await auth();
-  const role = session?.user && (session.user as any).role;
+  const role = (session?.user as Session["user"] & { role?: string })?.role;
   if (!session?.user || role !== "admin") {
     redirect("/signin");
   }

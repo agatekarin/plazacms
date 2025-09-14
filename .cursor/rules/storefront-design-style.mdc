@@ -1,0 +1,119 @@
+---
+alwaysApply: true
+---
+
+## 📐 **Store Design Rules**
+
+- cek pacakge.json dulu untuk maksimalkan penggunaan A:\dev\plazacms\store\package.json
+
+### 1️⃣ Mobile First (≤ 768px)
+
+- **Layout**:
+
+  - Gunakan **single column** (semua stack ke bawah).
+  - Compact padding: `px-3 py-2`.
+  - Gunakan **sticky bottom bar** untuk Cart/Checkout supaya user tidak perlu scroll jauh.
+
+- **Typography**:
+
+  - Title produk: `text-base` / `font-medium`.
+  - Harga: `text-sm` tapi **bold**.
+  - Deskripsi: `text-xs` (maks 2–3 line clamp).
+
+- **Component size**:
+
+  - Button full width `h-10 text-sm rounded-lg`.
+  - Input field kecil tapi jelas, `h-9 px-3 text-sm`.
+  - Card product: max 2 per row (`grid-cols-2 gap-2`).
+
+- **Navigation**:
+
+  - Bottom nav / tab bar (`fixed bottom-0 w-full bg-white shadow`).
+  - Menu compact icon + label kecil.
+
+---
+
+### 2️⃣ Desktop Friendly (≥ 1024px)
+
+- **Layout**:
+
+  - Gunakan **2 column utama**:
+
+    - Sidebar kiri (Filter, Category, Account).
+    - Content kanan (Product listing / detail).
+
+  - Gunakan `max-w-[1280px] mx-auto grid grid-cols-[250px_1fr] gap-6`.
+
+- **Typography**:
+
+  - Title produk: `text-lg`.
+  - Harga: `text-base font-semibold`.
+  - Deskripsi: `text-sm leading-relaxed`.
+
+- **Component size**:
+
+  - Button: `h-11 px-5 text-base`.
+  - Input: `h-10 px-4`.
+  - Card product: bisa 3–4 per row (`grid-cols-3 gap-4` atau `grid-cols-4`).
+
+- **Navigation**:
+
+  - Sidebar filter collapsible.
+  - Header sticky dengan search bar.
+
+---
+
+### 3️⃣ Global Design Principles
+
+- **Spacing**:
+
+  - Compact di mobile, lebih longgar di desktop.
+  - Gunakan `gap-2` di mobile, `gap-4` di desktop.
+
+- **Color & Theme**:
+
+  - Minimalis: putih/abu, aksen 1 warna utama (misal biru/hijau).
+  - Gunakan `text-gray-800` untuk readability.
+
+- **Images**:
+
+  - Mobile: square ratio (`aspect-square`).
+  - Desktop: bebas (`aspect-[4/5]` untuk detail produk).
+  - Gunakan lazy loading.
+
+- **Cart & Checkout**:
+
+  - Mobile: tampilkan **drawer/sidebar** untuk cart.
+  - Desktop: bisa sidebar tetap (sticky cart).
+
+- **Reduce scroll di mobile**:
+
+  - Gunakan accordion untuk shipping/payment.
+  - Gunakan stepper checkout (progress bar atas).
+  - Shorten forms → auto fill, saved address.
+
+---
+
+### 4️⃣ Example Layout Flow
+
+- **Mobile Product Page**:
+
+  - Image gallery (swipe).
+  - Title + harga.
+  - Variant selector (dropdown/compact buttons).
+  - Sticky Add to Cart button di bawah.
+
+- **Desktop Product Page**:
+
+  - Left: product images (gallery/zoom).
+  - Right: title, harga, variants, add-to-cart.
+  - Bottom: description, reviews, recommendation.
+
+---
+
+⚡ Intinya:
+
+- **Mobile** = compact, ringkas, hemat scroll.
+- **Desktop** = lebih lega, pakai 2 kolom, tetap clean modern commerce.
+
+---

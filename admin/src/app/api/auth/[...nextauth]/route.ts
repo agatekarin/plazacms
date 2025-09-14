@@ -1,7 +1,6 @@
-import { handlers } from "../../../../lib/auth";
+import NextAuth from "next-auth";
+import { authOptions } from "@/lib/auth";
 
-// Ensure Node.js runtime (pg adapter requires Node, not Edge)
-export const runtime = "nodejs";
+const handler = NextAuth(authOptions);
 
-// Expose NextAuth route handlers
-export const { GET, POST } = handlers; 
+export { handler as GET, handler as POST };
