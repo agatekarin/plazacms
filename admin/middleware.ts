@@ -1,27 +1,8 @@
-import { withAuth } from 'next-auth/middleware';
-import { NextRequest } from 'next/server';
+export { auth as middleware } from "./src/lib/auth";
 
-export default withAuth(
-  // `withAuth` augments your `Request` with the user's token.
-
-  {
-    pages: {
-      signIn: '/signin',
-    },
-    callbacks: {
-      authorized: ({ token, req }) => {
-        const isOnAdmin = req.nextUrl.pathname.startsWith('/admin');
-        const isLoggedIn = !!token;
-
-        if (isOnAdmin) {
-          return isLoggedIn && token?.role === 'admin';
-        }
-        return true;
-      },
-    },
-  }
-);
-
+// Protect everything except these paths
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|.*\.png$).*)'],
+  matcher: [
+    "/((?!api/auth|_next|favicon.ico|signin|public|assets).*)",
+  ],
 };

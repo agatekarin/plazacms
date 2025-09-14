@@ -1,16 +1,4 @@
-import type { GetServerSidePropsContext, NextApiRequest, NextApiResponse } from "next";
-
-interface DbUser {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  image: string;
-  password_hash: string;
-}
-import { type Session, type User, getServerSession } from "next-auth";
-import type { NextAuthOptions } from "next-auth";
-import { type JWT } from "next-auth/jwt";
+import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { pool } from "./db";
@@ -22,13 +10,10 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const authOptions: NextAuthOptions = {
-  secret: process.env.NEXTAUTH_SECRET,
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: process.env.AUTH_SECRET,
   session: {
     strategy: "jwt",
-  },
-  pages: {
-    signIn: "/signin",
   },
   providers: [
     Credentials({
@@ -37,7 +22,7 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async (credentials: Record<"email" | "password", string> | undefined, req: any): Promise<User | null> => {
+      authorize: async (credentials) => {
         const email =
           typeof credentials?.email === "string"
             ? credentials.email
@@ -49,11 +34,11 @@ export const authOptions: NextAuthOptions = {
         if (!email || !password) return null;
 
         // Fetch user by email
-        const { rows } = await pool.query<DbUser>(
+        const { rows } = await pool.query(
           "SELECT id, name, email, role, image, password_hash FROM public.users WHERE email = $1 LIMIT 1",
           [email]
         );
-        const user: DbUser | undefined = rows[0];
+        const user = rows[0];
         if (!user) return null;
 
         // Verify password
@@ -74,34 +59,42 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           image: user.image,
           role: user.role,
-        } as User;
+        } as any;
       },
     }),
   ],
   callbacks: {
     // Persist role on the JWT and session
-    async jwt({ token, user }: { token: JWT; user: User }): Promise<JWT> {
+    async jwt({ token, user }) {
       if (user) {
-        token.role = user.role;
+        token.role = (user as any).role;
         token.id = user.id;
       }
       return token;
     },
-    async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
+    async session({ session, token }) {
       session.user.role = token.role as string | undefined;
       session.user.id = token.id!;
       return session;
     },
+    // Middleware authorization: only admin for protected paths
+    authorized({ auth, request }) {
+      const { pathname } = request.nextUrl;
+      // Public paths
+      const publicPaths = [
+        "/signin",
+        "/api/auth",
+        "/_next/",
+        "/favicon.ico",
+        "/assets",
+        "/admin/signin",
+        "/admin",
+      ];
+      if (publicPaths.some((p) => pathname.startsWith(p))) return true;
+
+      // Admin-only by default
+      const user = auth?.user as any | undefined;
+      return !!user && user.role === "admin";
+    },
   },
-};
-
-
-
-export function auth(
-  ...args:
-    | [GetServerSidePropsContext["req"], GetServerSidePropsContext["res"]]
-    | [NextApiRequest, NextApiResponse]
-    | []
-) {
-  return getServerSession(...args, authOptions);
-}
+});
