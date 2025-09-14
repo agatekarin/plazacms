@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { jwtVerify } from 'jose/jwt';
+import { jwtVerify } from 'jose';
 import { authConfig } from './src/lib/auth.config';
 
 const AUTH_SECRET = process.env.AUTH_SECRET;
