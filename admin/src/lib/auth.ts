@@ -1,7 +1,5 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import { pool } from "./db";
 
 // Ensure DATABASE_URL is set (pool is created in ./db)
 if (!process.env.DATABASE_URL) {
@@ -23,6 +21,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       authorize: async (credentials) => {
+        // Lazy-load Node-only dependencies to keep this module Edge-safe when imported by middleware
+        const [{ pool }, bcryptModule] = await Promise.all([
+          import("./db"),
+          import("bcryptjs"),
+        ]);
+        const bcrypt = (bcryptModule as any).default || (bcryptModule as any);
+
         const email =
           typeof credentials?.email === "string"
             ? credentials.email
