@@ -1,7 +1,7 @@
 import { Session } from "next-auth";
 import { auth } from "../../lib/auth";
 import { redirect } from "next/navigation";
-import { SessionProvider } from "next-auth/react";
+import SessionProviderWrapper from "../../components/auth/SessionProviderWrapper";
 import ModernAdminLayout from "../../components/ModernAdminLayout";
 
 export default async function AdminLayout({
@@ -17,8 +17,8 @@ export default async function AdminLayout({
   }
 
   return (
-    <SessionProvider session={session}>
+    <SessionProviderWrapper session={session}>
       <ModernAdminLayout>{children}</ModernAdminLayout>
-    </SessionProvider>
+    </SessionProviderWrapper>
   );
 }
