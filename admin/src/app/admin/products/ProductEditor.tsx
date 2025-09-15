@@ -162,12 +162,20 @@ function Field({
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  const { value, onChange, className, ...rest } = props;
+  const hasOnChange = typeof onChange === "function";
+  const hasValue = value !== undefined && value !== null;
   return (
     <input
-      {...props}
+      {...rest}
+      {...(hasOnChange
+        ? { value: String((value as any) ?? ""), onChange }
+        : hasValue
+        ? { defaultValue: String((value as any) ?? "") }
+        : {})}
       className={[
         "h-10 rounded-lg border border-gray-300 px-4 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10",
-        props.className,
+        className,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -176,12 +184,20 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 }
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const { value, onChange, className, ...rest } = props;
+  const hasOnChange = typeof onChange === "function";
+  const hasValue = value !== undefined && value !== null;
   return (
     <textarea
-      {...props}
+      {...rest}
+      {...(hasOnChange
+        ? { value: String((value as any) ?? ""), onChange }
+        : hasValue
+        ? { defaultValue: String((value as any) ?? "") }
+        : {})}
       className={[
         "min-h-[120px] rounded-lg border border-gray-300 p-4 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none",
-        props.className,
+        className,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -190,12 +206,20 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
 }
 
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const { value, onChange, className, ...rest } = props;
+  const hasOnChange = typeof onChange === "function";
+  const hasValue = value !== undefined && value !== null;
   return (
     <select
-      {...props}
+      {...rest}
+      {...(hasOnChange
+        ? { value: String((value as any) ?? ""), onChange }
+        : hasValue
+        ? { defaultValue: String((value as any) ?? "") }
+        : {})}
       className={[
         "h-10 rounded-lg border border-gray-300 px-4 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10",
-        props.className,
+        className,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -351,6 +375,45 @@ export default function ProductEditor({
   const [productId, setProductId] = useState<string | null>(
     initialProduct?.id || null
   );
+
+  // Sync productId when initialProduct prop becomes available (e.g., edit page after fetch)
+  useEffect(() => {
+    if (initialProduct?.id) setProductId(initialProduct.id);
+  }, [initialProduct?.id]);
+
+  // Hydrate form and productType when initialProduct changes (edit page)
+  useEffect(() => {
+    if (!initialProduct) return;
+    setForm({
+      name: initialProduct.name || "",
+      slug: initialProduct.slug || "",
+      description: initialProduct.description || "",
+      regular_price:
+        initialProduct.regular_price !== undefined && initialProduct.regular_price !== null
+          ? String(initialProduct.regular_price)
+          : "",
+      currency: initialProduct.currency || "USD",
+      stock: String(initialProduct.stock ?? 0),
+      category_id: initialProduct.category_id || "",
+      status: (initialProduct.status as string) || "draft",
+      sku: initialProduct.sku || "",
+      weight: String(initialProduct.weight ?? 0),
+      sale_price:
+        initialProduct.sale_price !== undefined && initialProduct.sale_price !== null
+          ? Number(initialProduct.sale_price)
+          : null,
+      sale_start_date: initialProduct.sale_start_date
+        ? toLocalDateTime(initialProduct.sale_start_date)
+        : "",
+      sale_end_date: initialProduct.sale_end_date
+        ? toLocalDateTime(initialProduct.sale_end_date)
+        : "",
+      tax_class_id: initialProduct.tax_class_id || "",
+    });
+    if (initialProduct.product_type === "variable" || initialProduct.product_type === "simple") {
+      setProductType(initialProduct.product_type);
+    }
+  }, [initialProduct]);
 
   // Variants support
   const [attributes, setAttributes] = useState<Attribute[]>([]);
@@ -586,6 +649,8 @@ export default function ProductEditor({
 
   async function ensureDraftProduct(): Promise<string | null> {
     if (productId) return productId;
+    // In edit mode, never auto-create a draft if the product hasn't loaded yet
+    if (mode === "edit") return null;
     try {
       const payload = {
         name: form.name.trim() || "Untitled product",
@@ -688,6 +753,11 @@ export default function ProductEditor({
             toast.success("Product updated");
             router.refresh();
           } else {
+            // If we're in edit mode but product hasn't loaded yet, block accidental create
+            if (mode === "edit") {
+              toast.error("Product belum siap, tunggu sampai data terload");
+              return;
+            }
             const res = await fetch("/api/admin/products", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -738,6 +808,28 @@ export default function ProductEditor({
   }
   async function applyBulkVariants() {
     if (!productId || !bulkAction || selectedIds.size === 0) return;
+    // Handle bulk delete separately by calling DELETE per-variant
+    if (bulkAction === "delete_selected") {
+      if (!confirm(`Delete ${selectedIds.size} selected variant(s)? This action cannot be undone.`)) return;
+      try {
+        await Promise.all(
+          Array.from(selectedIds).map((id) =>
+            fetch(`/api/admin/products/${productId}/variants/${id}`, {
+              method: "DELETE",
+            })
+          )
+        );
+        toast.success(`${selectedIds.size} variant${selectedIds.size > 1 ? "s" : ""} deleted`);
+        setSelectedIds(new Set());
+        setBulkAction("");
+        setBulkValue("");
+        setBulkPercent("");
+        await loadVariants();
+      } catch (err) {
+        toast.error("Bulk delete failed");
+      }
+      return;
+    }
     const body: Record<string, unknown> = {
       // Using Record<string, unknown> for flexibility in bulk actions
       // Using Record<string, any> for flexibility in bulk actions
@@ -1741,6 +1833,7 @@ export default function ProductEditor({
                             className="min-w-[160px]"
                           >
                             <option value="">Bulk Actions...</option>
+                            <option value="delete_selected">Delete Selected</option>
                             <option value="set_regular_prices">
                               Set Regular Prices
                             </option>

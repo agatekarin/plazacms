@@ -2,6 +2,32 @@ import { NextResponse } from "next/server";
 import { auth } from "../../../../../lib/auth";
 import { pool } from "../../../../../lib/db";
 
+// GET /api/admin/products/[id] -> fetch single product with computed product_type
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  const role = session?.user && (session.user as any).role;
+  if (!session?.user || role !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+  const sql = `
+    SELECT p.id, p.name, p.slug, p.description, p.regular_price, p.currency, p.stock, p.category_id, p.status, p.sku,
+           (p.weight::int) AS weight, p.sale_price, p.sale_start_date, p.sale_end_date, p.tax_class_id, p.featured_image_id,
+           CASE WHEN COUNT(pv.id) > 0 THEN 'variable' ELSE 'simple' END as product_type
+      FROM public.products p
+      LEFT JOIN public.product_variants pv ON pv.product_id = p.id
+      WHERE p.id = $1
+      GROUP BY p.id, p.name, p.slug, p.description, p.regular_price, p.currency, p.stock, p.category_id, p.status, p.sku,
+               p.weight, p.sale_price, p.sale_start_date, p.sale_end_date, p.tax_class_id, p.featured_image_id
+  `;
+  const { rows } = await pool.query(sql, [id]);
+  const item = rows?.[0];
+  if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ item });
+}
+
+// PATCH name; DELETE attribute
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const role = session?.user && (session.user as any).role;

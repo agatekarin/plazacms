@@ -1,56 +1,51 @@
-import { Session } from "next-auth";
-import { Product } from "../../ProductEditor";
-import { auth } from "../../../../../lib/auth";
-import { redirect } from "next/navigation";
-import { pool } from "../../../../../lib/db";
-import ProductEditor from "../../ProductEditor";
-import { getActiveTaxClasses } from "../../../../../lib/tax-classes";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { useEffect, useState } from "react";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
+import ProductEditor, { Product } from "../../ProductEditor";
 
-export default async function EditProductPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const session = await auth();
-  const role = session?.user && (session.user as any).role;
-  if (!session?.user || role !== "admin") redirect("/signin");
+export default function EditProductPage() {
+  const { id } = useParams<{ id: string }>();
+  const sp = useSearchParams();
+  const router = useRouter();
+  const initialTab = (sp.get("tab") || undefined) as any;
 
-  const sp = await searchParams;
-  const initialTab = (typeof sp?.tab === "string" ? sp.tab : undefined) as any;
+  const [product, setProduct] = useState<Product | null>(null);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>(
+    []
+  );
+  const [taxClasses, setTaxClasses] = useState<
+    { id: string; name: string; rate: string }[]
+  >([]);
 
-  const { id } = await params;
-  if (!id) redirect("/admin/products");
-
-  const [productRes, categoriesRes, activeTaxClasses] = await Promise.all([
-    pool.query(
-      `SELECT p.id, p.name, p.slug, p.description, p.regular_price, p.currency, p.stock, p.category_id, p.status, p.sku, (p.weight::int) AS weight, p.sale_price, p.sale_start_date, p.sale_end_date, p.tax_class_id, p.featured_image_id,
-              CASE 
-                WHEN COUNT(pv.id) > 0 THEN 'variable'
-                ELSE 'simple'
-              END as product_type
-         FROM public.products p
-         LEFT JOIN public.product_variants pv ON pv.product_id = p.id
-         WHERE p.id = $1
-         GROUP BY p.id, p.name, p.slug, p.description, p.regular_price, p.currency, p.stock, p.category_id, p.status, p.sku, p.weight, p.sale_price, p.sale_start_date, p.sale_end_date, p.tax_class_id, p.featured_image_id`,
-      [id]
-    ),
-    pool.query(`SELECT id, name FROM public.categories ORDER BY name ASC`),
-    getActiveTaxClasses(200),
-  ]);
-
-  const product = productRes.rows?.[0];
-  if (!product) redirect("/admin/products");
-
-  const categories = categoriesRes.rows as { id: string; name: string }[];
-  const taxClasses = activeTaxClasses as {
-    id: string;
-    name: string;
-    rate: string;
-  }[];
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/admin/products/${id}`, { cache: "no-store" }),
+      fetch(`/api/admin/categories`, { cache: "no-store" }),
+      fetch(`/api/admin/tax-classes?active=true`, { cache: "no-store" }),
+    ])
+      .then(async ([pRes, cRes, tRes]) => {
+        if (pRes.status === 404) {
+          router.push("/admin/products");
+          return;
+        }
+        const p = await pRes.json().catch(() => ({}));
+        const c = await cRes.json().catch(() => ({}));
+        const t = await tRes.json().catch(() => ({}));
+        if (cancelled) return;
+        if (p?.item) setProduct(p.item as Product);
+        setCategories(Array.isArray(c.items) ? c.items : []);
+        setTaxClasses(Array.isArray(t.items) ? t.items : []);
+      })
+      .catch(() => {
+        if (!cancelled) router.push("/admin/products");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, router]);
 
   return (
     <div className="space-y-4">
@@ -61,7 +56,7 @@ export default async function EditProductPage({
         mode="edit"
         categories={categories}
         taxClasses={taxClasses}
-        initialProduct={product}
+        initialProduct={product || undefined}
         initialTab={initialTab}
       />
     </div>
