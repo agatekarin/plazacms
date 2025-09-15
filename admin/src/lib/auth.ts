@@ -13,6 +13,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: {
     strategy: "jwt",
   },
+  // Use custom pages within the app
+  pages: {
+    signIn: "/signin",
+    error: "/signin",
+  },
   providers: [
     Credentials({
       name: "Credentials",
@@ -100,6 +105,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Admin-only by default
       const user = auth?.user as any | undefined;
       return !!user && user.role === "admin";
+    },
+    // Redirect safety: only allow same-origin or whitelisted URLs
+    async redirect({ url, baseUrl }) {
+      try {
+        const u = new URL(url, baseUrl);
+        const allowedHosts = [new URL(baseUrl).host];
+        if (allowedHosts.includes(u.host)) return u.toString();
+        // Fallback to baseUrl for disallowed external redirects
+        return baseUrl;
+      } catch {
+        return baseUrl;
+      }
     },
   },
 });
