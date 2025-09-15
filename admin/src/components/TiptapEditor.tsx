@@ -8,7 +8,7 @@ import TiptapToolbar from "./TiptapToolbar";
 
 // Ekstensi kustom untuk mengizinkan atribut 'class' pada semua node
 import { Extension } from '@tiptap/core';
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const AllowClassAttribute = Extension.create({
   name: 'allowClassAttribute',
@@ -65,6 +65,20 @@ export default function TiptapEditor({ content, onChange }: TiptapEditorProps) {
       onChange(editor.getHTML());
     },
   });
+
+  // Keep editor content in sync when the parent passes new HTML (e.g., after fetch)
+  useEffect(() => {
+    if (!editor) return;
+    try {
+      // Only update if different to avoid cursor jumps
+      const current = editor.getHTML();
+      if ((content || "") !== (current || "")) {
+        editor.commands.setContent(content || "", { emitUpdate: false });
+      }
+    } catch {
+      // no-op
+    }
+  }, [content, editor]);
 
   const toggleViewMode = () => {
     setViewMode(prev => prev === "wysiwyg" ? "html" : "wysiwyg");

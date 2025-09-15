@@ -11,6 +11,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() || "";
   const filter = url.searchParams.get("filter") || "all"; // all | on_sale | out_of_stock | status:<value>
+  const sort = url.searchParams.get("sort") || "created_desc";
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
   const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10)));
   const offset = (page - 1) * pageSize;
@@ -36,6 +37,35 @@ export async function GET(req: Request) {
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
+  // ORDER BY mapping
+  let orderBy = "p.created_at DESC"; // default
+  switch (sort) {
+    case "created_asc":
+      orderBy = "p.created_at ASC";
+      break;
+    case "created_desc":
+      orderBy = "p.created_at DESC";
+      break;
+    case "name_asc":
+      orderBy = "p.name ASC";
+      break;
+    case "name_desc":
+      orderBy = "p.name DESC";
+      break;
+    case "price_asc":
+      orderBy = "p.regular_price ASC";
+      break;
+    case "price_desc":
+      orderBy = "p.regular_price DESC";
+      break;
+    case "stock_asc":
+      orderBy = "p.stock ASC";
+      break;
+    case "stock_desc":
+      orderBy = "p.stock DESC";
+      break;
+  }
+
   const listSql = `
     SELECT p.id, p.name, p.slug, p.sku, p.status, p.stock, p.regular_price, p.currency, p.created_at,
            c.name AS category_name, p.featured_image_id,
@@ -44,7 +74,7 @@ export async function GET(req: Request) {
       LEFT JOIN public.categories c ON c.id = p.category_id
       LEFT JOIN public.media m ON m.id = p.featured_image_id
       ${whereSql}
-      ORDER BY p.created_at DESC
+      ORDER BY ${orderBy}
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
   `;
   const countSql = `SELECT COUNT(*)::int AS count FROM public.products p ${whereSql}`;

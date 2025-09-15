@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getOrCreateSessionId } from "@/lib/session";
 
-export async function PATCH(req: Request, context: { params: { id: string } }) {
-  const { params } = await context;
+export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
   try {
     const body = await req.json();
     const { qty } = body as { qty: number };
@@ -15,7 +15,7 @@ export async function PATCH(req: Request, context: { params: { id: string } }) {
        SET quantity = $1
        FROM carts c
        WHERE ci.id = $2 AND ci.cart_id = c.id AND c.session_id = $3`,
-      [qty, params.id, sessionId]
+      [qty, id, sessionId]
     );
     return NextResponse.json({ ok: true });
   } catch {
@@ -27,17 +27,17 @@ export async function PATCH(req: Request, context: { params: { id: string } }) {
 }
 
 export async function DELETE(
-  _req: Request,
-  context: { params: { id: string } }
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
-  const { params } = await context;
+  const { id } = await context.params;
   try {
     const sessionId = await getOrCreateSessionId();
     await db.query(
       `DELETE FROM cart_items ci
        USING carts c
        WHERE ci.id = $1 AND ci.cart_id = c.id AND c.session_id = $2`,
-      [params.id, sessionId]
+      [id, sessionId]
     );
     return NextResponse.json({ ok: true });
   } catch {

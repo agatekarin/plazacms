@@ -7,11 +7,10 @@ export interface Category {
   description?: string;
   image_id?: string;
   image_url?: string;
-  image_alt?: string; // Added this line
+  image_alt?: string; 
   created_at: string;
 }
 export interface MediaItem {
-  // Redefined MediaItem locally
   id: string;
   filename: string;
   file_url: string;
@@ -25,7 +24,7 @@ export interface MediaItem {
   created_at: string;
 }
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,8 +47,11 @@ import toast from "react-hot-toast";
 export default function CategoriesManager({
   initialItems,
 }: {
-  initialItems: Category[];
+  initialItems?: Category[];
 }) {
+  const [items, setItems] = useState<Category[]>(
+    Array.isArray(initialItems) ? initialItems : []
+  );
   const [showModal, setShowModal] = useState<null | {
     mode: "add" | "edit";
     id?: string;
@@ -59,6 +61,20 @@ export default function CategoriesManager({
     image_id?: string;
     image_url?: string;
   }>(null);
+
+  async function reload() {
+    try {
+      const res = await fetch("/api/admin/categories", { cache: "no-store" });
+      const d = await res.json();
+      setItems(Array.isArray(d.items) ? (d.items as Category[]) : []);
+    } catch (e) {
+      setItems([]);
+    }
+  }
+
+  useEffect(() => {
+    if (!initialItems) void reload();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -88,7 +104,7 @@ export default function CategoriesManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {initialItems.length === 0 ? (
+              {items.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
@@ -106,7 +122,7 @@ export default function CategoriesManager({
                   </td>
                 </tr>
               ) : (
-                initialItems.map((c: Category) => (
+                items.map((c: Category) => (
                   <tr
                     key={c.id}
                     className="hover:bg-gray-50/50 transition-colors"
@@ -191,7 +207,7 @@ export default function CategoriesManager({
                         >
                           <Edit3 className="h-4 w-4" />
                         </Button>
-                        <DeleteCategoryButton id={c.id} />
+                        <DeleteCategoryButton id={c.id} onDeleted={reload} />
                       </div>
                     </Td>
                   </tr>
@@ -218,7 +234,10 @@ export default function CategoriesManager({
             description={showModal.description || ""}
             image_id={showModal.image_id}
             image_url={showModal.image_url}
-            onDone={() => setShowModal(null)}
+            onDone={() => {
+              setShowModal(null);
+              void reload();
+            }}
           />
         </Modal>
       )}
@@ -305,7 +324,6 @@ function CategoryForm({
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
-  // Auto-generate slug from name
   const handleNameChange = (value: string) => {
     setNameVal(value);
     if (mode === "add") {
@@ -317,7 +335,6 @@ function CategoryForm({
     }
   };
 
-  // Handle media selection
   const handleMediaSelect = (media: MediaItem[]) => {
     if (media.length > 0) {
       const selectedMedia = media[0];
@@ -327,7 +344,6 @@ function CategoryForm({
     setShowMediaPicker(false);
   };
 
-  // Remove image
   const removeImage = () => {
     setImageIdVal(undefined);
     setImageUrlVal(undefined);
@@ -492,7 +508,7 @@ function CategoryForm({
   );
 }
 
-function DeleteCategoryButton({ id }: { id: string }) {
+function DeleteCategoryButton({ id, onDeleted }: { id: string; onDeleted?: () => void }) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -509,7 +525,9 @@ function DeleteCategoryButton({ id }: { id: string }) {
           const res = await fetch(`/api/admin/categories/${id}`, {
             method: "DELETE",
           });
-          if (res.ok) router.refresh();
+          if (res.ok) {
+            if (onDeleted) onDeleted();
+          }
           else {
             const j = await res.json().catch(() => ({}));
             toast.error(j.error || "Failed to delete category");

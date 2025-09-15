@@ -10,7 +10,11 @@ export async function GET() {
   if (!session?.user || role !== "admin")
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { rows } = await pool.query(
-    "SELECT id, name, slug, description, image_id, created_at FROM public.categories ORDER BY created_at DESC"
+    `SELECT c.id, c.name, c.slug, c.description, c.image_id, c.created_at,
+            m.file_url as image_url, m.alt_text as image_alt
+       FROM public.categories c
+       LEFT JOIN public.media m ON c.image_id = m.id
+       ORDER BY c.created_at DESC`
   );
   return NextResponse.json({ items: rows });
 }

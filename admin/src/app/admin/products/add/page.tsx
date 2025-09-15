@@ -1,35 +1,38 @@
-import { Session } from "next-auth";
-import { auth } from "../../../../lib/auth";
-import { redirect } from "next/navigation";
-import { pool } from "../../../../lib/db";
+"use client";
+
+import { useEffect, useState } from "react";
 import ProductEditor from "../ProductEditor";
-import { getActiveTaxClasses } from "../../../../lib/tax-classes";
 
-export const dynamic = "force-dynamic";
+export default function AddProductPage() {
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>(
+    []
+  );
+  const [taxClasses, setTaxClasses] = useState<
+    { id: string; name: string; rate: string }[]
+  >([]);
 
-export default async function AddProductPage() {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") redirect("/signin");
-
-  let categories: { id: string; name: string }[] = [];
-  let taxClasses: { id: string; name: string; rate: string }[] = [];
-  try {
-    const [categoriesRes, activeTaxClasses] = await Promise.all([
-      pool.query(`SELECT id, name FROM public.categories ORDER BY name ASC`),
-      getActiveTaxClasses(200),
-    ]);
-    categories = categoriesRes.rows as { id: string; name: string }[];
-    taxClasses = activeTaxClasses as {
-      id: string;
-      name: string;
-      rate: string;
-    }[];
-  } catch (e) {
-    // Fallback to empty lists if DB is unavailable during local dev
-    categories = [];
-    taxClasses = [];
-  }
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/admin/categories`, { cache: "no-store" }),
+      fetch(`/api/admin/tax-classes?active=true`, { cache: "no-store" }),
+    ])
+      .then(async ([cRes, tRes]) => {
+        const c = await cRes.json().catch(() => ({}));
+        const t = await tRes.json().catch(() => ({}));
+        if (cancelled) return;
+        setCategories(Array.isArray(c.items) ? c.items : []);
+        setTaxClasses(Array.isArray(t.items) ? t.items : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCategories([]);
+        setTaxClasses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="space-y-4">

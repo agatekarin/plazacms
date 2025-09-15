@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,16 @@ import toast from "react-hot-toast";
 export default function AttributesManager({
   initialItems,
 }: {
-  initialItems: {
+  initialItems?: {
     id: string;
     name: string;
     values: { id: string; value: string }[];
   }[];
 }) {
   const router = useRouter();
+  const [items, setItems] = useState(
+    Array.isArray(initialItems) ? initialItems : []
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAttrModal, setShowAttrModal] = useState<null | {
     mode: "add" | "edit";
@@ -31,7 +34,22 @@ export default function AttributesManager({
     valueId?: string;
     value?: string;
   }>(null);
-  const items = initialItems;
+
+  async function reload() {
+    try {
+      const res = await fetch("/api/admin/attributes", { cache: "no-store" });
+      const d = await res.json();
+      setItems(Array.isArray(d.items) ? d.items : []);
+    } catch (e) {
+      setItems([]);
+    }
+  }
+
+  useEffect(() => {
+    if (!initialItems) {
+      void reload();
+    }
+  }, []);
 
   const selectedAttr = useMemo(
     () => items.find((i) => i.id === selectedId) || null,
@@ -138,8 +156,10 @@ export default function AttributesManager({
                             `/api/admin/attributes/${a.id}`,
                             { method: "DELETE" }
                           );
-                          if (res.ok) router.refresh();
-                          else {
+                          if (res.ok) {
+                            if (selectedId === a.id) setSelectedId(null);
+                            await reload();
+                          } else {
                             const j = await res.json().catch(() => ({}));
                             toast.error(
                               j.error || "Failed to delete attribute"
@@ -255,8 +275,9 @@ export default function AttributesManager({
                                 method: "DELETE",
                               }
                             );
-                            if (res.ok) router.refresh();
-                            else {
+                            if (res.ok) {
+                              await reload();
+                            } else {
                               const j = await res.json().catch(() => ({}));
                               toast.error(j.error || "Failed to delete value");
                             }
@@ -291,7 +312,7 @@ export default function AttributesManager({
             name={showAttrModal.name || ""}
             onDone={() => {
               setShowAttrModal(null);
-              router.refresh();
+              void reload();
             }}
           />
         </Modal>
@@ -308,7 +329,7 @@ export default function AttributesManager({
             value={showValueModal.value || ""}
             onDone={() => {
               setShowValueModal(null);
-              router.refresh();
+              void reload();
             }}
           />
         </Modal>
