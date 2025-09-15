@@ -92,9 +92,18 @@ export default function ProductsPage() {
     <div className="space-y-6">
       <ProductsHeader />
 
+      {loading && (
+        <div className="text-xs text-gray-500 px-1">Loading products...</div>
+      )}
+
       <ProductsToolbar total={total} />
 
-      <ProductsTable products={rows} categories={categories} taxClasses={taxClasses} />
+      <ProductsTable 
+        products={rows} 
+        categories={categories} 
+        taxClasses={taxClasses} 
+        loading={loading} 
+      />
 
       {/* Pagination */}
       <div className="flex items-center justify-between">
@@ -105,7 +114,9 @@ export default function ProductsPage() {
           {page > 1 && (
             <Link
               href={`?page=${page - 1}`}
-              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className={`px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 ${
+                loading ? "pointer-events-none opacity-60" : ""
+              }`}
             >
               Previous
             </Link>
@@ -121,7 +132,7 @@ export default function ProductsPage() {
                   pageNum === page
                     ? "text-blue-600 bg-blue-50 border border-blue-300"
                     : "text-gray-500 bg-white border border-gray-300 hover:bg-gray-50"
-                }`}
+                } ${loading ? "pointer-events-none opacity-60" : ""}`}
               >
                 {pageNum}
               </Link>
@@ -130,7 +141,9 @@ export default function ProductsPage() {
           {page < totalPages && (
             <Link
               href={`?page=${page + 1}`}
-              className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className={`px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 ${
+                loading ? "pointer-events-none opacity-60" : ""
+              }`}
             >
               Next
             </Link>

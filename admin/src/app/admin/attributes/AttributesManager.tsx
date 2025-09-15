@@ -22,6 +22,7 @@ export default function AttributesManager({
   const [items, setItems] = useState(
     Array.isArray(initialItems) ? initialItems : []
   );
+  const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAttrModal, setShowAttrModal] = useState<null | {
     mode: "add" | "edit";
@@ -36,12 +37,15 @@ export default function AttributesManager({
   }>(null);
 
   async function reload() {
+    setLoading(true);
     try {
       const res = await fetch("/api/admin/attributes", { cache: "no-store" });
       const d = await res.json();
       setItems(Array.isArray(d.items) ? d.items : []);
     } catch (e) {
       setItems([]);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -68,14 +72,24 @@ export default function AttributesManager({
               size="sm"
               onClick={() => setShowAttrModal({ mode: "add" })}
               className="flex items-center gap-2"
+              disabled={loading}
             >
               <Plus className="h-4 w-4" />
               Add
             </Button>
           </div>
 
+          {loading && (
+            <div className="mb-3 text-xs text-gray-500">Loading attributes...</div>
+          )}
+
           <div className="space-y-2">
-            {items.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-8 text-gray-500">
+                <Settings2 className="h-8 w-8 mx-auto mb-2 text-gray-400 animate-pulse" />
+                <p className="text-sm">Loading...</p>
+              </div>
+            ) : items.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Settings2 className="h-8 w-8 mx-auto mb-2 text-gray-400" />
                 <p className="text-sm">No attributes yet</p>
@@ -128,6 +142,7 @@ export default function AttributesManager({
                         variant="outline"
                         size="sm"
                         className="p-2"
+                        disabled={loading}
                         onClick={(e) => {
                           e.stopPropagation();
                           setShowAttrModal({
@@ -144,6 +159,7 @@ export default function AttributesManager({
                         variant="outline"
                         size="sm"
                         className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        disabled={loading}
                         onClick={async (e) => {
                           e.stopPropagation();
                           if (
@@ -212,6 +228,7 @@ export default function AttributesManager({
                     })
                   }
                   className="flex items-center gap-2"
+                  disabled={loading}
                 >
                   <Plus className="h-4 w-4" />
                   Add Value

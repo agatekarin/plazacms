@@ -28,6 +28,7 @@ interface ProductsTableProps {
   products: Product[];
   categories: { id: string; name: string }[]; // Redefined CategoryOption
   taxClasses: { id: string; name: string; rate: string }[]; // Redefined TaxClassOption
+  loading?: boolean;
 }
 
 function Th({
@@ -64,6 +65,7 @@ export default function ProductsTable({
   products,
   categories,
   taxClasses,
+  loading = false,
 }: ProductsTableProps) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -126,6 +128,35 @@ export default function ProductsTable({
       setIsDeleting(false);
     }
   };
+
+  // Skeleton row component
+  const SkeletonRow = () => (
+    <tr className="animate-pulse">
+      <Td>
+        <div className="h-4 w-4 bg-gray-200 rounded"></div>
+      </Td>
+      <Td>
+        <div className="flex items-center space-x-3">
+          <div className="h-10 w-10 bg-gray-200 rounded-md"></div>
+          <div className="space-y-2">
+            <div className="h-4 bg-gray-200 rounded w-32"></div>
+            <div className="h-3 bg-gray-100 rounded w-24"></div>
+          </div>
+        </div>
+      </Td>
+      <Td><div className="h-4 bg-gray-200 rounded w-20"></div></Td>
+      <Td><div className="h-6 bg-gray-200 rounded-full w-20"></div></Td>
+      <Td><div className="h-6 bg-gray-200 rounded-full w-16"></div></Td>
+      <Td><div className="h-4 bg-gray-200 rounded w-16"></div></Td>
+      <Td><div className="h-4 bg-gray-200 rounded w-24"></div></Td>
+      <Td><div className="h-4 bg-gray-200 rounded w-20"></div></Td>
+      <Td>
+        <div className="flex space-x-2">
+          <div className="h-8 w-8 bg-gray-200 rounded-md"></div>
+        </div>
+      </Td>
+    </tr>
+  );
 
   return (
     <div className="space-y-4">
@@ -191,7 +222,11 @@ export default function ProductsTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {products.length === 0 ? (
+              {loading ? (
+                // Show skeleton loaders when loading
+                Array(5).fill(0).map((_, i) => <SkeletonRow key={`skeleton-${i}`} />)
+              ) : products.length === 0 ? (
+                // Show empty state when no products
                 <tr>
                   <td
                     colSpan={9}
