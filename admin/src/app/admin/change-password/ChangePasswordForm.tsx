@@ -103,7 +103,7 @@ export default function ChangePasswordForm() {
             {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
         </div>
-        <p className="mt-1 text-xs text-slate-500">Use a strong password you don't use elsewhere.</p>
+        <p className="mt-1 text-xs text-slate-500">Use a strong password you don&apos;t use elsewhere.</p>
       </div>
 
       <button
