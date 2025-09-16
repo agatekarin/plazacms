@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { useRouter } from "next/navigation";
 import {
   PencilIcon,
@@ -84,19 +85,12 @@ export default function OrderDetail({ orderId }: OrderDetailProps) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const { apiCallJson } = useAuthenticatedFetch();
 
   const fetchOrder = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/orders/${orderId}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch order");
-      }
-
-      const data = await response.json();
+      const data = await apiCallJson(`/api/admin/orders/${orderId}`);
       setOrder(data.order);
       setError("");
     } catch (err) {

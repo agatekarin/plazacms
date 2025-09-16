@@ -1,6 +1,8 @@
+"use client";
+
 import UserEditor, { AddressRow, UserRow } from "../UserEditor";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 function useUser(id: string) {
   const { apiCallJson } = useAuthenticatedFetch();
@@ -27,8 +29,12 @@ function useUser(id: string) {
   return { item, addresses };
 }
 
-export default function UserEditorPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function UserEditorPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = React.use(params);
   const data = useUser(id);
   return (
     <UserEditor

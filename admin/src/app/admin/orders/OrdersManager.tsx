@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { useRouter } from "next/navigation";
 import {
   MagnifyingGlassIcon,
@@ -77,6 +78,7 @@ export default function OrdersManager({
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   const fetchOrders = async () => {
     try {
@@ -91,15 +93,7 @@ export default function OrdersManager({
       if (paymentStatusFilter)
         params.append("payment_status", paymentStatusFilter);
 
-      const response = await fetch(`/api/admin/orders?${params}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch orders");
-      }
-
-      const data = await response.json();
+      const data = await apiCallJson(`/api/admin/orders?${params}`);
       setOrders(data.items || []);
       setTotal(data.total || 0);
       setError("");
@@ -140,10 +134,9 @@ export default function OrdersManager({
     }
 
     try {
-      const response = await fetch(`/api/admin/orders/${orderId}`, {
+      const response = await apiCall(`/api/admin/orders/${orderId}`, {
         method: "DELETE",
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to delete order");

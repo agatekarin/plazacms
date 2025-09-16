@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import PaymentsManager, { PaymentGatewayRow } from "./PaymentsManager";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 export const dynamic = "force-dynamic";
 
@@ -10,28 +11,16 @@ export default function PaymentsSettingsPage() {
   );
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState<boolean>(true);
+  const { apiCallJson } = useAuthenticatedFetch();
 
   React.useEffect(() => {
     let cancelled = false;
     const fetchGateways = async () => {
       try {
         setLoading(true);
-        const res = await fetch("/api/admin/payments/gateways", {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) {
-          if (res.status === 401) {
-            window.location.href = "/signin";
-            return;
-          }
-          const data = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(data?.error || "Failed to load gateways");
-        }
-        const data = (await res.json()) as { items: PaymentGatewayRow[] };
+        const data = (await apiCallJson("/api/admin/payments/gateways")) as {
+          items: PaymentGatewayRow[];
+        };
         if (!cancelled) setGateways(data.items);
       } catch (e) {
         if (!cancelled)

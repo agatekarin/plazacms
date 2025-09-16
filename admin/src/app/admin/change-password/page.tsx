@@ -1,20 +1,34 @@
-import { Session } from "next-auth";
-import { auth } from "../../../lib/auth";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect } from "react";
+import { useSession } from "@hono/auth-js/react";
+import { useRouter } from "next/navigation";
 import ChangePasswordForm from "./ChangePasswordForm";
 
-export default async function ChangePasswordPage() {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") {
-    redirect("/signin");
-  }
+export default function ChangePasswordPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  useEffect(() => {
+    if (status === "loading") return;
+    const role = (session?.user as any)?.role;
+    if (!session?.user || role !== "admin") {
+      const cb =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/admin/change-password`
+          : "/admin";
+      window.location.href = `/api/authjs/signin?callbackUrl=${encodeURIComponent(
+        cb
+      )}`;
+    }
+  }, [status, session]);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
       <div className="mx-auto max-w-2xl px-6 py-16">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Change Password</h1>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+            Change Password
+          </h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
             Enter your current password and choose a new one (min 8 characters).
           </p>

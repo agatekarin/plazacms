@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import MediaPicker, { MediaItem } from "@/components/MediaPicker";
 import toast from "react-hot-toast";
 import {
@@ -96,6 +96,26 @@ export default function UserEditor({
   const [newPassword, setNewPassword] = useState("");
   const isNew = !initialUser?.id;
   const { apiCall, apiCallJson } = useAuthenticatedFetch();
+
+  // Sync local state when props are loaded asynchronously
+  useEffect(() => {
+    if (initialUser) {
+      setUser({
+        id: initialUser.id,
+        name: initialUser.name,
+        email: initialUser.email,
+        role: initialUser.role,
+        image: initialUser.image,
+        created_at: initialUser.created_at,
+      } as UserRow);
+    }
+  }, [initialUser]);
+
+  useEffect(() => {
+    if (initialAddresses) {
+      setAddresses(initialAddresses);
+    }
+  }, [initialAddresses]);
 
   const canSave = useMemo(() => !!user.email.trim(), [user.email]);
 

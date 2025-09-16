@@ -26,6 +26,8 @@ import mediaBulkRoutes from "./routes/media-bulk";
 import settingsGeneralRoutes from "./routes/settings-general";
 import changePasswordRoutes from "./routes/change-password";
 import usersRoutes from "./routes/users";
+import ordersRoutes from "./routes/orders";
+import paymentsRoutes from "./routes/payments";
 
 // Create main app
 const app = new Hono<{ Bindings: Env; Variables: { user: any } }>();
@@ -72,7 +74,7 @@ app.use(
 
           const sql = getDb(c as any);
           const users = await sql`
-            SELECT id, email, name, password_hash, role
+            SELECT id, email, name, image, password_hash, role
             FROM public.users
             WHERE email = ${email}
             LIMIT 1
@@ -103,6 +105,7 @@ app.use(
             name: user.name,
             email: user.email,
             role: user.role,
+            image: user.image ?? null,
             accessToken: token,
           } as any;
         },
@@ -113,6 +116,9 @@ app.use(
         if (user) {
           token.role = (user as any).role;
           token.id = (user as any).id;
+          if ((user as any).image !== undefined) {
+            (token as any).image = (user as any).image;
+          }
           if ((user as any).accessToken) {
             (token as any).accessToken = (user as any).accessToken as string;
           }
@@ -123,6 +129,10 @@ app.use(
         (session as any).user = (session as any).user || {};
         (session as any).user.role = token.role as string | undefined;
         (session as any).user.id = token.id as string | undefined;
+        (session as any).user.image = (token as any).image as
+          | string
+          | null
+          | undefined;
         (session as any).accessToken = (token as any).accessToken as
           | string
           | undefined;
@@ -168,6 +178,8 @@ app.route("/api/admin/media/bulk", mediaBulkRoutes);
 app.route("/api/admin/media", mediaRoutes);
 app.route("/api/admin/settings/general", settingsGeneralRoutes);
 app.route("/api/admin/users", usersRoutes);
+app.route("/api/admin/orders", ordersRoutes);
+app.route("/api/admin/payments", paymentsRoutes);
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler

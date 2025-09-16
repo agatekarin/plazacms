@@ -1,9 +1,12 @@
+"use client";
+
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { Plus, Search, User2, Edit3, Trash2 } from "lucide-react";
 import ConfirmDeleteForm from "./ConfirmDeleteForm";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 type UserListRow = {
@@ -39,12 +42,9 @@ function useUsers(q: string) {
   return { items, loading };
 }
 
-export default function UsersPage({
-  searchParams,
-}: {
-  searchParams?: { q?: string };
-}) {
-  const q = (searchParams?.q as string) || "";
+export default function UsersPage() {
+  const sp = useSearchParams();
+  const q = sp.get("q") || "";
   const { items, loading } = useUsers(q);
   return (
     <div className="mx-auto max-w-7xl space-y-6">

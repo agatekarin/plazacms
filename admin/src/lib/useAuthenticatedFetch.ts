@@ -19,6 +19,14 @@ export function useAuthenticatedFetch(
   const { data: session } = useSession();
   const [isLoading, setIsLoading] = useState(false);
 
+  // Cache last known token to avoid race on initial hydration
+  const lastTokenRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if ((session as any)?.accessToken) {
+      lastTokenRef.current = (session as any).accessToken as string;
+    }
+  }, [session]);
+
   // Create stable references for interceptors to prevent infinite re-renders
   const onRequestRef = useRef(hookOptions.onRequest);
   const onResponseRef = useRef(hookOptions.onResponse);
@@ -52,10 +60,25 @@ export function useAuthenticatedFetch(
         ...((options.headers as Record<string, string>) || {}),
       };
 
-      // Add Authorization header if session exists
-      if (session?.accessToken) {
-        headers.Authorization = `Bearer ${session.accessToken}`;
+      // Ensure we have a token even on first hydration
+      let token: string | undefined = (session as any)?.accessToken as
+        | string
+        | undefined;
+      if (!token) token = lastTokenRef.current;
+      if (!token) {
+        try {
+          const sRes = await fetch("/api/authjs/session", {
+            credentials: "include",
+            headers: { Accept: "application/json" },
+          });
+          const s = await sRes.json().catch(() => ({} as any));
+          if (s?.accessToken) {
+            token = s.accessToken as string;
+            lastTokenRef.current = token;
+          }
+        } catch {}
       }
+      if (token) headers.Authorization = `Bearer ${token}`;
 
       // Request interceptor
       memoizedHookOptions.onRequest?.(fullUrl, { ...options, headers });
