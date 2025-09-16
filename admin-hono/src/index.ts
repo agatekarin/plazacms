@@ -20,6 +20,7 @@ import mediaUploadRoutes from "./routes/media-upload";
 import mediaFoldersRoutes from "./routes/media-folders";
 import mediaBulkRoutes from "./routes/media-bulk";
 import settingsGeneralRoutes from "./routes/settings-general";
+import changePasswordRoutes from "./routes/change-password";
 
 // Create main app
 const app = new Hono<{ Bindings: Env; Variables: { user: any } }>();
@@ -72,6 +73,7 @@ app.route("/api/admin/media/bulk", mediaBulkRoutes);
 // Generic media route LAST (catches remaining paths)
 app.route("/api/admin/media", mediaRoutes);
 app.route("/api/admin/settings/general", settingsGeneralRoutes);
+app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler
 app.notFound((c) => {
