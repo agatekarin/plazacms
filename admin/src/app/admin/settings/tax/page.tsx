@@ -1,7 +1,5 @@
-import { Session } from "next-auth";
-import { auth } from "../../../../lib/auth";
-import { redirect } from "next/navigation";
-import { pool } from "../../../../lib/db";
+"use client";
+import * as React from "react";
 import TaxClassesManager from "../tax-classes/TaxClassesManager";
 
 export const dynamic = "force-dynamic";
@@ -13,22 +11,57 @@ interface TaxClassRow {
   is_active: boolean;
 }
 
-export default async function TaxSettingsPage() {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") redirect("/signin");
+export default function TaxSettingsPage() {
+  const [items, setItems] = React.useState<TaxClassRow[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState<boolean>(true);
 
-  const { rows } = await pool.query<TaxClassRow>(
-    "SELECT id, name, rate, is_active FROM public.tax_classes ORDER BY name ASC"
-  );
-  const items = rows as unknown as TaxClassRow[];
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("/api/admin/tax-classes", {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          if (res.status === 401) {
+            window.location.href = "/signin";
+            return;
+          }
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(data?.error || "Failed to load tax classes");
+        }
+        const data = (await res.json()) as { items: TaxClassRow[] };
+        if (!cancelled) setItems(data.items);
+      } catch (e) {
+        if (!cancelled)
+          setError(
+            e instanceof Error ? e.message : "Failed to load tax classes"
+          );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) return <div className="p-4">Loading tax settings...</div>;
+  if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Tax Settings</h1>
       </div>
-      <TaxClassesManager initialItems={items} />
+      <TaxClassesManager initialItems={items ?? []} />
     </div>
   );
 }

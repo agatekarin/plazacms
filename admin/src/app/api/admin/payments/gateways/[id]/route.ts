@@ -17,7 +17,11 @@ export async function GET(
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, slug, description, is_enabled, settings, logo_media_id, created_at, updated_at FROM public.payment_gateways WHERE id = $1`,
+      `SELECT g.id, g.name, g.slug, g.description, g.is_enabled, g.settings, g.logo_media_id, g.created_at, g.updated_at,
+              m.file_url AS logo_url
+       FROM public.payment_gateways g
+       LEFT JOIN public.media m ON m.id = g.logo_media_id
+       WHERE g.id = $1`,
       [id]
     );
     if (!rows.length)
@@ -95,9 +99,14 @@ export async function PATCH(
   if (!fields.length)
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
 
-  const sql = `UPDATE public.payment_gateways SET ${fields.join(
-    ", "
-  )}, updated_at = CURRENT_TIMESTAMP WHERE id = $${i} RETURNING id, name, slug, description, is_enabled, settings, logo_media_id, created_at, updated_at`;
+  const sql = `WITH upd AS (
+    UPDATE public.payment_gateways SET ${fields.join(
+      ", "
+    )}, updated_at = CURRENT_TIMESTAMP WHERE id = $${i} RETURNING id, name, slug, description, is_enabled, settings, logo_media_id, created_at, updated_at
+  )
+  SELECT upd.*, m.file_url AS logo_url
+  FROM upd
+  LEFT JOIN public.media m ON m.id = upd.logo_media_id`;
   values.push(id);
 
   try {
