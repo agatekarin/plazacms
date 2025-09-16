@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, StockBadge } from "@/components/ui/badge";
@@ -28,6 +30,7 @@ interface ProductsTableProps {
   products: Product[];
   categories: { id: string; name: string }[]; // Redefined CategoryOption
   taxClasses: { id: string; name: string; rate: string }[]; // Redefined TaxClassOption
+  loading?: boolean;
 }
 
 function Th({
@@ -64,10 +67,20 @@ export default function ProductsTable({
   products,
   categories,
   taxClasses,
+  loading = false,
 }: ProductsTableProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`ProductsTable API Error on ${url}:`, error);
+      toast.error(error?.message || "Bulk delete failed");
+    },
+  });
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedIds);
@@ -100,16 +113,11 @@ export default function ProductsTable({
 
     setIsDeleting(true);
     try {
-      const response = await fetch("/api/admin/products/bulk", {
+      await apiCallJson("/api/admin/products/bulk", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: Array.from(selectedIds) }),
       });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to delete products");
-      }
 
       setSelectedIds(new Set());
       toast.success(
@@ -126,6 +134,47 @@ export default function ProductsTable({
       setIsDeleting(false);
     }
   };
+
+  // Skeleton row component
+  const SkeletonRow = () => (
+    <tr className="animate-pulse">
+      <Td>
+        <div className="h-4 w-4 bg-gray-200 rounded"></div>
+      </Td>
+      <Td>
+        <div className="flex items-center space-x-3">
+          <div className="h-10 w-10 bg-gray-200 rounded-md"></div>
+          <div className="space-y-2">
+            <div className="h-4 bg-gray-200 rounded w-32"></div>
+            <div className="h-3 bg-gray-100 rounded w-24"></div>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        <div className="h-4 bg-gray-200 rounded w-20"></div>
+      </Td>
+      <Td>
+        <div className="h-6 bg-gray-200 rounded-full w-20"></div>
+      </Td>
+      <Td>
+        <div className="h-6 bg-gray-200 rounded-full w-16"></div>
+      </Td>
+      <Td>
+        <div className="h-4 bg-gray-200 rounded w-16"></div>
+      </Td>
+      <Td>
+        <div className="h-4 bg-gray-200 rounded w-24"></div>
+      </Td>
+      <Td>
+        <div className="h-4 bg-gray-200 rounded w-20"></div>
+      </Td>
+      <Td>
+        <div className="flex space-x-2">
+          <div className="h-8 w-8 bg-gray-200 rounded-md"></div>
+        </div>
+      </Td>
+    </tr>
+  );
 
   return (
     <div className="space-y-4">
@@ -191,7 +240,13 @@ export default function ProductsTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {products.length === 0 ? (
+              {loading ? (
+                // Show skeleton loaders when loading
+                Array(5)
+                  .fill(0)
+                  .map((_, i) => <SkeletonRow key={`skeleton-${i}`} />)
+              ) : products.length === 0 ? (
+                // Show empty state when no products
                 <tr>
                   <td
                     colSpan={9}

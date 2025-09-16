@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { MediaOptimizer } from "@/lib/media-optimizer";
 import {
   X,
@@ -90,6 +92,15 @@ export default function MediaDetailsPanel({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const { data: session } = useSession();
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`MediaDetailsPanel API Error on ${url}:`, error);
+      // Let component handle error display
+    },
+  });
 
   // Update form when media changes
   useEffect(() => {
@@ -178,23 +189,20 @@ export default function MediaDetailsPanel({
           formData.folder_id === "__root__" ? null : formData.folder_id,
       };
 
-      const response = await fetch(`/api/admin/media/${media.id}`, {
+      const data = await apiCallJson(`/api/admin/media/${media.id}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(dataToSend),
       });
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
+      if (data.success) {
         setSuccess("Media updated successfully");
         onMediaUpdate({ ...media, ...formData });
       } else {
         setError(data.error || "Failed to update media");
       }
     } catch (err) {
+      // Error already handled by useAuthenticatedFetch interceptor
       setError("Failed to update media");
       console.error("Media update error:", err);
     } finally {
@@ -218,18 +226,14 @@ export default function MediaDetailsPanel({
     setError("");
 
     try {
-      const response = await fetch(`/api/admin/media/${media.id}`, {
+      await apiCallJson(`/api/admin/media/${media.id}`, {
         method: "DELETE",
       });
 
-      if (response.ok) {
-        onMediaDelete(media.id);
-        onClose();
-      } else {
-        const data = await response.json();
-        setError(data.error || "Failed to delete media");
-      }
+      onMediaDelete(media.id);
+      onClose();
     } catch (err) {
+      // Error already handled by useAuthenticatedFetch interceptor
       setError("Failed to delete media");
       console.error("Media delete error:", err);
     } finally {

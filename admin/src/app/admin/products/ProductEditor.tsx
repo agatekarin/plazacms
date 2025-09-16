@@ -35,6 +35,8 @@ interface MediaItem {
 
 import React, { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import MediaPicker from "@/components/MediaPicker";
 import toast from "react-hot-toast";
 import dynamic from "next/dynamic";
@@ -324,6 +326,19 @@ export default function ProductEditor({
 }: ProductEditorProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const { data: session } = useSession();
+
+  // Enhanced API Helper with global error handling and retry logic
+  const {
+    apiCall,
+    apiCallJson,
+    isLoading: apiLoading,
+  } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`ProductEditor API Error on ${url}:`, error);
+      toast.error(error?.message || "API request failed");
+    },
+  });
 
   // Tabs & product type - auto-detect from database or URL
   const [activeTab, setActiveTab] = useState<
@@ -389,7 +404,8 @@ export default function ProductEditor({
       slug: initialProduct.slug || "",
       description: initialProduct.description || "",
       regular_price:
-        initialProduct.regular_price !== undefined && initialProduct.regular_price !== null
+        initialProduct.regular_price !== undefined &&
+        initialProduct.regular_price !== null
           ? String(initialProduct.regular_price)
           : "",
       currency: initialProduct.currency || "USD",
@@ -399,7 +415,8 @@ export default function ProductEditor({
       sku: initialProduct.sku || "",
       weight: String(initialProduct.weight ?? 0),
       sale_price:
-        initialProduct.sale_price !== undefined && initialProduct.sale_price !== null
+        initialProduct.sale_price !== undefined &&
+        initialProduct.sale_price !== null
           ? Number(initialProduct.sale_price)
           : null,
       sale_start_date: initialProduct.sale_start_date
@@ -410,7 +427,10 @@ export default function ProductEditor({
         : "",
       tax_class_id: initialProduct.tax_class_id || "",
     });
-    if (initialProduct.product_type === "variable" || initialProduct.product_type === "simple") {
+    if (
+      initialProduct.product_type === "variable" ||
+      initialProduct.product_type === "simple"
+    ) {
       setProductType(initialProduct.product_type);
     }
   }, [initialProduct]);
@@ -551,12 +571,20 @@ export default function ProductEditor({
   useEffect(() => {
     if (productType !== "variable") return;
     let cancelled = false;
-    fetch("/api/admin/attributes")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled) setAttributes(Array.isArray(d.items) ? d.items : []);
-      })
-      .catch(() => setAttributes([]));
+
+    const loadAttributes = async () => {
+      try {
+        const data = await apiCallJson("/api/admin/attributes");
+        if (!cancelled) {
+          setAttributes(Array.isArray(data.items) ? data.items : []);
+        }
+      } catch (error) {
+        // Error already handled by useAuthenticatedFetch interceptor
+        if (!cancelled) setAttributes([]);
+      }
+    };
+
+    loadAttributes();
     return () => {
       cancelled = true;
     };
@@ -566,10 +594,13 @@ export default function ProductEditor({
   async function loadVariants() {
     if (!productId) return;
     try {
-      const response = await fetch(`/api/admin/products/${productId}/variants`);
-      const data = await response.json();
+      const data = await apiCallJson(
+        `/api/admin/products/${productId}/variants`,
+        {}
+      );
       setVariants(data.items || []);
     } catch (error) {
+      // Error already handled by useAuthenticatedFetch interceptor
       console.error("Failed to load variants:", error);
       setVariants([]);
     }
@@ -669,16 +700,11 @@ export default function ProductEditor({
         tax_class_id: form.tax_class_id || null,
         product_type: productType,
       };
-      const res = await fetch("/api/admin/products", {
+      const data = await apiCallJson("/api/admin/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data?.error || "Failed to create draft product");
-        return null;
-      }
       const id = data?.item?.id as string | undefined;
       if (id) {
         setProductId(id);
@@ -703,19 +729,18 @@ export default function ProductEditor({
     const id = await ensureDraftProduct();
     if (!id) return;
     try {
-      await fetch(`/api/admin/products/${id}/variants/generate`, {
+      await apiCallJson(`/api/admin/products/${id}/variants/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selections: arrays }),
       });
       // refresh list
-      const r = await fetch(`/api/admin/products/${id}/variants`);
-      const d = await r.json().catch(() => ({ items: [] }));
-      setVariants(d.items || []);
+      const data = await apiCallJson(`/api/admin/products/${id}/variants`);
+      setVariants(data.items || []);
       toast.success("Variants generated");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Gagal generate varian");
-      toast.error(e instanceof Error ? e.message : "Gagal generate varian");
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to generate variants:", e);
     }
   }
 
@@ -742,14 +767,11 @@ export default function ProductEditor({
       (async () => {
         try {
           if (productId) {
-            const res = await fetch(`/api/admin/products/${productId}`, {
+            await apiCallJson(`/api/admin/products/${productId}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
             });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok)
-              return toast.error(data?.error || "Failed to update product");
             toast.success("Product updated");
             router.refresh();
           } else {
@@ -758,14 +780,11 @@ export default function ProductEditor({
               toast.error("Product belum siap, tunggu sampai data terload");
               return;
             }
-            const res = await fetch("/api/admin/products", {
+            const data = await apiCallJson("/api/admin/products", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
             });
-            const data = await res.json();
-            if (!res.ok)
-              return toast.error(data?.error || "Failed to create product");
             const newId = data?.item?.id as string | undefined;
             if (newId) setProductId(newId);
             // Removed auto-generate variants after create, if desired
@@ -810,23 +829,33 @@ export default function ProductEditor({
     if (!productId || !bulkAction || selectedIds.size === 0) return;
     // Handle bulk delete separately by calling DELETE per-variant
     if (bulkAction === "delete_selected") {
-      if (!confirm(`Delete ${selectedIds.size} selected variant(s)? This action cannot be undone.`)) return;
+      if (
+        !confirm(
+          `Delete ${selectedIds.size} selected variant(s)? This action cannot be undone.`
+        )
+      )
+        return;
       try {
         await Promise.all(
           Array.from(selectedIds).map((id) =>
-            fetch(`/api/admin/products/${productId}/variants/${id}`, {
+            apiCallJson(`/api/admin/products/${productId}/variants/${id}`, {
               method: "DELETE",
             })
           )
         );
-        toast.success(`${selectedIds.size} variant${selectedIds.size > 1 ? "s" : ""} deleted`);
+        toast.success(
+          `${selectedIds.size} variant${
+            selectedIds.size > 1 ? "s" : ""
+          } deleted`
+        );
         setSelectedIds(new Set());
         setBulkAction("");
         setBulkValue("");
         setBulkPercent("");
         await loadVariants();
       } catch (err) {
-        toast.error("Bulk delete failed");
+        // Error already handled by useAuthenticatedFetch interceptor
+        console.error("Bulk delete failed:", err);
       }
       return;
     }
@@ -855,18 +884,21 @@ export default function ProductEditor({
       body.percent = p;
     }
     if (bulkAction === "set_status") body.status = bulkValue || "draft";
-    const res = await fetch(`/api/admin/products/${productId}/variants/bulk`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) return toast.error(data?.error || "Bulk gagal");
-    setSelectedIds(new Set());
-    setBulkAction("");
-    setBulkValue("");
-    setBulkPercent("");
-    await loadVariants();
+    try {
+      await apiCallJson(`/api/admin/products/${productId}/variants/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setSelectedIds(new Set());
+      setBulkAction("");
+      setBulkValue("");
+      setBulkPercent("");
+      await loadVariants();
+    } catch (err) {
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Bulk operation failed:", err);
+    }
   }
 
   // Media picker handlers
@@ -900,7 +932,7 @@ export default function ProductEditor({
     try {
       if (currentPickerTarget === "featured") {
         // Set featured image - remove existing featured and add new one as first
-        await fetch(`/api/admin/products/${productId}/media`, {
+        await apiCallJson(`/api/admin/products/${productId}/media`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -912,7 +944,7 @@ export default function ProductEditor({
       } else if (currentPickerTarget === "gallery") {
         // Add gallery images
         for (const media of selectedMedia) {
-          await fetch(`/api/admin/products/${productId}/media`, {
+          await apiCallJson(`/api/admin/products/${productId}/media`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -923,7 +955,7 @@ export default function ProductEditor({
         }
       } else if (currentPickerTarget === "variant" && currentVariantId) {
         // Set variant image
-        await fetch(
+        await apiCallJson(
           `/api/admin/products/${productId}/variants/${currentVariantId}/media`,
           {
             method: "POST",
@@ -953,8 +985,10 @@ export default function ProductEditor({
     if (!productId) return;
     try {
       console.log("Loading product images for product:", productId);
-      const res = await fetch(`/api/admin/products/${productId}/media`);
-      const data = await res.json();
+      const data = await apiCallJson(
+        `/api/admin/products/${productId}/media`,
+        {}
+      );
       console.log("Product images API response:", data);
       if (data.success) {
         setImages(data.images || []);
@@ -963,6 +997,7 @@ export default function ProductEditor({
         console.error("API returned error:", data.error);
       }
     } catch (error) {
+      // Error already handled by useAuthenticatedFetch interceptor
       console.error("Failed to load product images:", error);
     }
   }
@@ -970,20 +1005,21 @@ export default function ProductEditor({
   async function removeProductImage(mediaId: string) {
     if (!productId) return;
     try {
-      await fetch(`/api/admin/products/${productId}/media/${mediaId}`, {
+      await apiCallJson(`/api/admin/products/${productId}/media/${mediaId}`, {
         method: "DELETE",
       });
       await loadProductImages();
       toast.success("Image removed successfully");
     } catch (error) {
-      toast.error("Failed to remove image");
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to remove image:", error);
     }
   }
 
   async function setAsFeatured(mediaId: string) {
     if (!productId) return;
     try {
-      await fetch(`/api/admin/products/${productId}/media/reorder`, {
+      await apiCallJson(`/api/admin/products/${productId}/media/reorder`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -994,7 +1030,8 @@ export default function ProductEditor({
       await loadProductImages();
       toast.success("Featured image updated");
     } catch (error) {
-      toast.error("Failed to update featured image");
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to update featured image:", error);
     }
   }
   async function saveVariantRow(row: VariantRow) {
@@ -1016,32 +1053,30 @@ export default function ProductEditor({
           : null,
       status: row.status,
     };
-    const res = await fetch(
-      `/api/admin/products/${productId}/variants/${row.id}`,
-      {
+    try {
+      await apiCallJson(`/api/admin/products/${productId}/variants/${row.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }
-    );
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      toast.error(d?.error || "Gagal update varian");
-      return;
+      });
+      toast.success("Variant updated");
+    } catch (error) {
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to update variant:", error);
     }
-    toast.success("Variant updated");
   }
   async function deleteVariantRow(id: string) {
     if (!productId) return;
     if (!confirm("Hapus varian ini?")) return;
-    const res = await fetch(`/api/admin/products/${productId}/variants/${id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      return toast.error(d?.error || "Gagal hapus varian");
+    try {
+      await apiCallJson(`/api/admin/products/${productId}/variants/${id}`, {
+        method: "DELETE",
+      });
+      setVariants((vs) => vs.filter((v) => v.id !== id));
+    } catch (error) {
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to delete variant:", error);
     }
-    setVariants((vs) => vs.filter((v) => v.id !== id));
   }
 
   return (
@@ -1749,7 +1784,7 @@ export default function ProductEditor({
                               return toast.error("Please enter attribute name");
 
                             try {
-                              const res = await fetch("/api/admin/attributes", {
+                              await apiCallJson("/api/admin/attributes", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
@@ -1763,25 +1798,21 @@ export default function ProductEditor({
                                 }),
                               });
 
-                              if (res.ok) {
-                                const d = await fetch(
-                                  "/api/admin/attributes"
-                                ).then((r) => r.json());
-                                setAttributes(d.items || []);
-                                (
-                                  document.getElementById(
-                                    "qa_name"
-                                  ) as HTMLInputElement
-                                ).value = "";
-                                (
-                                  document.getElementById(
-                                    "qa_values"
-                                  ) as HTMLInputElement
-                                ).value = "";
-                                toast.success("Attribute created successfully");
-                              } else {
-                                toast.error("Failed to create attribute");
-                              }
+                              const data = await apiCallJson(
+                                "/api/admin/attributes"
+                              );
+                              setAttributes(data.items || []);
+                              (
+                                document.getElementById(
+                                  "qa_name"
+                                ) as HTMLInputElement
+                              ).value = "";
+                              (
+                                document.getElementById(
+                                  "qa_values"
+                                ) as HTMLInputElement
+                              ).value = "";
+                              toast.success("Attribute created successfully");
                             } catch (error) {
                               toast.error("Failed to create attribute");
                             }
@@ -1833,7 +1864,9 @@ export default function ProductEditor({
                             className="min-w-[160px]"
                           >
                             <option value="">Bulk Actions...</option>
-                            <option value="delete_selected">Delete Selected</option>
+                            <option value="delete_selected">
+                              Delete Selected
+                            </option>
                             <option value="set_regular_prices">
                               Set Regular Prices
                             </option>
@@ -2168,11 +2201,19 @@ export default function ProductEditor({
                                                 <button
                                                   className="absolute -right-2 -top-2 w-7 h-7 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center shadow focus:outline-none"
                                                   onClick={async () => {
-                                                    await fetch(
-                                                      `/api/admin/products/${productId}/variants/${v.id}/media`,
-                                                      { method: "DELETE" }
-                                                    );
-                                                    await loadVariants();
+                                                    try {
+                                                      await apiCallJson(
+                                                        `/api/admin/products/${productId}/variants/${v.id}/media`,
+                                                        { method: "DELETE" }
+                                                      );
+                                                      await loadVariants();
+                                                    } catch (error) {
+                                                      // Error already handled by useAuthenticatedFetch interceptor
+                                                      console.error(
+                                                        "Failed to delete variant image:",
+                                                        error
+                                                      );
+                                                    }
                                                   }}
                                                   title="Remove variant image"
                                                 >
@@ -3227,6 +3268,8 @@ export default function ProductEditor({
               autoCreateFolder={
                 currentPickerTarget === "variant"
                   ? "products/variants"
+                  : currentPickerTarget === "gallery"
+                  ? "products/gallery"
                   : "products"
               }
               productSlug={form.slug}

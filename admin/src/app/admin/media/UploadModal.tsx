@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import {
   Select,
   SelectContent,
@@ -51,6 +52,7 @@ export default function UploadModal({
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { data: session } = useSession();
 
   // Generate unique ID for files
   const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -248,7 +250,20 @@ export default function UploadModal({
         });
 
         // Start upload
-        xhr.open("POST", "/api/admin/media/upload");
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+        const url = base
+          ? `${base}/api/admin/media/upload`
+          : "/api/admin/media/upload";
+        xhr.open("POST", url);
+
+        // Add Authorization header
+        if (session?.accessToken) {
+          xhr.setRequestHeader(
+            "Authorization",
+            `Bearer ${session.accessToken}`
+          );
+        }
+
         xhr.send(formData);
       } catch (error) {
         setUploadFiles((prev) =>

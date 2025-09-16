@@ -12,13 +12,15 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const onlyEnabled = url.searchParams.get("enabled") === "true";
 
-  const where = onlyEnabled ? "WHERE is_enabled = true" : "";
+  const where = onlyEnabled ? "WHERE g.is_enabled = true" : "";
   const sql = `
-    SELECT id, name, slug, description, is_enabled, settings, logo_media_id,
-           created_at, updated_at
-    FROM public.payment_gateways
+    SELECT g.id, g.name, g.slug, g.description, g.is_enabled, g.settings, g.logo_media_id,
+           g.created_at, g.updated_at,
+           m.file_url AS logo_url
+    FROM public.payment_gateways g
+    LEFT JOIN public.media m ON m.id = g.logo_media_id
     ${where}
-    ORDER BY name ASC
+    ORDER BY g.name ASC
   `;
   try {
     const { rows } = await pool.query(sql);
@@ -59,9 +61,14 @@ export async function POST(req: Request) {
 
   try {
     const insertSql = `
-      INSERT INTO public.payment_gateways (name, slug, description, is_enabled, settings, logo_media_id)
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6)
-      RETURNING id, name, slug, description, is_enabled, settings, logo_media_id, created_at, updated_at
+      WITH ins AS (
+        INSERT INTO public.payment_gateways (name, slug, description, is_enabled, settings, logo_media_id)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+        RETURNING id, name, slug, description, is_enabled, settings, logo_media_id, created_at, updated_at
+      )
+      SELECT ins.*, m.file_url AS logo_url
+      FROM ins
+      LEFT JOIN public.media m ON m.id = ins.logo_media_id
     `;
     const { rows } = await pool.query(insertSql, [
       name.trim(),

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   X,
   Folder,
@@ -55,6 +57,15 @@ export default function FolderModal({
   const [selectedParentId, setSelectedParentId] = useState<string>("__root__");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { data: session } = useSession();
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`FolderModal API Error on ${url}:`, error);
+      // Let component handle error display
+    },
+  });
 
   // Initialize form data
   useEffect(() => {
@@ -121,19 +132,11 @@ export default function FolderModal({
         parent_id: selectedParentId === "__root__" ? null : selectedParentId,
       };
 
-      const response = await fetch(url, {
+      await apiCallJson(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `Failed to ${mode} folder`);
-      }
 
       toast.success(
         mode === "create"
@@ -149,11 +152,9 @@ export default function FolderModal({
 
       onClose();
     } catch (err: unknown) {
+      // Error already handled by useAuthenticatedFetch interceptor
       console.error(`Failed to ${mode} folder:`, err);
       setError(err instanceof Error ? err.message : `Failed to ${mode} folder`);
-      toast.error(
-        err instanceof Error ? err.message : `Failed to ${mode} folder`
-      );
     } finally {
       setLoading(false);
     }

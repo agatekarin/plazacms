@@ -7,7 +7,7 @@ export interface Category {
   description?: string;
   image_id?: string;
   image_url?: string;
-  image_alt?: string; 
+  image_alt?: string;
   created_at: string;
 }
 export interface MediaItem {
@@ -26,6 +26,8 @@ export interface MediaItem {
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,9 +51,31 @@ export default function CategoriesManager({
 }: {
   initialItems?: Category[];
 }) {
+  const { data: session } = useSession();
   const [items, setItems] = useState<Category[]>(
     Array.isArray(initialItems) ? initialItems : []
   );
+  const [loading, setLoading] = useState(false);
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`CategoriesManager API Error on ${url}:`, error);
+      toast.error(error?.message || "API request failed");
+    },
+  });
+
+  // Wrapper for compatibility with CategoryForm
+  const apiCallWrapper = async (path: string, options?: RequestInit) => {
+    try {
+      const data = await apiCallJson(path, options);
+      return new Response(JSON.stringify(data), { status: 200 });
+    } catch (error: any) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status || 500,
+      });
+    }
+  };
   const [showModal, setShowModal] = useState<null | {
     mode: "add" | "edit";
     id?: string;
@@ -63,12 +87,17 @@ export default function CategoriesManager({
   }>(null);
 
   async function reload() {
+    setLoading(true);
     try {
-      const res = await fetch("/api/admin/categories", { cache: "no-store" });
-      const d = await res.json();
-      setItems(Array.isArray(d.items) ? (d.items as Category[]) : []);
+      const data = await apiCallJson("/api/admin/categories", {
+        cache: "no-store",
+      });
+      setItems(Array.isArray(data.items) ? (data.items as Category[]) : []);
     } catch (e) {
+      // Error already handled by useAuthenticatedFetch interceptor
       setItems([]);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -83,6 +112,7 @@ export default function CategoriesManager({
         <Button
           onClick={() => setShowModal({ mode: "add" })}
           className="flex items-center gap-2"
+          disabled={loading}
         >
           <Plus className="h-4 w-4" />
           Add Category
@@ -92,6 +122,11 @@ export default function CategoriesManager({
       {/* Categories List */}
       <Card padding="none" className="overflow-hidden">
         <div className="overflow-x-auto">
+          {loading && (
+            <div className="px-6 py-3 text-xs text-gray-500">
+              Loading categories...
+            </div>
+          )}
           <table className="w-full">
             <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
               <tr>
@@ -104,7 +139,21 @@ export default function CategoriesManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {items.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-6 py-12 text-center text-gray-500"
+                  >
+                    <div className="flex flex-col items-center">
+                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3 animate-pulse">
+                        <Tag className="h-6 w-6 text-gray-400" />
+                      </div>
+                      <p className="text-sm font-medium">Loading...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : items.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
@@ -192,6 +241,7 @@ export default function CategoriesManager({
                           variant="ghost"
                           size="sm"
                           className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50"
+                          disabled={loading}
                           onClick={() =>
                             setShowModal({
                               mode: "edit",
@@ -207,7 +257,11 @@ export default function CategoriesManager({
                         >
                           <Edit3 className="h-4 w-4" />
                         </Button>
-                        <DeleteCategoryButton id={c.id} onDeleted={reload} />
+                        <DeleteCategoryButton
+                          id={c.id}
+                          apiCall={apiCallWrapper}
+                          onDeleted={reload}
+                        />
                       </div>
                     </Td>
                   </tr>
@@ -234,6 +288,7 @@ export default function CategoriesManager({
             description={showModal.description || ""}
             image_id={showModal.image_id}
             image_url={showModal.image_url}
+            apiCall={apiCallWrapper}
             onDone={() => {
               setShowModal(null);
               void reload();
@@ -304,6 +359,7 @@ function CategoryForm({
   description,
   image_id,
   image_url,
+  apiCall,
   onDone,
 }: {
   mode: "add" | "edit";
@@ -313,6 +369,7 @@ function CategoryForm({
   description: string;
   image_id?: string;
   image_url?: string;
+  apiCall: (path: string, options?: RequestInit) => Promise<Response>;
   onDone: () => void;
 }) {
   const [nameVal, setNameVal] = useState(name);
@@ -356,7 +413,7 @@ function CategoryForm({
           e.preventDefault();
           startTransition(async () => {
             if (mode === "add") {
-              const res = await fetch("/api/admin/categories", {
+              const res = await apiCall("/api/admin/categories", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -372,7 +429,7 @@ function CategoryForm({
                 return;
               }
             } else if (mode === "edit" && id) {
-              const res = await fetch(`/api/admin/categories/${id}`, {
+              const res = await apiCall(`/api/admin/categories/${id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -508,7 +565,15 @@ function CategoryForm({
   );
 }
 
-function DeleteCategoryButton({ id, onDeleted }: { id: string; onDeleted?: () => void }) {
+function DeleteCategoryButton({
+  id,
+  apiCall,
+  onDeleted,
+}: {
+  id: string;
+  apiCall: (path: string, options?: RequestInit) => Promise<Response>;
+  onDeleted?: () => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -522,13 +587,12 @@ function DeleteCategoryButton({ id, onDeleted }: { id: string; onDeleted?: () =>
         if (!confirm("Delete this category? This action cannot be undone."))
           return;
         startTransition(async () => {
-          const res = await fetch(`/api/admin/categories/${id}`, {
+          const res = await apiCall(`/api/admin/categories/${id}`, {
             method: "DELETE",
           });
           if (res.ok) {
             if (onDeleted) onDeleted();
-          }
-          else {
+          } else {
             const j = await res.json().catch(() => ({}));
             toast.error(j.error || "Failed to delete category");
           }

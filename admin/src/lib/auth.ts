@@ -26,13 +26,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       authorize: async (credentials) => {
-        // Lazy-load Node-only dependencies to keep this module Edge-safe when imported by middleware
-        const [{ pool }, bcryptModule] = await Promise.all([
-          import("./db"),
-          import("bcryptjs"),
-        ]);
-        const bcrypt = (bcryptModule as any).default || (bcryptModule as any);
-
         const email =
           typeof credentials?.email === "string"
             ? credentials.email
@@ -42,33 +35,47 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             ? credentials.password
             : undefined;
         if (!email || !password) return null;
+        const apiBase = process.env.ADMIN_API_BASE_URL;
+        if (!apiBase) {
+          console.warn("[auth] Missing ADMIN_API_BASE_URL env var");
+          return null;
+        }
+        let url: string;
+        try {
+          url = new URL("/api/auth/login", apiBase).toString();
+        } catch {
+          console.error("[auth] Invalid ADMIN_API_BASE_URL:", apiBase);
+          return null;
+        }
 
-        // Fetch user by email
-        const { rows } = await pool.query(
-          "SELECT id, name, email, role, image, password_hash FROM public.users WHERE email = $1 LIMIT 1",
-          [email]
-        );
-        const user = rows[0];
-        if (!user) return null;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ email, password }),
+        });
+        if (!res.ok) return null;
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!data?.success || !data?.data?.user || !data?.data?.token)
+          return null;
 
-        // Verify password
-        const hash =
-          typeof user.password_hash === "string"
-            ? user.password_hash
-            : undefined;
-        if (!hash) return null;
-        const ok = await bcrypt.compare(password, hash);
-        if (!ok) return null;
-
-        // Only allow admin role
-        if (user.role !== "admin") return null;
+        const u = data.data.user as {
+          id: string;
+          name: string;
+          email: string;
+          role?: string;
+        };
+        if (u.role !== "admin") return null;
 
         return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          image: user.image,
-          role: user.role,
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          image: null,
+          role: u.role,
+          accessToken: data.data.token,
         } as any;
       },
     }),
@@ -79,12 +86,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.role = (user as any).role;
         token.id = user.id;
+        if ((user as any).accessToken) {
+          (token as any).accessToken = (user as any).accessToken as string;
+        }
       }
       return token;
     },
     async session({ session, token }) {
       session.user.role = token.role as string | undefined;
       session.user.id = token.id!;
+      (session as any).accessToken = (token as any).accessToken as
+        | string
+        | undefined;
       return session;
     },
     // Middleware authorization: only admin for protected paths

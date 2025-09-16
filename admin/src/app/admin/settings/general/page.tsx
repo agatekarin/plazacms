@@ -1,39 +1,75 @@
-import { Session } from "next-auth";
-import { auth } from "../../../../lib/auth";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { redirect } from "next/navigation";
 import GeneralSettingsManager from "./GeneralSettingsManager";
 import { CogIcon } from "@heroicons/react/24/outline";
-import { headers, cookies } from "next/headers";
 
-export const dynamic = "force-dynamic";
+export default function GeneralSettingsPage() {
+  const { data: session, status } = useSession();
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-export default async function GeneralSettingsPage() {
-  const session = await auth();
-  const role = (session?.user as Session["user"] & { role?: string })?.role;
-  if (!session?.user || role !== "admin") redirect("/signin");
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`GeneralSettingsPage API Error on ${url}:`, error);
+      // Silent fail - let component handle loading state
+    },
+  });
 
-  // Fetch settings from API
-  let settings = null;
-  try {
-    const h = await headers();
-    const host = h.get("x-forwarded-host") ?? h.get("host");
-    const proto = h.get("x-forwarded-proto") ?? "http";
-    const base = `${proto}://${host}`;
+  // Redirect if not authenticated or not admin
+  useEffect(() => {
+    if (status === "loading") return;
 
-    const c = await cookies();
-
-    const res = await fetch(`${base}/api/admin/settings/general`, {
-      cache: "no-store",
-      headers: {
-        cookie: c.toString(),
-      },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      settings = data.settings;
+    const role = (session?.user as any)?.role;
+    if (!session?.user || role !== "admin") {
+      redirect("/signin");
+      return;
     }
-  } catch (error) {
-    console.error("Failed to fetch settings:", error);
+
+    // Load settings from API
+    const loadSettings = async () => {
+      try {
+        const data = await apiCallJson("/api/admin/settings/general", {
+          cache: "no-store",
+        });
+        setSettings(data.settings);
+      } catch (error) {
+        // Error already handled by useAuthenticatedFetch interceptor
+        console.error("Failed to fetch settings:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSettings();
+  }, [session, status]);
+
+  if (status === "loading" || loading) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-gray-200 rounded-lg"></div>
+            <div>
+              <div className="h-6 bg-gray-200 rounded w-48 mb-2"></div>
+              <div className="h-4 bg-gray-200 rounded w-64"></div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="space-y-4">
+              <div className="h-4 bg-gray-200 rounded w-32"></div>
+              <div className="h-10 bg-gray-200 rounded"></div>
+              <div className="h-4 bg-gray-200 rounded w-40"></div>
+              <div className="h-20 bg-gray-200 rounded"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

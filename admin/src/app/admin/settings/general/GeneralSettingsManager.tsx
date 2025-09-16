@@ -16,6 +16,7 @@ interface MediaItem {
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +77,14 @@ export default function GeneralSettingsManager({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [showMediaPicker, setShowMediaPicker] = useState<string | null>(null); // logo, favicon, etc.
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`GeneralSettingsManager API Error on ${url}:`, error);
+      // Let component handle error display via toast
+    },
+  });
 
   const [settings, setSettings] = useState<SettingsData>({
     site_name: initialSettings?.site_name || "PlazaCMS",
@@ -141,7 +150,7 @@ export default function GeneralSettingsManager({
   const handleSave = () => {
     startTransition(async () => {
       try {
-        const res = await fetch("/api/admin/settings/general", {
+        await apiCallJson("/api/admin/settings/general", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -166,17 +175,10 @@ export default function GeneralSettingsManager({
           }),
         });
 
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to save settings");
-        }
-
         toast.success("Settings saved successfully!");
         router.refresh();
       } catch (error: unknown) {
-        toast.error(
-          error instanceof Error ? error.message : "Failed to save settings"
-        );
+        // Error already handled by useAuthenticatedFetch interceptor
         toast.error(
           error instanceof Error ? error.message : "Failed to save settings"
         );

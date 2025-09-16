@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   X,
   Trash2,
@@ -61,6 +63,15 @@ export default function BulkOperationsModal({
   const [operation, setOperation] = useState<string>("");
   const [newMediaType, setNewMediaType] = useState<string>("");
   const [newFolderId, setNewFolderId] = useState<string>("__root__");
+  const { data: session } = useSession();
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`BulkOperationsModal API Error on ${url}:`, error);
+      // Let component handle error display
+    },
+  });
 
   // Load media info when modal opens
   useEffect(() => {
@@ -72,10 +83,11 @@ export default function BulkOperationsModal({
   const loadMediaInfo = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `/api/admin/media/bulk?ids=${selectedMediaIds.join(",")}`
-      );
-      const data = await response.json();
+      const endpoint = `/api/admin/media/bulk?ids=${selectedMediaIds.join(
+        ","
+      )}`;
+
+      const data = await apiCallJson(endpoint);
 
       if (data.success) {
         setMediaInfo(data.media);
@@ -85,6 +97,7 @@ export default function BulkOperationsModal({
         toast.error("Failed to load media information");
       }
     } catch (error) {
+      // Error already handled by useAuthenticatedFetch interceptor
       toast.error("Failed to load media information");
     } finally {
       setLoading(false);
@@ -133,15 +146,11 @@ export default function BulkOperationsModal({
         requestData.data = { folder_id: newFolderId };
       }
 
-      const response = await fetch("/api/admin/media/bulk", {
+      const result = await apiCallJson("/api/admin/media/bulk", {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
       });
-
-      const result = await response.json();
 
       if (result.success) {
         toast.success(result.message);

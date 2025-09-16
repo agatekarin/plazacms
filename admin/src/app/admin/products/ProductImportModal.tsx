@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import toast from "react-hot-toast";
 
 type ImportMode = "create" | "update" | "upsert";
 
@@ -30,6 +32,14 @@ export default function ProductImportModal({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [mode, setMode] = useState<ImportMode>("upsert");
   const [isImporting, setIsImporting] = useState(false);
+
+  // Enhanced API Helper with global error handling
+  const { apiCall } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`ProductImportModal API Error on ${url}:`, error);
+      toast.error(error?.message || "Import failed");
+    },
+  });
   const [lastResult, setLastResult] = useState<{
     createdProducts: number;
     updatedProducts: number;
@@ -128,7 +138,7 @@ export default function ProductImportModal({
     try {
       const form = new FormData();
       form.append("file", selectedFile);
-      const res = await fetch(`/api/admin/products/import?mode=${mode}`, {
+      const res = await apiCall(`/api/admin/products/import?mode=${mode}`, {
         method: "POST",
         body: form,
       });
@@ -143,7 +153,8 @@ export default function ProductImportModal({
       setLastResult(stats);
       onImported?.(stats);
     } catch (e) {
-      alert((e as Error).message);
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Import failed:", e);
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
