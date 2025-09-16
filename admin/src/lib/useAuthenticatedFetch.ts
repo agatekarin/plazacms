@@ -1,4 +1,4 @@
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface UseAuthenticatedFetchOptions {
@@ -7,9 +7,7 @@ interface UseAuthenticatedFetchOptions {
   onError?: (url: string, error: any) => void;
 }
 
-interface ApiCallOptions extends RequestInit {
-  // Simplified for admin panel - no retry needed
-}
+type ApiCallOptions = RequestInit;
 
 /**
  * Custom hook for making authenticated API calls to the Hono backend

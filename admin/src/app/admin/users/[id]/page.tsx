@@ -1,22 +1,39 @@
 import UserEditor, { AddressRow, UserRow } from "../UserEditor";
-import { headers } from "next/headers";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
+import { useEffect, useState } from "react";
 
-async function getUser(id: string): Promise<{ item: UserRow | null; addresses: AddressRow[] }> {
-  if (id === "new") return { item: null, addresses: [] };
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
-  const base = `${proto}://${host}`;
-  const cookie = h.get("cookie");
-  const res = await fetch(`${base}/api/admin/users/${id}`, { cache: "no-store", headers: cookie ? { cookie } : undefined });
-  if (!res.ok) return { item: null, addresses: [] };
-  const d = await res.json();
-  return { item: d.item as UserRow, addresses: d.addresses as AddressRow[] };
+function useUser(id: string) {
+  const { apiCallJson } = useAuthenticatedFetch();
+  const [item, setItem] = useState<UserRow | null>(null);
+  const [addresses, setAddresses] = useState<AddressRow[]>([]);
+  useEffect(() => {
+    if (id === "new") {
+      setItem(null);
+      setAddresses([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const d = await apiCallJson(`/api/admin/users/${id}`);
+      if (!cancelled) {
+        setItem(d.item as UserRow);
+        setAddresses(d.addresses as AddressRow[]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, apiCallJson]);
+  return { item, addresses };
 }
 
-export default async function UserEditorPage({ params }: { params: Promise<{ id: string }> }) {
-  const p = await params;
-  const { id } = p;
-  const data = await getUser(id);
-  return <UserEditor initialUser={data.item || undefined} initialAddresses={data.addresses || []} />;
+export default function UserEditorPage({ params }: { params: { id: string } }) {
+  const { id } = params;
+  const data = useUser(id);
+  return (
+    <UserEditor
+      initialUser={data.item || undefined}
+      initialAddresses={data.addresses || []}
+    />
+  );
 }

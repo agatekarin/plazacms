@@ -3,9 +3,13 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import { secureHeaders } from "hono/secure-headers";
+import { authHandler, initAuthConfig } from "@hono/auth-js";
+import Credentials from "@auth/core/providers/credentials";
 
 // Import routes
 import authRoutes from "./routes/auth";
+import { getDb } from "./lib/db";
+import { generateToken } from "./lib/auth";
 import attributesRoutes from "./routes/attributes";
 import productsRoutes from "./routes/products";
 import categoriesRoutes from "./routes/categories";
@@ -21,6 +25,7 @@ import mediaFoldersRoutes from "./routes/media-folders";
 import mediaBulkRoutes from "./routes/media-bulk";
 import settingsGeneralRoutes from "./routes/settings-general";
 import changePasswordRoutes from "./routes/change-password";
+import usersRoutes from "./routes/users";
 
 // Create main app
 const app = new Hono<{ Bindings: Env; Variables: { user: any } }>();
@@ -40,6 +45,95 @@ app.use(
     allowHeaders: ["Content-Type", "Authorization", "Accept"],
   })
 );
+
+// Auth.js configuration (Hono middleware)
+app.use(
+  "*",
+  initAuthConfig((c) => ({
+    secret: c.env.AUTH_SECRET,
+    trustHost: true,
+    providers: [
+      Credentials({
+        name: "Credentials",
+        credentials: {
+          email: { label: "Email", type: "email" },
+          password: { label: "Password", type: "password" },
+        },
+        authorize: async (credentials) => {
+          const email =
+            typeof (credentials as any)?.email === "string"
+              ? ((credentials as any).email as string)
+              : undefined;
+          const password =
+            typeof (credentials as any)?.password === "string"
+              ? ((credentials as any).password as string)
+              : undefined;
+          if (!email || !password) return null;
+
+          const sql = getDb(c as any);
+          const users = await sql`
+            SELECT id, email, name, password_hash, role
+            FROM public.users
+            WHERE email = ${email}
+            LIMIT 1
+          `;
+          if (users.length === 0) return null;
+          const user = users[0];
+
+          const bcrypt = await import("bcryptjs");
+          const isValidPassword = await bcrypt.compare(
+            password,
+            user.password_hash
+          );
+          if (!isValidPassword) return null;
+
+          // Generate our API JWT and attach to user for session callbacks
+          const token = await generateToken(
+            {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+              role: user.role,
+            },
+            (c as any).env.JWT_SECRET
+          );
+
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            accessToken: token,
+          } as any;
+        },
+      }),
+    ],
+    callbacks: {
+      async jwt({ token, user }: any) {
+        if (user) {
+          token.role = (user as any).role;
+          token.id = (user as any).id;
+          if ((user as any).accessToken) {
+            (token as any).accessToken = (user as any).accessToken as string;
+          }
+        }
+        return token;
+      },
+      async session({ session, token }: any) {
+        (session as any).user = (session as any).user || {};
+        (session as any).user.role = token.role as string | undefined;
+        (session as any).user.id = token.id as string | undefined;
+        (session as any).accessToken = (token as any).accessToken as
+          | string
+          | undefined;
+        return session;
+      },
+    },
+  }))
+);
+
+// Mount Auth.js handler under a distinct base path to avoid conflicts with existing /api/auth routes
+app.use("/api/authjs/*", authHandler());
 
 // Health check endpoint
 app.get("/", (c) => {
@@ -73,6 +167,7 @@ app.route("/api/admin/media/bulk", mediaBulkRoutes);
 // Generic media route LAST (catches remaining paths)
 app.route("/api/admin/media", mediaRoutes);
 app.route("/api/admin/settings/general", settingsGeneralRoutes);
+app.route("/api/admin/users", usersRoutes);
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler

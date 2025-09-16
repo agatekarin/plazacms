@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import {
   Select,
   SelectContent,

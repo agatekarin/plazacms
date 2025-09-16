@@ -7,7 +7,7 @@ import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import ProductsToolbar from "./ProductsToolbar";
 import ProductsHeader from "./ProductsHeader";
 import ProductsTable from "./ProductsTable";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import toast from "react-hot-toast";
 
 type ProductRow = {

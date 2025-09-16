@@ -9,6 +9,8 @@ enabled = true
 # Environment variables
 [vars]
 ADMIN_EMAIL = "admin@local"
+AUTH_SECRET = "a41472ad95172231e24b36db3cd45ae42e317ecc5f9872a002ab736d32ba1d49"
+AUTH_URL = "http://localhost:3001/api/authjs"
 
 # Secrets (set via wrangler secret put)
 JWT_SECRET = "a41472ad95172231e24b36db3cd45ae42e317ecc5f9872a002ab736d32ba1d49"
