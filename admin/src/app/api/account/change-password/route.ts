@@ -1,3 +1,7 @@
+// NOTE: This Next.js API route is kept for documentation/reference only.
+// The active change-password endpoint has been migrated to Hono at
+// /api/account/change-password and is called via useAuthenticatedFetch.
+// Do not modify unless updating docs or parity with Hono.
 import { Session } from "next-auth";
 import { NextResponse } from "next/server";
 import { auth } from "../../../../lib/auth";
