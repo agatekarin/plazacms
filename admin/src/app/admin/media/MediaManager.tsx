@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   FolderOpen,
   Folder,
@@ -480,6 +482,15 @@ export default function MediaManager() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const { data: session } = useSession();
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson, isLoading: apiLoading } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`MediaManager API Error on ${url}:`, error);
+      toast.error(error?.message || "API request failed");
+    },
+  });
 
   // State
   const [folders, setFolders] = useState<MediaFolder[]>([]);
@@ -517,12 +528,19 @@ export default function MediaManager() {
   // Load folders
   const loadFolders = async () => {
     try {
-      const res = await fetch("/api/admin/media/folders?include_children=true");
-      const data = await res.json();
+      if (!session?.accessToken) return; // Wait for session
+
+      const data = await apiCallJson(
+        "/api/admin/media/folders?include_children=true",
+        {}
+      );
       if (data.success) {
         setFolders(data.folders);
       }
-    } catch (err) {}
+    } catch (err) {
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to load folders:", err);
+    }
   };
 
   // Load media
@@ -530,6 +548,11 @@ export default function MediaManager() {
     setLoading(true);
     setError("");
     try {
+      if (!session?.accessToken) {
+        setLoading(false);
+        return; // Wait for session
+      }
+
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         pageSize: pagination.pageSize.toString(),
@@ -540,8 +563,10 @@ export default function MediaManager() {
       if (search) params.set("search", search);
       if (typeFilter !== "all") params.set("type", typeFilter);
 
-      const res = await fetch(`/api/admin/media?${params}`);
-      const data: MediaResponse = await res.json();
+      const data: MediaResponse = await apiCallJson(
+        `/api/admin/media?${params}`,
+        {}
+      );
 
       if (data.success) {
         setMedia(data.items);
@@ -555,6 +580,8 @@ export default function MediaManager() {
         setError("Failed to load media");
       }
     } catch (err) {
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to load media:", err);
       setError("Failed to load media");
     } finally {
       setLoading(false);
@@ -601,11 +628,11 @@ export default function MediaManager() {
   // Initial load
   useEffect(() => {
     loadFolders();
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     loadMedia();
-  }, [selectedFolder, view, search, typeFilter, pagination.page]);
+  }, [selectedFolder, view, search, typeFilter, pagination.page, session]);
 
   // Folder operations
   const handleFolderSelect = (folderId: string | null) => {
@@ -630,13 +657,10 @@ export default function MediaManager() {
 
   const handleFolderDelete = async (folder: MediaFolder) => {
     try {
-      const validateRes = await fetch(`/api/admin/media/folders/${folder.id}`);
-      const validateData = await validateRes.json();
-
-      if (!validateRes.ok) {
-        toast.error("Could not validate folder status");
-        return;
-      }
+      const validateData = await apiCallJson(
+        `/api/admin/media/folders/${folder.id}`,
+        {}
+      );
 
       const realTimeFolder = validateData.folder;
 
@@ -679,23 +703,18 @@ export default function MediaManager() {
     if (!confirm(message)) return;
 
     try {
-      const res = await fetch(`/api/admin/media/folders/${folder.id}`, {
+      await apiCallJson(`/api/admin/media/folders/${folder.id}`, {
         method: "DELETE",
       });
 
-      if (res.ok) {
-        toast.success(`Folder "${folder.name}" deleted successfully`);
-        await loadFolders();
-        if (selectedFolder === folder.id) {
-          setSelectedFolder(null);
-        }
-      } else {
-        const error = await res.json();
-        const errorMessage = error.error || "Failed to delete folder";
-        toast.error(errorMessage);
+      toast.success(`Folder "${folder.name}" deleted successfully`);
+      await loadFolders();
+      if (selectedFolder === folder.id) {
+        setSelectedFolder(null);
       }
     } catch (err) {
-      toast.error("Network error: Failed to delete folder");
+      // Error already handled by useAuthenticatedFetch interceptor
+      console.error("Failed to delete folder:", err);
     }
   };
 

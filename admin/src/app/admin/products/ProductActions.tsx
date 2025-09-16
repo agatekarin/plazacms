@@ -17,6 +17,8 @@ interface Product {
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Pencil, Trash2, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
@@ -24,6 +26,15 @@ import toast from "react-hot-toast";
 export default function ProductActions({ product }: { product: Product }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const { data: session } = useSession();
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`ProductActions API Error on ${url}:`, error);
+      toast.error(error?.message || "API request failed");
+    },
+  });
 
   function onEdit() {
     router.push(`/admin/products/${product.id}/edit`);
@@ -36,16 +47,16 @@ export default function ProductActions({ product }: { product: Product }) {
   function onDelete() {
     if (!confirm("Delete this product?")) return;
     startTransition(async () => {
-      const res = await fetch(`/api/admin/products/${product.id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data?.error || "Failed to delete");
-        return;
+      try {
+        await apiCallJson(`/api/admin/products/${product.id}`, {
+          method: "DELETE",
+        });
+        toast.success("Product deleted successfully");
+        router.refresh();
+      } catch (error) {
+        // Error already handled by useAuthenticatedFetch interceptor
+        console.error("Failed to delete product:", error);
       }
-      toast.success("Product deleted successfully");
-      router.refresh();
     });
   }
 

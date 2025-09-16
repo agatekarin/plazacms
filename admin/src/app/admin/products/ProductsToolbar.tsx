@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import ProductImportModal from "./ProductImportModal";
@@ -30,6 +31,14 @@ export default function ProductsToolbar({ total }: ProductsToolbarProps) {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [showImport, setShowImport] = useState(false);
+
+  // Enhanced API Helper with global error handling
+  const { apiCall } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`ProductsToolbar API Error on ${url}:`, error);
+      toast.error(error?.message || "Export failed");
+    },
+  });
 
   const q = sp.get("q") || "";
   const filter = sp.get("filter") || "all";
@@ -232,21 +241,20 @@ export default function ProductsToolbar({ total }: ProductsToolbarProps) {
                       if (category) params.set("category", category);
                       if (status) params.set("status", status);
 
-                      const response = await fetch(
+                      const response = await apiCall(
                         `/api/admin/products/export?${params.toString()}`
                       );
-                      if (!response.ok) throw new Error("Export failed");
 
                       const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
+                      const blobUrl = window.URL.createObjectURL(blob);
                       const a = document.createElement("a");
-                      a.href = url;
+                      a.href = blobUrl;
                       a.download = `products-${
                         new Date().toISOString().split("T")[0]
                       }.csv`;
                       document.body.appendChild(a);
                       a.click();
-                      window.URL.revokeObjectURL(url);
+                      window.URL.revokeObjectURL(blobUrl);
                       document.body.removeChild(a);
                       toast.success("Products exported successfully");
                     } catch (error) {

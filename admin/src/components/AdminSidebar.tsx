@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   HomeIcon,
   ShoppingBagIcon,
@@ -212,30 +213,43 @@ export default function AdminSidebar({
   const [siteLogoUrl, setSiteLogoUrl] = useState<string | null>(null);
   const [defaultAvatarUrl, setDefaultAvatarUrl] = useState<string | null>(null);
 
-  // Load site logo from general settings (if API is available)
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`AdminSidebar API Error on ${url}:`, error);
+      // Silent fail for sidebar - keep fallback UI
+    },
+  });
+
+  // Load site logo from general settings
   useEffect(() => {
     let mounted = true;
-    (async () => {
+
+    const loadSiteSettings = async () => {
       try {
-        const res = await fetch("/api/admin/settings/general", {
-          cache: "no-store",
-        });
-        if (!res.ok) return;
+        if (!session?.accessToken) return; // Wait for session
+
         const data: {
           settings?: { logo_url?: string; default_avatar_url?: string };
-        } = await res.json();
+        } = await apiCallJson("/api/admin/settings/general", {
+          cache: "no-store",
+        });
+
         if (!mounted) return;
         if (data?.settings?.logo_url) setSiteLogoUrl(data.settings.logo_url);
         if (data?.settings?.default_avatar_url)
           setDefaultAvatarUrl(data.settings.default_avatar_url);
       } catch {
-        // no-op: keep fallback UI
+        // Error already handled by useAuthenticatedFetch interceptor
+        // Keep fallback UI on error
       }
-    })();
+    };
+
+    loadSiteSettings();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [session]); // Re-run when session changes
 
   // Auto-expand parent items based on current route
   useEffect(() => {

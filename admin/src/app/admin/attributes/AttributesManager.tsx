@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,10 +21,31 @@ export default function AttributesManager({
   }[];
 }) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [items, setItems] = useState(
     Array.isArray(initialItems) ? initialItems : []
   );
   const [loading, setLoading] = useState(false);
+
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`AttributesManager API Error on ${url}:`, error);
+      toast.error(error?.message || "API request failed");
+    },
+  });
+
+  // Wrapper for compatibility with ValueForm
+  const apiCallWrapper = async (path: string, options?: RequestInit) => {
+    try {
+      const data = await apiCallJson(path, options);
+      return new Response(JSON.stringify(data), { status: 200 });
+    } catch (error: any) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status || 500,
+      });
+    }
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAttrModal, setShowAttrModal] = useState<null | {
     mode: "add" | "edit";
@@ -39,10 +62,12 @@ export default function AttributesManager({
   async function reload() {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/attributes", { cache: "no-store" });
-      const d = await res.json();
-      setItems(Array.isArray(d.items) ? d.items : []);
+      const data = await apiCallJson("/api/admin/attributes", {
+        cache: "no-store",
+      });
+      setItems(Array.isArray(data.items) ? data.items : []);
     } catch (e) {
+      // Error already handled by useAuthenticatedFetch interceptor
       setItems([]);
     } finally {
       setLoading(false);
@@ -80,7 +105,9 @@ export default function AttributesManager({
           </div>
 
           {loading && (
-            <div className="mb-3 text-xs text-gray-500">Loading attributes...</div>
+            <div className="mb-3 text-xs text-gray-500">
+              Loading attributes...
+            </div>
           )}
 
           <div className="space-y-2">
@@ -286,17 +313,17 @@ export default function AttributesManager({
                               )
                             )
                               return;
-                            const res = await fetch(
-                              `/api/admin/attributes/${selectedAttr.id}/values/${v.id}`,
-                              {
-                                method: "DELETE",
-                              }
-                            );
-                            if (res.ok) {
+                            try {
+                              await apiCallJson(
+                                `/api/admin/attributes/${selectedAttr.id}/values/${v.id}`,
+                                {
+                                  method: "DELETE",
+                                }
+                              );
                               await reload();
-                            } else {
-                              const j = await res.json().catch(() => ({}));
-                              toast.error(j.error || "Failed to delete value");
+                            } catch (error) {
+                              // Error already handled by useAuthenticatedFetch interceptor
+                              console.error("Failed to delete value:", error);
                             }
                           }}
                           title="Delete value"
@@ -327,6 +354,7 @@ export default function AttributesManager({
             mode={showAttrModal.mode}
             id={showAttrModal.id}
             name={showAttrModal.name || ""}
+            apiCall={apiCallWrapper}
             onDone={() => {
               setShowAttrModal(null);
               void reload();
@@ -344,6 +372,7 @@ export default function AttributesManager({
             attributeId={showValueModal.attributeId}
             valueId={showValueModal.valueId}
             value={showValueModal.value || ""}
+            apiCall={apiCallWrapper}
             onDone={() => {
               setShowValueModal(null);
               void reload();
@@ -388,11 +417,13 @@ function AttributeForm({
   mode,
   id,
   name,
+  apiCall,
   onDone,
 }: {
   mode: "add" | "edit";
   id?: string;
   name: string;
+  apiCall: (path: string, options?: RequestInit) => Promise<Response>;
   onDone: () => void;
 }) {
   const [val, setVal] = useState(name);
@@ -409,7 +440,7 @@ function AttributeForm({
               .split(",")
               .map((x) => x.trim())
               .filter(Boolean);
-            const res = await fetch("/api/admin/attributes", {
+            const res = await apiCall("/api/admin/attributes", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ name: val, values }),
@@ -420,7 +451,7 @@ function AttributeForm({
               return;
             }
           } else if (mode === "edit" && id) {
-            const res = await fetch(`/api/admin/attributes/${id}`, {
+            const res = await apiCall(`/api/admin/attributes/${id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ name: val }),
@@ -488,12 +519,14 @@ function ValueForm({
   attributeId,
   valueId,
   value,
+  apiCall,
   onDone,
 }: {
   mode: "add" | "edit";
   attributeId: string;
   valueId?: string;
   value: string;
+  apiCall: (path: string, options?: RequestInit) => Promise<Response>;
   onDone: () => void;
 }) {
   const [val, setVal] = useState(value);
@@ -505,31 +538,30 @@ function ValueForm({
         e.preventDefault();
         startTransition(async () => {
           if (mode === "add") {
-            const res = await fetch(
-              `/api/admin/attributes/${attributeId}/values`,
-              {
+            try {
+              await apiCall(`/api/admin/attributes/${attributeId}/values`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ value: val.trim() }),
-              }
-            );
-            if (!res.ok) {
-              const j = await res.json().catch(() => ({}));
-              toast.error(j.error || "Failed to add value");
+              });
+            } catch (error) {
+              // Error handled by parent component's apiCall
+              console.error("Failed to add value:", error);
               return;
             }
           } else if (mode === "edit" && valueId) {
-            const res = await fetch(
-              `/api/admin/attributes/${attributeId}/values/${valueId}`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ value: val.trim() }),
-              }
-            );
-            if (!res.ok) {
-              const j = await res.json().catch(() => ({}));
-              toast.error(j.error || "Failed to update value");
+            try {
+              await apiCall(
+                `/api/admin/attributes/${attributeId}/values/${valueId}`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ value: val.trim() }),
+                }
+              );
+            } catch (error) {
+              // Error handled by parent component's apiCall
+              console.error("Failed to update value:", error);
               return;
             }
           }

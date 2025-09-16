@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Eye, EyeOff, Lock } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function ChangePasswordForm() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -11,23 +13,32 @@ export default function ChangePasswordForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Enhanced API Helper with global error handling
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`ChangePasswordForm API Error on ${url}:`, error);
+      toast.error(error?.message || "Failed to change password");
+    },
+  });
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setMessage(null);
     try {
-      const res = await fetch("/api/account/change-password", {
+      await apiCallJson("/api/account/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to change password");
+
       setMessage("Password updated successfully.");
+      toast.success("Password updated successfully!");
       setCurrentPassword("");
       setNewPassword("");
     } catch (err: unknown) {
+      // Error already handled by useAuthenticatedFetch interceptor
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
@@ -48,7 +59,10 @@ export default function ChangePasswordForm() {
       )}
 
       <div>
-        <label htmlFor="currentPassword" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+        <label
+          htmlFor="currentPassword"
+          className="block text-sm font-medium text-slate-700 dark:text-slate-300"
+        >
           Current password
         </label>
         <div className="mt-1 relative">
@@ -67,17 +81,26 @@ export default function ChangePasswordForm() {
           />
           <button
             type="button"
-            aria-label={showCurrent ? "Hide current password" : "Show current password"}
+            aria-label={
+              showCurrent ? "Hide current password" : "Show current password"
+            }
             onClick={() => setShowCurrent((s) => !s)}
             className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
           >
-            {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showCurrent ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>
 
       <div>
-        <label htmlFor="newPassword" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+        <label
+          htmlFor="newPassword"
+          className="block text-sm font-medium text-slate-700 dark:text-slate-300"
+        >
           New password
         </label>
         <div className="mt-1 relative">
@@ -100,10 +123,16 @@ export default function ChangePasswordForm() {
             onClick={() => setShowNew((s) => !s)}
             className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
           >
-            {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showNew ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
         </div>
-        <p className="mt-1 text-xs text-slate-500">Use a strong password you don&apos;t use elsewhere.</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Use a strong password you don&apos;t use elsewhere.
+        </p>
       </div>
 
       <button

@@ -7,6 +7,19 @@ import { secureHeaders } from "hono/secure-headers";
 // Import routes
 import authRoutes from "./routes/auth";
 import attributesRoutes from "./routes/attributes";
+import productsRoutes from "./routes/products";
+import categoriesRoutes from "./routes/categories";
+import taxClassesRoutes from "./routes/tax-classes";
+import productBulkRoutes from "./routes/product-bulk";
+import productVariantsRoutes from "./routes/product-variants";
+import productMediaRoutes from "./routes/product-media";
+import productImportRoutes from "./routes/product-import";
+import productExportRoutes from "./routes/product-export";
+import mediaRoutes from "./routes/media";
+import mediaUploadRoutes from "./routes/media-upload";
+import mediaFoldersRoutes from "./routes/media-folders";
+import mediaBulkRoutes from "./routes/media-bulk";
+import settingsGeneralRoutes from "./routes/settings-general";
 
 // Create main app
 const app = new Hono<{ Bindings: Env; Variables: { user: any } }>();
@@ -22,8 +35,8 @@ app.use(
   cors({
     origin: ["http://localhost:3001", "https://admin.plazacms.com"], // Add your admin frontend URLs
     credentials: true,
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization", "Accept"],
   })
 );
 
@@ -44,6 +57,21 @@ app.get("/", (c) => {
 // Mount routes
 app.route("/api/auth", authRoutes);
 app.route("/api/admin/attributes", attributesRoutes);
+app.route("/api/admin/products", productsRoutes);
+app.route("/api/admin/products/bulk", productBulkRoutes);
+app.route("/api/admin/products/import", productImportRoutes);
+app.route("/api/admin/products/export", productExportRoutes);
+app.route("/api/admin/products", productVariantsRoutes);
+app.route("/api/admin/products", productMediaRoutes);
+app.route("/api/admin/categories", categoriesRoutes);
+app.route("/api/admin/tax-classes", taxClassesRoutes);
+// Mount specific media routes FIRST (before generic /media route)
+app.route("/api/admin/media/upload", mediaUploadRoutes);
+app.route("/api/admin/media/folders", mediaFoldersRoutes);
+app.route("/api/admin/media/bulk", mediaBulkRoutes);
+// Generic media route LAST (catches remaining paths)
+app.route("/api/admin/media", mediaRoutes);
+app.route("/api/admin/settings/general", settingsGeneralRoutes);
 
 // 404 handler
 app.notFound((c) => {

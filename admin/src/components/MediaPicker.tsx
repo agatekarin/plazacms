@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { 
-  X, 
-  Check, 
-  Upload, 
-  FolderPlus, 
+import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
+import {
+  X,
+  Check,
+  Upload,
+  FolderPlus,
   RefreshCw,
   Search,
   Filter,
@@ -27,7 +29,7 @@ import {
   SortAsc,
   SortDesc,
   LayoutGrid,
-  SquareStack
+  SquareStack,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,11 +71,11 @@ interface MediaPickerProps {
 
 // Helper function to format file size
 function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) return "0 B";
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
 export default function MediaPicker({
@@ -83,89 +85,94 @@ export default function MediaPicker({
   onSelect,
   onClose,
   autoCreateFolder,
-  productSlug
+  productSlug,
 }: MediaPickerProps) {
+  // Session and Auth
+  const { data: session } = useSession();
+
+  // Enhanced API Helper with global error handling
+  const {
+    apiCall,
+    apiCallJson,
+    isLoading: apiLoading,
+  } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error(`MediaPicker API Error on ${url}:`, error);
+      toast.error(error?.message || "API request failed");
+    },
+  });
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(
-    new Set(selectedMedia.map(m => m.id))
+    new Set(selectedMedia.map((m) => m.id))
   );
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-
-  // Load folders on mount
-  useEffect(() => {
-    loadFolders();
-  }, []);
-
-  // Load media when folder changes
-  useEffect(() => {
-    loadMedia();
-  }, [selectedFolder, search]);
-
-  // Auto-create and select products folder
-  useEffect(() => {
-    if (autoCreateFolder && folders.length > 0) {
-      autoCreateProductFolder();
-    }
-  }, [folders, autoCreateFolder, productSlug]);
+  const [isAutoCreatingFolder, setIsAutoCreatingFolder] = useState(false);
+  // Use global loading state from useAuthenticatedFetch hook
+  const loading = apiLoading;
 
   const loadFolders = async () => {
     try {
-      const res = await fetch("/api/admin/media/folders?include_children=true");
-      const data = await res.json();
+      const data = await apiCallJson(
+        "/api/admin/media/folders?include_children=true"
+      );
       if (data.success) {
         setFolders(data.folders);
       }
     } catch (error) {
+      // Error already handled by useAuthenticatedFetch interceptor
       console.error("Failed to load folders:", error);
     }
   };
 
-  const loadMedia = async (forceRefresh = false) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: "1",
-        pageSize: "50",
-        view
-      });
-      
-      if (selectedFolder) params.set("folder_id", selectedFolder);
-      if (search) params.set("search", search);
-      // Add cache busting for force refresh
-      if (forceRefresh) params.set("_t", Date.now().toString());
-      
-      console.log("MediaPicker: Loading media with params:", params.toString());
-      const res = await fetch(`/api/admin/media?${params}`, {
-        // Prevent caching issues
-        cache: forceRefresh ? 'no-cache' : 'default'
-      });
-      const data = await res.json();
-      
-      console.log("MediaPicker: API response:", data);
-      
-      if (data.success) {
-        setMedia(data.items || []);
-        console.log("MediaPicker: Set media items:", data.items?.length || 0);
-      } else {
-        console.error("MediaPicker: API returned error:", data.error);
+  const loadMedia = useCallback(
+    async (forceRefresh = false) => {
+      try {
+        const params = new URLSearchParams({
+          page: "1",
+          pageSize: "50",
+          view,
+        });
+
+        if (selectedFolder) params.set("folder_id", selectedFolder);
+        if (search) params.set("search", search);
+        // Add cache busting for force refresh
+        if (forceRefresh) params.set("_t", Date.now().toString());
+
+        console.log(
+          "MediaPicker: Loading media with params:",
+          params.toString()
+        );
+        const data = await apiCallJson(`/api/admin/media?${params}`, {
+          // Prevent caching issues
+          cache: forceRefresh ? "no-cache" : "default",
+        });
+
+        console.log("MediaPicker: API response:", data);
+
+        if (data.success) {
+          setMedia(data.items || []);
+          console.log("MediaPicker: Set media items:", data.items?.length || 0);
+        } else {
+          console.error("MediaPicker: API returned error:", data.error);
+          setMedia([]); // Clear media on error
+        }
+      } catch (error) {
+        // Error already handled by useAuthenticatedFetch interceptor
+        console.error("Failed to load media:", error);
         setMedia([]); // Clear media on error
       }
-    } catch (error) {
-      console.error("Failed to load media:", error);
-      setMedia([]); // Clear media on error
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [selectedFolder, search, view]
+  );
 
   const autoCreateProductFolder = async () => {
-    if (!autoCreateFolder) return;
+    if (!autoCreateFolder || isAutoCreatingFolder) return;
 
+    setIsAutoCreatingFolder(true);
     console.log("MediaPicker: Auto-creating folder:", autoCreateFolder);
     console.log("MediaPicker: Available folders:", folders);
 
@@ -174,88 +181,102 @@ export default function MediaPicker({
       const parts = autoCreateFolder.split("/");
       const parentName = parts[0]; // "products"
       const childName = parts[1]; // "variants"
-      
+
       // Check if parent folder exists
-      let parentFolder = folders.find(f => f.name.toLowerCase() === parentName.toLowerCase() && !f.parent_id);
-      
+      let parentFolder = folders.find(
+        (f) => f.name.toLowerCase() === parentName.toLowerCase() && !f.parent_id
+      );
+
       if (!parentFolder) {
         // Create parent folder first
         console.log("MediaPicker: Creating parent folder:", parentName);
-        const res = await fetch("/api/admin/media/folders", {
+        const data = await apiCallJson("/api/admin/media/folders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: parentName,
-            description: `${parentName} folder`
-          })
+            description: `${parentName} folder`,
+          }),
         });
-        const data = await res.json();
         if (data.success) {
           await loadFolders(); // Reload to get parent folder
-          parentFolder = folders.find(f => f.name.toLowerCase() === parentName.toLowerCase() && !f.parent_id);
+          parentFolder = folders.find(
+            (f) =>
+              f.name.toLowerCase() === parentName.toLowerCase() && !f.parent_id
+          );
         }
       }
-      
+
       if (parentFolder) {
         // Check if child folder exists
-        let childFolder = folders.find(f => 
-          f.name.toLowerCase() === childName.toLowerCase() && 
-          f.parent_id === parentFolder.id
+        let childFolder = folders.find(
+          (f) =>
+            f.name.toLowerCase() === childName.toLowerCase() &&
+            f.parent_id === parentFolder.id
         );
-        
+
         if (!childFolder) {
           // Create child folder
-          console.log("MediaPicker: Creating child folder:", childName, "under parent:", parentFolder.id);
-          const res = await fetch("/api/admin/media/folders", {
+          console.log(
+            "MediaPicker: Creating child folder:",
+            childName,
+            "under parent:",
+            parentFolder.id
+          );
+          const data = await apiCallJson("/api/admin/media/folders", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: childName,
               description: `${childName} folder`,
-              parent_id: parentFolder.id
-            })
+              parent_id: parentFolder.id,
+            }),
           });
-          const data = await res.json();
           if (data.success) {
             await loadFolders(); // Reload to get child folder
-            childFolder = folders.find(f => 
-              f.name.toLowerCase() === childName.toLowerCase() && 
-              f.parent_id === parentFolder.id
+            childFolder = folders.find(
+              (f) =>
+                f.name.toLowerCase() === childName.toLowerCase() &&
+                f.parent_id === parentFolder.id
             );
           }
         }
-        
+
         if (childFolder) {
           console.log("MediaPicker: Found/created child folder:", childFolder);
           setSelectedFolder(childFolder.id);
+          setIsAutoCreatingFolder(false);
           return;
         }
       }
     } else {
       // Simple folder (no nesting)
-      const targetFolder = folders.find(f => f.name.toLowerCase() === autoCreateFolder.toLowerCase() && !f.parent_id);
-      
+      const targetFolder = folders.find(
+        (f) =>
+          f.name.toLowerCase() === autoCreateFolder.toLowerCase() &&
+          !f.parent_id
+      );
+
       if (targetFolder) {
         console.log("MediaPicker: Found existing folder:", targetFolder);
         setSelectedFolder(targetFolder.id);
+        setIsAutoCreatingFolder(false);
         return;
       }
 
       // Create simple folder if it doesn't exist
       try {
         console.log("MediaPicker: Creating new folder:", autoCreateFolder);
-        const res = await fetch("/api/admin/media/folders", {
+        const data = await apiCallJson("/api/admin/media/folders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: autoCreateFolder,
-            description: `${autoCreateFolder} folder`
-          })
+            description: `${autoCreateFolder} folder`,
+          }),
         });
-
-        const data = await res.json();
         console.log("MediaPicker: Folder creation response:", data);
-        
+
         if (data.success) {
           await loadFolders(); // Reload folders
           setSelectedFolder(data.folder.id);
@@ -267,11 +288,43 @@ export default function MediaPicker({
         console.error("Failed to create folder:", error);
       }
     }
+
+    setIsAutoCreatingFolder(false);
   };
+
+  // Load folders on mount
+  useEffect(() => {
+    loadFolders();
+  }, []);
+
+  // Load media when folder changes (but only after folders are loaded)
+  useEffect(() => {
+    if (folders.length > 0) {
+      loadMedia();
+    }
+  }, [folders.length, selectedFolder, search]);
+
+  // Auto-create and select products folder (prevent multiple calls)
+  useEffect(() => {
+    if (
+      autoCreateFolder &&
+      folders.length > 0 &&
+      !isAutoCreatingFolder &&
+      !selectedFolder
+    ) {
+      autoCreateProductFolder();
+    }
+  }, [
+    folders,
+    autoCreateFolder,
+    productSlug,
+    isAutoCreatingFolder,
+    selectedFolder,
+  ]);
 
   const handleMediaSelect = (mediaItem: MediaItem) => {
     const newSelected = new Set(selectedItems);
-    
+
     if (mode === "single") {
       newSelected.clear();
       newSelected.add(mediaItem.id);
@@ -282,12 +335,12 @@ export default function MediaPicker({
         newSelected.add(mediaItem.id);
       }
     }
-    
+
     setSelectedItems(newSelected);
   };
 
   const handleConfirm = () => {
-    const selectedMediaItems = media.filter(m => selectedItems.has(m.id));
+    const selectedMediaItems = media.filter((m) => selectedItems.has(m.id));
     onSelect(selectedMediaItems);
     onClose();
   };
@@ -303,26 +356,28 @@ export default function MediaPicker({
     try {
       for (const file of Array.from(files)) {
         console.log("MediaPicker: Uploading file:", file.name);
-        
+
         const formData = new FormData();
         formData.append("file", file);
         formData.append("media_type", mediaType);
         if (selectedFolder) formData.append("folder_id", selectedFolder);
 
-        const res = await fetch("/api/admin/media/upload", {
+        const responseData = await apiCallJson("/api/admin/media/upload", {
           method: "POST",
-          body: formData
+          body: formData,
         });
-
-        const responseData = await res.json();
         console.log("MediaPicker: Upload response:", responseData);
 
-        if (!res.ok) throw new Error(responseData.error || "Upload failed");
+        // apiCallJson already handles response parsing and errors
       }
 
       console.log("MediaPicker: All uploads completed, reloading media");
       await loadMedia(true); // Force refresh after upload
-      toast.success(`${files.length} file${files.length > 1 ? 's' : ''} uploaded successfully`);
+      toast.success(
+        `${files.length} file${
+          files.length > 1 ? "s" : ""
+        } uploaded successfully`
+      );
     } catch (error) {
       console.error("Upload failed:", error);
       toast.error("Upload failed. Please try again.");
@@ -352,41 +407,53 @@ export default function MediaPicker({
                   <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
                     <FileImage className="w-4 h-4" />
                     {mediaType === "user_profile"
-                      ? `Choose ${mode === "single" ? "an image" : "images"} for user profile`
-                      : `Choose ${mode === "single" ? "an image" : "images"} for your ${mediaType === "product_variant_image" ? "product variant" : "product"}`}
+                      ? `Choose ${
+                          mode === "single" ? "an image" : "images"
+                        } for user profile`
+                      : `Choose ${
+                          mode === "single" ? "an image" : "images"
+                        } for your ${
+                          mediaType === "product_variant_image"
+                            ? "product variant"
+                            : "product"
+                        }`}
                   </p>
                 </div>
               </div>
-              
+
               {/* Header Actions */}
               <div className="flex items-center gap-2">
                 <div className="hidden lg:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
                   <HardDrive className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">{media.length} items</span>
+                  <span className="text-sm text-gray-600">
+                    {media.length} items
+                  </span>
                 </div>
-                
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => loadMedia(true)}
                   disabled={loading}
                   className="flex items-center gap-2"
                 >
-                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw
+                    className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+                  />
                   <span className="hidden sm:inline">Refresh</span>
                 </Button>
-                
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={onClose} 
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onClose}
                   className="p-2 hover:bg-red-50 hover:text-red-600"
                 >
                   <X className="w-5 h-5" />
                 </Button>
               </div>
             </div>
-            
+
             {/* Stats Bar */}
             <div className="mt-4 pt-4 border-t border-gray-100">
               <div className="flex flex-wrap items-center gap-4 text-sm">
@@ -397,22 +464,23 @@ export default function MediaPicker({
                     {selectedItems.size} of {media.length}
                   </span>
                 </div>
-                
+
                 {selectedFolder && (
                   <div className="flex items-center gap-2">
                     <Folder className="w-4 h-4 text-blue-500" />
                     <span className="text-gray-500">Folder:</span>
                     <span className="font-medium text-blue-600">
-                      {folders.find(f => f.id === selectedFolder)?.name || "Unknown"}
+                      {folders.find((f) => f.id === selectedFolder)?.name ||
+                        "Unknown"}
                     </span>
                   </div>
                 )}
-                
+
                 <div className="flex items-center gap-2">
                   <Tags className="w-4 h-4 text-gray-500" />
                   <span className="text-gray-500">Type:</span>
                   <span className="font-medium text-gray-900 capitalize">
-                    {mediaType.replace('_', ' ')}
+                    {mediaType.replace("_", " ")}
                   </span>
                 </div>
               </div>
@@ -435,7 +503,7 @@ export default function MediaPicker({
                   className="pl-10 bg-white border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
                 />
               </div>
-              
+
               {/* Upload & View Options */}
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg p-1">
@@ -458,7 +526,7 @@ export default function MediaPicker({
                     <List className="w-4 h-4" />
                   </Button>
                 </div>
-                
+
                 {/* Upload Button */}
                 <input
                   type="file"
@@ -471,7 +539,9 @@ export default function MediaPicker({
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => document.getElementById("file-upload")?.click()}
+                  onClick={() =>
+                    document.getElementById("file-upload")?.click()
+                  }
                   disabled={uploading}
                   className="flex items-center gap-2"
                 >
@@ -493,7 +563,9 @@ export default function MediaPicker({
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
                   <Folder className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm font-medium text-gray-700">Folder:</span>
+                  <span className="text-sm font-medium text-gray-700">
+                    Folder:
+                  </span>
                 </div>
                 <select
                   value={selectedFolder || ""}
@@ -501,24 +573,26 @@ export default function MediaPicker({
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 min-w-[200px]"
                 >
                   <option value="">📁 All Media</option>
-                  {folders.map(folder => (
+                  {folders.map((folder) => (
                     <option key={folder.id} value={folder.id}>
-                      {folder.parent_id ? "📂" : "📁"} {folder.path} ({folder.media_count})
+                      {folder.parent_id ? "📂" : "📁"} {folder.path} (
+                      {folder.media_count})
                     </option>
                   ))}
                 </select>
               </div>
-              
+
               {/* Selection Info */}
               {selectedItems.size > 0 && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
                   <Check className="w-4 h-4 text-blue-600" />
                   <span className="text-sm font-medium text-blue-900">
-                    {selectedItems.size} image{selectedItems.size > 1 ? 's' : ''} selected
+                    {selectedItems.size} image
+                    {selectedItems.size > 1 ? "s" : ""} selected
                   </span>
                 </div>
               )}
-              
+
               {/* Quick Actions */}
               <div className="ml-auto flex items-center gap-2">
                 {search && (
@@ -546,8 +620,12 @@ export default function MediaPicker({
                 <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center mb-4">
                   <div className="w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
                 </div>
-                <div className="text-lg font-medium text-gray-900 mb-2">Loading media library</div>
-                <div className="text-sm text-gray-500">Please wait while we fetch your images...</div>
+                <div className="text-lg font-medium text-gray-900 mb-2">
+                  Loading media library
+                </div>
+                <div className="text-sm text-gray-500">
+                  Please wait while we fetch your images...
+                </div>
               </div>
             </div>
           ) : media.length === 0 ? (
@@ -557,18 +635,17 @@ export default function MediaPicker({
                 <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center mb-6">
                   <ImageIcon className="w-10 h-10 text-gray-400" />
                 </div>
-                
+
                 <div className="text-center max-w-md">
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
                     {search ? "No images found" : "No media in this location"}
                   </h3>
                   <p className="text-sm text-gray-500 mb-6">
-                    {search 
+                    {search
                       ? `No images match "${search}". Try a different search term.`
-                      : "Get started by uploading your first images to this folder."
-                    }
+                      : "Get started by uploading your first images to this folder."}
                   </p>
-                  
+
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                     {search ? (
                       <Button
@@ -582,14 +659,16 @@ export default function MediaPicker({
                     ) : (
                       <Button
                         variant="primary"
-                        onClick={() => document.getElementById("file-upload")?.click()}
+                        onClick={() =>
+                          document.getElementById("file-upload")?.click()
+                        }
                         className="flex items-center gap-2"
                       >
                         <Upload className="w-4 h-4" />
                         Upload images
                       </Button>
                     )}
-                    
+
                     <Button
                       variant="ghost"
                       onClick={() => loadMedia(true)}
@@ -598,7 +677,7 @@ export default function MediaPicker({
                       <RefreshCw className="w-4 h-4" />
                       Refresh
                     </Button>
-                    
+
                     {selectedFolder && (
                       <Button
                         variant="ghost"
@@ -618,7 +697,7 @@ export default function MediaPicker({
             <div className="p-6">
               {view === "grid" ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
-                  {media.map(item => (
+                  {media.map((item) => (
                     <div
                       key={item.id}
                       className={`relative group cursor-pointer rounded-xl overflow-hidden transition-all duration-200 ${
@@ -636,23 +715,27 @@ export default function MediaPicker({
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                           loading="lazy"
                         />
-                        
+
                         {/* Overlay Gradient */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                       </div>
-                      
+
                       {/* Selection Indicator */}
-                      <div className={`absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 ${
-                        selectedItems.has(item.id)
-                          ? "bg-blue-600 text-white scale-110"
-                          : "bg-white/90 backdrop-blur-sm text-gray-600 opacity-0 group-hover:opacity-100"
-                      }`}>
+                      <div
+                        className={`absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 ${
+                          selectedItems.has(item.id)
+                            ? "bg-blue-600 text-white scale-110"
+                            : "bg-white/90 backdrop-blur-sm text-gray-600 opacity-0 group-hover:opacity-100"
+                        }`}
+                      >
                         <Check className="w-3 h-3" />
                       </div>
-                      
+
                       {/* File Info */}
                       <div className="absolute bottom-0 left-0 right-0 p-3 text-white opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
-                        <div className="text-xs font-medium truncate mb-1">{item.filename}</div>
+                        <div className="text-xs font-medium truncate mb-1">
+                          {item.filename}
+                        </div>
                         <div className="text-xs opacity-80 flex items-center gap-2">
                           <span>{formatFileSize(item.size)}</span>
                           {item.folder_name && (
@@ -669,7 +752,7 @@ export default function MediaPicker({
               ) : (
                 /* List View */
                 <div className="space-y-2">
-                  {media.map(item => (
+                  {media.map((item) => (
                     <div
                       key={item.id}
                       className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all duration-200 ${
@@ -688,11 +771,13 @@ export default function MediaPicker({
                           loading="lazy"
                         />
                       </div>
-                      
+
                       {/* File Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-medium text-gray-900 truncate">{item.filename}</h4>
+                          <h4 className="font-medium text-gray-900 truncate">
+                            {item.filename}
+                          </h4>
                           {selectedItems.has(item.id) && (
                             <div className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center flex-shrink-0">
                               <Check className="w-3 h-3" />
@@ -701,11 +786,15 @@ export default function MediaPicker({
                         </div>
                         <div className="text-sm text-gray-500 flex items-center gap-4 mt-1">
                           <span>{formatFileSize(item.size)}</span>
-                          {item.folder_name && <span>📁 {item.folder_name}</span>}
-                          <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                          {item.folder_name && (
+                            <span>📁 {item.folder_name}</span>
+                          )}
+                          <span>
+                            {new Date(item.created_at).toLocaleDateString()}
+                          </span>
                         </div>
                       </div>
-                      
+
                       {/* Actions */}
                       <div className="flex items-center gap-2">
                         <Button variant="ghost" size="sm" className="p-2">
@@ -735,37 +824,42 @@ export default function MediaPicker({
                     {selectedItems.size} of {media.length} selected
                   </span>
                 </div>
-                
+
                 {selectedItems.size > 0 && (
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <span>•</span>
-                    <span>{mode === "single" ? "Single selection" : "Multiple selection"}</span>
+                    <span>
+                      {mode === "single"
+                        ? "Single selection"
+                        : "Multiple selection"}
+                    </span>
                   </div>
                 )}
               </div>
-              
+
               {/* Action Buttons */}
               <div className="flex items-center gap-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={onClose}
                   className="flex items-center gap-2"
                 >
                   <X className="w-4 h-4" />
                   Cancel
                 </Button>
-                
-                <Button 
+
+                <Button
                   onClick={handleConfirm}
                   disabled={selectedItems.size === 0}
                   className="flex items-center gap-2"
                   variant="primary"
                 >
                   <Check className="w-4 h-4" />
-                  {selectedItems.size === 0 
+                  {selectedItems.size === 0
                     ? "Select Images"
-                    : `Use ${selectedItems.size} Image${selectedItems.size > 1 ? 's' : ''}`
-                  }
+                    : `Use ${selectedItems.size} Image${
+                        selectedItems.size > 1 ? "s" : ""
+                      }`}
                 </Button>
               </div>
             </div>

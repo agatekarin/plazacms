@@ -875,7 +875,11 @@ export default function PaymentsManager({
         (async () => {
           try {
             console.log("Fetching QR media:", chosenId);
-            const res = await fetch(`/api/admin/media/${chosenId}`, {
+            const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+            const url = base
+              ? `${base}/api/admin/media/${chosenId}`
+              : `/api/admin/media/${chosenId}`;
+            const res = await fetch(url, {
               cache: "no-store",
             });
             const d = await res.json();
