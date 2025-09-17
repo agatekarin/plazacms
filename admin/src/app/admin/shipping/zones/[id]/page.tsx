@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Country {
   id: number;
@@ -67,6 +68,7 @@ export default function ShippingZoneDetailPage({
   const [zone, setZone] = useState<ShippingZone | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   useEffect(() => {
     fetchZone();
@@ -75,15 +77,10 @@ export default function ShippingZoneDetailPage({
   const fetchZone = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `/api/admin/shipping/zones/${resolvedParams.id}`
+      const data = await apiCallJson(
+        `/api/admin/shipping/zones/${resolvedParams.id}`,
+        { cache: "no-store" }
       );
-
-      if (!response.ok) {
-        throw new Error("Zone not found");
-      }
-
-      const data = await response.json();
       const countries = Array.isArray(data.countries)
         ? data.countries.map((c: any) => ({
             iso2: (c.country_code || "").trim().toUpperCase(),
@@ -105,16 +102,13 @@ export default function ShippingZoneDetailPage({
   const handleDelete = async () => {
     try {
       setDeleting(true);
-      const response = await fetch(
+      const res = await apiCall(
         `/api/admin/shipping/zones/${resolvedParams.id}`,
-        {
-          method: "DELETE",
-        }
+        { method: "DELETE" }
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete zone");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({} as any));
+        throw new Error((error as any)?.error || "Failed to delete zone");
       }
 
       router.push("/admin/shipping/zones");

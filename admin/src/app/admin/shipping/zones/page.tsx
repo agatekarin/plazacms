@@ -42,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingZone {
   id: number;
@@ -67,6 +68,7 @@ export default function ShippingZonesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   const fetchZones = async () => {
     try {
@@ -77,11 +79,9 @@ export default function ShippingZonesPage() {
         search: searchQuery,
         status: statusFilter,
       });
-
-      const response = await fetch(`/api/admin/shipping/zones?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch zones");
-
-      const data = await response.json();
+      const data = await apiCallJson(`/api/admin/shipping/zones?${params}`, {
+        cache: "no-store",
+      });
       setZones(data.zones);
     } catch (error) {
       console.error("Error fetching zones:", error);
@@ -98,13 +98,12 @@ export default function ShippingZonesPage() {
     if (!confirm("Are you sure you want to delete this zone?")) return;
 
     try {
-      const response = await fetch(`/api/admin/shipping/zones/${id}`, {
+      const res = await apiCall(`/api/admin/shipping/zones/${id}`, {
         method: "DELETE",
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || "Failed to delete zone");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({} as any));
+        alert((error as any)?.error || "Failed to delete zone");
         return;
       }
 

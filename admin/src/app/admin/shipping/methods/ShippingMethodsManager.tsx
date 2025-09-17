@@ -27,6 +27,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { MethodCreateForm } from "./MethodCreateForm";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingMethod {
   id: string;
@@ -60,6 +61,7 @@ interface FreeShippingRule {
 }
 
 export function ShippingMethodsManager() {
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
   const [methods, setMethods] = useState<ShippingMethod[]>([]);
   const [selectedMethod, setSelectedMethod] = useState<ShippingMethod | null>(
     null
@@ -83,10 +85,9 @@ export function ShippingMethodsManager() {
   const loadMethods = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/admin/shipping/methods");
-      if (!response.ok) throw new Error("Failed to load methods");
-
-      const data = await response.json();
+      const data = await apiCallJson("/api/admin/shipping/methods", {
+        cache: "no-store",
+      });
       setMethods(data.methods || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load methods");
@@ -100,12 +101,10 @@ export function ShippingMethodsManager() {
       return;
 
     try {
-      const response = await fetch(`/api/admin/shipping/methods/${methodId}`, {
+      const res = await apiCall(`/api/admin/shipping/methods/${methodId}`, {
         method: "DELETE",
       });
-
-      if (!response.ok) throw new Error("Failed to delete method");
-
+      if (!res.ok) throw new Error("Failed to delete method");
       await loadMethods();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete method");
@@ -118,14 +117,12 @@ export function ShippingMethodsManager() {
   ) => {
     try {
       const newStatus = currentStatus === "active" ? "inactive" : "active";
-      const response = await fetch(`/api/admin/shipping/methods/${methodId}`, {
+      const res = await apiCall(`/api/admin/shipping/methods/${methodId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-
-      if (!response.ok) throw new Error("Failed to update status");
-
+      if (!res.ok) throw new Error("Failed to update status");
       await loadMethods();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update status");

@@ -4,6 +4,14 @@ import { getDb } from "../lib/db";
 
 const orders = new Hono<{ Bindings: Env; Variables: { user: any } }>();
 
+// Guard: GET /api/admin/orders/add - avoid matching ":id" and causing DB errors
+orders.get("/add", adminMiddleware as any, async (c) => {
+  return c.json({
+    ok: true,
+    message: "Use POST /api/admin/orders to create an order",
+  });
+});
+
 // GET /api/admin/orders - List orders with filtering/pagination
 orders.get("/", adminMiddleware as any, async (c) => {
   const sql = getDb(c as any);

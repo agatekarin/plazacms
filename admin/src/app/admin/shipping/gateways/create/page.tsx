@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Zone {
   id: number;
@@ -56,6 +57,7 @@ export default function CreateGatewayPage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingZones, setLoadingZones] = useState(true);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   const [formData, setFormData] = useState<GatewayForm>({
     code: "",
@@ -75,10 +77,9 @@ export default function CreateGatewayPage() {
   const fetchZones = async () => {
     try {
       setLoadingZones(true);
-      const response = await fetch("/api/admin/shipping/zones?limit=100");
-      if (!response.ok) throw new Error("Failed to fetch zones");
-
-      const data = await response.json();
+      const data = await apiCallJson("/api/admin/shipping/zones?limit=100", {
+        cache: "no-store",
+      });
       setZones(data.zones);
     } catch (error) {
       console.error("Error fetching zones:", error);
@@ -92,20 +93,11 @@ export default function CreateGatewayPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/admin/shipping/gateways", {
+      const result = await apiCallJson("/api/admin/shipping/gateways", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create gateway");
-      }
-
-      const result = await response.json();
       router.push(`/admin/shipping/gateways/${result.gateway.id}`);
     } catch (error) {
       console.error("Error creating gateway:", error);

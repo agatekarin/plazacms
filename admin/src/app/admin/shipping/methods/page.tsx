@@ -42,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingMethod {
   id: string;
@@ -88,6 +89,7 @@ export default function ShippingMethodsPage() {
   const [gatewayFilter, setGatewayFilter] = useState("all");
   const [methodTypeFilter, setMethodTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   const fetchMethods = async () => {
     try {
@@ -100,11 +102,9 @@ export default function ShippingMethodsPage() {
         status: statusFilter,
         limit: "100",
       });
-
-      const response = await fetch(`/api/admin/shipping/methods?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch methods");
-
-      const data = await response.json();
+      const data = await apiCallJson(`/api/admin/shipping/methods?${params}`, {
+        cache: "no-store",
+      });
       setMethods(data.methods);
     } catch (error) {
       console.error("Error fetching methods:", error);
@@ -121,16 +121,14 @@ export default function ShippingMethodsPage() {
     if (!confirm("Are you sure you want to delete this method?")) return;
 
     try {
-      const response = await fetch(`/api/admin/shipping/methods/${id}`, {
+      const res = await apiCall(`/api/admin/shipping/methods/${id}`, {
         method: "DELETE",
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || "Failed to delete method");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({} as any));
+        alert((error as any)?.error || "Failed to delete method");
         return;
       }
-
       fetchMethods();
     } catch (error) {
       console.error("Error deleting method:", error);

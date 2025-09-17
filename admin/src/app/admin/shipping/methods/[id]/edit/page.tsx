@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Zone {
   id: string;
@@ -78,6 +79,7 @@ export default function EditShippingMethodPage({
   const [gateways, setGateways] = useState<Gateway[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const { apiCallJson } = useAuthenticatedFetch();
   const [formData, setFormData] = useState<FormData>({
     zone_id: "",
     gateway_id: "",
@@ -108,20 +110,17 @@ export default function EditShippingMethodPage({
     try {
       setLoadingData(true);
 
-      const [methodResponse, zonesResponse, gatewaysResponse] =
-        await Promise.all([
-          fetch(`/api/admin/shipping/methods/${resolvedParams.id}`),
-          fetch("/api/admin/shipping/zones?limit=100"),
-          fetch("/api/admin/shipping/gateways?limit=100"),
-        ]);
-
-      if (!methodResponse.ok) {
-        throw new Error("Method not found");
-      }
-
-      const methodData = await methodResponse.json();
-      const zonesData = await zonesResponse.json();
-      const gatewaysData = await gatewaysResponse.json();
+      const [methodData, zonesData, gatewaysData] = await Promise.all([
+        apiCallJson(`/api/admin/shipping/methods/${resolvedParams.id}`, {
+          cache: "no-store",
+        }),
+        apiCallJson("/api/admin/shipping/zones?limit=100", {
+          cache: "no-store",
+        }),
+        apiCallJson("/api/admin/shipping/gateways?limit=100", {
+          cache: "no-store",
+        }),
+      ]);
 
       const method = methodData.method;
       setFormData({
@@ -173,24 +172,11 @@ export default function EditShippingMethodPage({
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `/api/admin/shipping/methods/${resolvedParams.id}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formData),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update method");
-      }
-
-      const data = await response.json();
-      console.log("Method updated:", data);
+      await apiCallJson(`/api/admin/shipping/methods/${resolvedParams.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
 
       router.push(`/admin/shipping/methods/${resolvedParams.id}`);
     } catch (error) {

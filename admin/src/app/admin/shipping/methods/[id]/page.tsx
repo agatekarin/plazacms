@@ -36,6 +36,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingMethod {
   id: string;
@@ -85,6 +86,7 @@ export default function ShippingMethodDetailPage({
   const [method, setMethod] = useState<ShippingMethod | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   useEffect(() => {
     fetchMethod();
@@ -93,15 +95,10 @@ export default function ShippingMethodDetailPage({
   const fetchMethod = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `/api/admin/shipping/methods/${resolvedParams.id}`
+      const data = await apiCallJson(
+        `/api/admin/shipping/methods/${resolvedParams.id}`,
+        { cache: "no-store" }
       );
-
-      if (!response.ok) {
-        throw new Error("Method not found");
-      }
-
-      const data = await response.json();
       setMethod(data.method);
     } catch (error) {
       console.error("Error fetching method:", error);
@@ -115,16 +112,13 @@ export default function ShippingMethodDetailPage({
   const handleDelete = async () => {
     try {
       setDeleting(true);
-      const response = await fetch(
+      const res = await apiCall(
         `/api/admin/shipping/methods/${resolvedParams.id}`,
-        {
-          method: "DELETE",
-        }
+        { method: "DELETE" }
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete method");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({} as any));
+        throw new Error((error as any)?.error || "Failed to delete method");
       }
 
       router.push("/admin/shipping/methods");

@@ -33,6 +33,14 @@ import usersRoutes from "./routes/users";
 import ordersRoutes from "./routes/orders";
 import paymentsRoutes from "./routes/payments";
 import transactionsRoutes from "./routes/transactions";
+import locationsRoutes from "./routes/locations";
+import shippingZonesRoutes from "./routes/shipping-zones";
+import shippingMethodsRoutes from "./routes/shipping-methods";
+import shippingGatewaysRoutes from "./routes/shipping-gateways";
+import settingsShippingRoutes from "./routes/settings-shipping";
+import shippingCalculatorRoutes from "./routes/shipping-calculator";
+import shippingSummaryRoutes from "./routes/shipping-summary";
+import variantsRoutes from "./routes/variants";
 
 // Create main app
 const app = new Hono<{
@@ -59,10 +67,30 @@ app.use(
 // Rate limiting
 // 1) Legacy /api/auth/login limiter removed (we use Auth.js /api/authjs/signin)
 
+// Helper: wrap rate limiter to fail-open on KV errors
+const safeRateLimiter = (
+  config: Parameters<
+    typeof rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>
+  >[0]
+) => {
+  const mw = rateLimiter<{
+    Bindings: EnvWithRateLimit;
+    Variables: { user: any };
+  }>(config);
+  return async (c: any, next: any) => {
+    try {
+      return await (mw as any)(c, next);
+    } catch (e: any) {
+      console.warn("[rateLimiter] KV error - fail-open:", e?.message || e);
+      return next();
+    }
+  };
+};
+
 // 1b) Protect Auth.js credential sign-in POST as well
 app.use("/api/authjs/signin", (c, next) => {
   if (c.req.method !== "POST") return next();
-  return rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+  return safeRateLimiter({
     windowMs: 180_000,
     limit: 10,
     standardHeaders: "draft-6",
@@ -77,7 +105,7 @@ app.use("/api/authjs/signin", (c, next) => {
 // 1c) Protect Auth.js credentials callback (actual credentials POST target)
 app.use("/api/authjs/callback/credentials", (c, next) => {
   if (c.req.method !== "POST") return next();
-  return rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+  return safeRateLimiter({
     windowMs: 180_000,
     limit: 10,
     standardHeaders: "draft-6",
@@ -93,7 +121,7 @@ app.use("/api/authjs/callback/credentials", (c, next) => {
 //    Scope only to business APIs; exclude Auth.js endpoints (/api/authjs/*)
 for (const prefix of ["/api/admin/*", "/api/auth/*", "/api/account/*"]) {
   app.use(prefix, (c, next) =>
-    rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+    safeRateLimiter({
       windowMs: 180_000,
       limit: 2000,
       standardHeaders: "draft-6",
@@ -132,7 +160,7 @@ for (const p of [
   "/api/admin/media/bulk",
 ]) {
   app.use(p, (c, next) =>
-    rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+    safeRateLimiter({
       windowMs: 180_000,
       limit: 120,
       standardHeaders: "draft-6",
@@ -296,6 +324,14 @@ app.route("/api/admin/users", usersRoutes);
 app.route("/api/admin/orders", ordersRoutes);
 app.route("/api/admin/payments", paymentsRoutes);
 app.route("/api/admin/transactions", transactionsRoutes);
+app.route("/api/admin/locations", locationsRoutes);
+app.route("/api/admin/shipping/zones", shippingZonesRoutes);
+app.route("/api/admin/shipping/methods", shippingMethodsRoutes);
+app.route("/api/admin/shipping/gateways", shippingGatewaysRoutes);
+app.route("/api/admin/settings/shipping", settingsShippingRoutes);
+app.route("/api/admin/shipping/calculator", shippingCalculatorRoutes);
+app.route("/api/admin/shipping/summary", shippingSummaryRoutes);
+app.route("/api/admin/variants", variantsRoutes);
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler

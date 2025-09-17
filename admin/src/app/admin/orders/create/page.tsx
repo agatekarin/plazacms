@@ -1,14 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { useRouter } from "next/navigation";
-import {
-  CheckIcon,
-  XMarkIcon,
-  PlusIcon,
-  TrashIcon,
-} from "@heroicons/react/24/outline";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,13 +14,14 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import {
+  CheckIcon,
+  XMarkIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 
-type ProductOption = {
-  value: string;
-  label: string;
-  image?: string | null;
-};
-
+type ProductOption = { value: string; label: string; image?: string | null };
 type VariantOption = {
   value: string;
   label: string;
@@ -36,48 +31,22 @@ type VariantOption = {
 };
 
 interface OrderItem {
-  id?: string;
   product_name: string;
   product_price: number;
   quantity: number;
   product_variant_id: string;
-  variant_sku?: string;
-}
-
-interface Order {
-  id: string;
-  order_number: string;
-  status: string;
-  payment_status: string;
-  total_amount: number;
-  currency: string;
-  shipping_cost: number;
-  shipping_address: any;
-  billing_address: any;
-  payment_method?: string;
-  tracking_number?: string;
-  payment_method_id?: string;
-  shipping_zone_method_id?: string;
-  carrier_id?: string;
-  items: OrderItem[];
-}
-
-interface OrderEditorProps {
-  orderId: string;
 }
 
 interface PaymentMethod {
   id: string;
   name: string;
 }
-
 interface ShippingMethodOption {
   id: string;
   name: string;
   zone_name?: string;
   gateway_name?: string;
 }
-
 interface AddressForm {
   name: string;
   phone: string;
@@ -87,29 +56,28 @@ interface AddressForm {
   postal_code: string;
   country_code: string;
 }
-
 interface CountryOption {
   iso2: string;
   name: string;
 }
 
-export default function OrderEditor({ orderId }: OrderEditorProps) {
+export default function OrderCreatePage() {
   const router = useRouter();
-  const [order, setOrder] = useState<Order | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
-  // Form states
-  const [status, setStatus] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState("");
-  const [totalAmount, setTotalAmount] = useState(0);
+  // Required
+  const [userId, setUserId] = useState("");
+
+  // Order fields
+  const [status, setStatus] = useState("pending");
+  const [paymentStatus, setPaymentStatus] = useState("pending");
+  const [currency, setCurrency] = useState("USD");
   const [shippingCost, setShippingCost] = useState(0);
   const [trackingNumber, setTrackingNumber] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState("");
   const [shippingMethodId, setShippingMethodId] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
+
   const [shippingAddress, setShippingAddress] = useState<AddressForm>({
     name: "",
     phone: "",
@@ -146,7 +114,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     }`,
   }));
 
-  // Product/Variant options for item picker
+  // Product/Variants state
   const [productQuery, setProductQuery] = useState("");
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [variantOptionsByProduct, setVariantOptionsByProduct] = useState<
@@ -156,280 +124,55 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     {}
   );
 
-  const fetchOrder = async () => {
-    try {
-      setLoading(true);
-      const data = await apiCallJson(`/api/admin/orders/${orderId}`);
-      const orderData = data.order;
-
-      setOrder(orderData);
-      setStatus(orderData.status);
-      setPaymentStatus(orderData.payment_status);
-      setTotalAmount(orderData.total_amount);
-      setShippingCost(orderData.shipping_cost || 0);
-      setTrackingNumber(orderData.tracking_number || "");
-      setPaymentMethodId(orderData.payment_method_id || "");
-      setShippingMethodId(orderData.shipping_zone_method_id || "");
-      setItems(
-        (orderData.items || []).map((it: any) => ({
-          ...it,
-          product_price: Number(it.product_price ?? 0),
-          quantity: Number(it.quantity ?? 1),
-        }))
-      );
-      setShippingAddress({
-        name: orderData.shipping_address?.name || "",
-        phone: orderData.shipping_address?.phone || "",
-        street: orderData.shipping_address?.street || "",
-        city: orderData.shipping_address?.city || "",
-        state: orderData.shipping_address?.state || "",
-        postal_code: orderData.shipping_address?.postal_code || "",
-        country_code: orderData.shipping_address?.country_code || "",
-      });
-      setBillingAddress({
-        name: orderData.billing_address?.name || "",
-        phone: orderData.billing_address?.phone || "",
-        street: orderData.billing_address?.street || "",
-        city: orderData.billing_address?.city || "",
-        state: orderData.billing_address?.state || "",
-        postal_code: orderData.billing_address?.postal_code || "",
-        country_code: orderData.billing_address?.country_code || "",
-      });
-
-      setError("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Hydrate per-item product/variant metadata and ensure options are available
+  // Load options
   useEffect(() => {
     (async () => {
-      if (!items?.length) return;
-      // Preload product and variant info for each item
-      for (let i = 0; i < items.length; i++) {
-        const vId = items[i].product_variant_id;
-        if (!vId) continue;
-        try {
-          const data = await apiCallJson(`/api/admin/variants/${vId}`);
-          const it = data.item || data;
-          const productId = String(it.product_id);
-          // Track active product per index for UI
-          setRowProductIds((prev) => ({ ...prev, [i]: productId }));
-          // Ensure its variants loaded
-          await ensureVariantsLoaded(productId);
-          // Fill missing name/price if empty
-          const price = Number(it.sale_price ?? it.regular_price ?? 0);
-          const changed: Partial<OrderItem> = {};
-          if (!items[i].product_name)
-            changed.product_name = it.product_name || "";
-          if (!items[i].product_price || items[i].product_price === 0)
-            changed.product_price = price;
-          if (Object.keys(changed).length) {
-            updateItem(
-              i,
-              "product_name",
-              changed.product_name ?? items[i].product_name
-            );
-            updateItem(
-              i,
-              "product_price",
-              changed.product_price ?? items[i].product_price
-            );
-          }
-        } catch {}
-      }
-    })();
-  }, [items]);
-
-  const fetchOptions = async () => {
-    try {
-      // Fetch payment gateways, then methods per gateway, and aggregate into payment methods
-      const gatewaysData: { items: { id: string; name: string }[] } =
-        await apiCallJson("/api/admin/payments/gateways?enabled=true");
-      if (gatewaysData) {
-        const gateways = gatewaysData.items || [];
-
+      try {
+        // Payment methods via gateways
+        const gatewaysData: { items: { id: string; name: string }[] } =
+          await apiCallJson("/api/admin/payments/gateways?enabled=true");
+        const gateways = gatewaysData?.items || [];
         const methodLists = await Promise.all(
           gateways.map(async (g) => {
             try {
-              const data = await apiCallJson(
+              const d = await apiCallJson(
                 `/api/admin/payments/gateways/${g.id}/methods`
               );
-              return { gateway: g, items: (data.items || []) as any[] };
+              return { gateway: g, items: d.items || [] };
             } catch {
               return { gateway: g, items: [] as any[] };
             }
           })
         );
-
-        const methods: PaymentMethod[] = [];
+        const pm: PaymentMethod[] = [];
         for (const list of methodLists) {
-          const gatewayName = list.gateway?.name || "";
-          for (const m of list.items) {
-            methods.push({
-              id: String(m.id),
-              name: `${gatewayName} • ${m.name}`,
-            });
-          }
+          const gw = list.gateway?.name || "";
+          for (const m of list.items)
+            pm.push({ id: String(m.id), name: `${gw} • ${m.name}` });
         }
+        setPaymentMethods(pm);
 
-        setPaymentMethods(methods);
-      }
-
-      // Fetch shipping methods
-      {
-        const smData = await apiCallJson(
+        // Shipping methods
+        const sm = await apiCallJson(
           "/api/admin/shipping/methods?status=active&limit=200"
         );
-        const methods: ShippingMethodOption[] = (smData.methods || []).map(
-          (m: any) => ({
+        setShippingMethods(
+          (sm.methods || []).map((m: any) => ({
             id: m.id,
             name: m.name,
             zone_name: m.zone_name,
             gateway_name: m.gateway_name,
-          })
+          }))
         );
-        setShippingMethods(methods);
-      }
 
-      // Fetch countries
-      const cData = await apiCallJson(
-        "/api/admin/locations/countries?limit=300"
-      );
-      setCountries(cData.countries || []);
-    } catch (err) {
-      console.error("Failed to fetch options:", err);
-    }
-  };
+        // Countries
+        const c = await apiCallJson("/api/admin/locations/countries?limit=300");
+        setCountries(c.countries || []);
+      } catch {}
+    })();
+  }, [apiCallJson]);
 
-  useEffect(() => {
-    fetchOrder();
-    fetchOptions();
-  }, [orderId]);
-
-  // Ensure current shipping method exists in list (even if inactive), fetch label by ID
-  useEffect(() => {
-    const ensureShippingMethod = async () => {
-      if (!shippingMethodId || !shippingMethods || shippingMethods.length === 0)
-        return;
-      const exists = shippingMethods.some((m) => m.id === shippingMethodId);
-      if (exists) return;
-      try {
-        const data = await apiCallJson(
-          `/api/admin/shipping/methods/${shippingMethodId}`
-        );
-        const m = data.method || data.item || data;
-        if (m?.id) {
-          setShippingMethods((prev) => [
-            ...prev,
-            {
-              id: String(m.id),
-              name: m.name,
-              zone_name: m.zone_name,
-              gateway_name: m.gateway_name,
-            },
-          ]);
-        }
-      } catch {
-        // ignore fetch failure; keep placeholder
-      }
-    };
-    ensureShippingMethod();
-  }, [shippingMethodId, shippingMethods]);
-
-  // Ensure current payment method exists in list; fall back to order.payment_method for label
-  useEffect(() => {
-    if (!paymentMethodId || !paymentMethods) return;
-    const exists = paymentMethods.some((m) => m.id === paymentMethodId);
-    if (exists) return;
-    const fallbackLabel = order?.payment_method || "Current payment method";
-    setPaymentMethods((prev) => [
-      ...prev,
-      { id: String(paymentMethodId), name: fallbackLabel },
-    ]);
-  }, [paymentMethodId, paymentMethods, order?.payment_method]);
-
-  const handleSave = async () => {
-    try {
-      setSaving(true);
-
-      const updateData = {
-        status,
-        payment_status: paymentStatus,
-        total_amount: totalAmount,
-        shipping_cost: shippingCost,
-        tracking_number: trackingNumber,
-        payment_method_id: paymentMethodId || null,
-        shipping_zone_method_id: shippingMethodId || null,
-        shipping_address: shippingAddress,
-        billing_address: billingAddress,
-        items,
-      };
-
-      const response = await apiCall(`/api/admin/orders/${orderId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateData),
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to update order");
-      }
-
-      // Redirect back to order detail
-      router.push(`/admin/orders/${orderId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save order");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const addItem = () => {
-    setItems([
-      ...items,
-      {
-        product_name: "",
-        product_price: 0,
-        quantity: 1,
-        product_variant_id: "",
-      },
-    ]);
-  };
-
-  const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
-    recalculateTotal(items.filter((_, i) => i !== index));
-  };
-
-  const updateItem = (index: number, field: keyof OrderItem, value: any) => {
-    const updatedItems = [...items];
-    const nextVal =
-      field === "product_price" || field === "quantity" ? Number(value) : value;
-    updatedItems[index] = { ...updatedItems[index], [field]: nextVal };
-    setItems(updatedItems);
-
-    if (field === "product_price" || field === "quantity") {
-      recalculateTotal(updatedItems);
-    }
-  };
-
-  const recalculateTotal = (currentItems: OrderItem[]) => {
-    const itemsTotal = currentItems.reduce(
-      (sum, item) => sum + item.product_price * item.quantity,
-      0
-    );
-    setTotalAmount(itemsTotal + shippingCost);
-  };
-
-  useEffect(() => {
-    recalculateTotal(items);
-  }, [shippingCost]);
-
-  // Fetch product list for picker when query changes
+  // Product search
   useEffect(() => {
     const controller = new AbortController();
     (async () => {
@@ -450,12 +193,10 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
       } catch {}
     })();
     return () => controller.abort();
-  }, [productQuery]);
+  }, [productQuery, apiCallJson]);
 
-  // Helper: load variants for a selected product
   const ensureVariantsLoaded = async (productId: string) => {
-    if (!productId) return;
-    if (variantOptionsByProduct[productId]) return;
+    if (!productId || variantOptionsByProduct[productId]) return;
     try {
       const data = await apiCallJson(
         `/api/admin/products/${productId}/variants`,
@@ -478,114 +219,188 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     } catch {}
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-gray-500">Loading order...</div>
-      </div>
-    );
-  }
+  const addItem = () => {
+    setItems([
+      ...items,
+      {
+        product_name: "",
+        product_price: 0,
+        quantity: 1,
+        product_variant_id: "",
+      },
+    ]);
+  };
+  const removeItem = (index: number) =>
+    setItems(items.filter((_, i) => i !== index));
+  const updateItem = (index: number, field: keyof OrderItem, value: any) => {
+    const updated = [...items];
+    updated[index] = {
+      ...updated[index],
+      [field]:
+        field === "product_price" || field === "quantity"
+          ? Number(value)
+          : value,
+    };
+    setItems(updated);
+  };
 
-  if (error && !order) {
-    return (
-      <div className="p-6 bg-red-50 rounded-lg">
-        <p className="text-red-600">Error: {error}</p>
-        <Button
-          onClick={() => router.back()}
-          className="mt-4"
-          variant="outline"
-        >
-          Go Back
-        </Button>
-      </div>
-    );
-  }
+  const totalAmount =
+    items.reduce(
+      (sum, it) => sum + (it.product_price || 0) * (it.quantity || 0),
+      0
+    ) + shippingCost;
+
+  const handleCreate = async () => {
+    try {
+      if (!userId.trim()) {
+        alert("Please input user_id");
+        return;
+      }
+      // Basic required address presence
+      if (!shippingAddress.country_code || !billingAddress.country_code) {
+        alert("Please fill shipping & billing addresses");
+        return;
+      }
+      const payload = {
+        user_id: userId.trim(),
+        status,
+        currency,
+        shipping_cost: shippingCost,
+        tracking_number: trackingNumber || null,
+        payment_status: paymentStatus,
+        payment_method_id: paymentMethodId || null,
+        shipping_zone_method_id: shippingMethodId || null,
+        shipping_address: shippingAddress,
+        billing_address: billingAddress,
+        total_amount: totalAmount,
+        items,
+      };
+      const res = await apiCall("/api/admin/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e?.error || "Failed to create order");
+      }
+      const data = await res.json();
+      router.push(`/admin/orders/${data.order.id}`);
+    } catch (e: any) {
+      alert(String(e?.message || e));
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {error && (
-        <div className="p-4 bg-red-50 rounded-lg">
-          <p className="text-red-600">Error: {error}</p>
-        </div>
-      )}
-
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">
-          Edit Order #{order?.order_number}
-        </h1>
+        <h1 className="text-2xl font-bold">Create Order</h1>
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => router.back()}>
             <XMarkIcon className="h-4 w-4 mr-2" />
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleCreate}>
             <CheckIcon className="h-4 w-4 mr-2" />
-            {saving ? "Saving..." : "Save Changes"}
+            Create Order
           </Button>
         </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Order Status */}
+          {/* Order Basics */}
           <Card>
             <div className="p-6 border-b">
-              <h2 className="text-lg font-semibold">Order Status</h2>
+              <h2 className="text-lg font-semibold">Order Basics</h2>
             </div>
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Order Status
-                  </label>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                      <SelectItem value="shipped">Shipped</SelectItem>
-                      <SelectItem value="delivered">Delivered</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                      <SelectItem value="refunded">Refunded</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Payment Status
-                  </label>
-                  <Select
-                    value={paymentStatus}
-                    onValueChange={setPaymentStatus}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select payment status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="failed">Failed</SelectItem>
-                      <SelectItem value="refunded">Refunded</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  User ID *
+                </label>
+                <Input
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  placeholder="user_id (UUID)"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Currency
+                </label>
+                <Input
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Order Status
+                </label>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="shipped">Shipped</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="refunded">Refunded</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Payment Status
+                </label>
+                <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select payment status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                    <SelectItem value="refunded">Refunded</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tracking Number
+                </label>
+                <Input
+                  value={trackingNumber}
+                  onChange={(e) => setTrackingNumber(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Shipping Cost
+                </label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={shippingCost}
+                  onChange={(e) =>
+                    setShippingCost(parseFloat(e.target.value) || 0)
+                  }
+                />
               </div>
             </div>
           </Card>
 
           {/* Order Items */}
           <Card>
-            <div className="p-6 border-b">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold">Order Items</h2>
-                <Button onClick={addItem} variant="outline" size="sm">
-                  <PlusIcon className="h-4 w-4 mr-2" />
-                  Add Item
-                </Button>
-              </div>
+            <div className="p-6 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Order Items</h2>
+              <Button onClick={addItem} variant="outline" size="sm">
+                <PlusIcon className="h-4 w-4 mr-2" />
+                Add Item
+              </Button>
             </div>
             <div className="p-6">
               <div className="overflow-x-auto">
@@ -638,6 +453,14 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                                   {selectedVar?.label || ""}
                                 </div>
                                 <div className="mt-2 w-72">
+                                  <Input
+                                    placeholder="Search products..."
+                                    value={productQuery}
+                                    onChange={(e) =>
+                                      setProductQuery(e.target.value)
+                                    }
+                                    className="mb-2 h-9"
+                                  />
                                   <Combobox
                                     value={activeProductId || ""}
                                     onChange={async (productId) => {
@@ -646,19 +469,16 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                                         [index]: productId,
                                       }));
                                       await ensureVariantsLoaded(productId);
-                                      // Clear current variant and price until a new variant is chosen
                                       updateItem(
                                         index,
                                         "product_variant_id",
                                         ""
                                       );
-                                      updateItem(
-                                        index,
-                                        "product_name",
+                                      const label =
                                         productOptions.find(
                                           (p) => p.value === productId
-                                        )?.label || ""
-                                      );
+                                        )?.label || "";
+                                      updateItem(index, "product_name", label);
                                       updateItem(index, "product_price", 0);
                                     }}
                                     options={productOptions.map((o) => ({
@@ -698,14 +518,6 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                                       it.product_name || ""
                                     );
                                     updateItem(index, "product_price", price);
-                                    recalculateTotal([
-                                      ...items.slice(0, index),
-                                      {
-                                        ...items[index],
-                                        product_price: price,
-                                      },
-                                      ...items.slice(index + 1),
-                                    ]);
                                   } catch {}
                                 }}
                                 options={(
@@ -741,7 +553,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                           </td>
                           <td className="py-3 px-3 w-28">
                             <div className="text-right tabular-nums">
-                              {"$" + item.product_price.toFixed(2)}
+                              {"$" + (item.product_price || 0).toFixed(2)}
                             </div>
                           </td>
                           <td className="py-3 pl-3 w-10">
@@ -760,60 +572,12 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                   </tbody>
                 </table>
               </div>
-
-              {/* Order Total */}
-              <div className="mt-6 pt-4 border-t">
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Shipping Cost
-                    </label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={shippingCost}
-                      onChange={(e) =>
-                        setShippingCost(parseFloat(e.target.value) || 0)
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Total Amount
-                    </label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={totalAmount}
-                      onChange={(e) =>
-                        setTotalAmount(parseFloat(e.target.value) || 0)
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Items Subtotal
-                    </label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={items.reduce(
-                        (sum, item) => sum + item.product_price * item.quantity,
-                        0
-                      )}
-                      readOnly
-                      className="bg-gray-50"
-                    />
-                  </div>
-                </div>
-              </div>
             </div>
           </Card>
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Shipping Information */}
           <Card>
             <div className="p-6 border-b">
               <h2 className="text-lg font-semibold">Shipping & Tracking</h2>
@@ -844,7 +608,6 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
             </div>
           </Card>
 
-          {/* Payment Information */}
           <Card>
             <div className="p-6 border-b">
               <h2 className="text-lg font-semibold">Payment Method</h2>
@@ -858,9 +621,9 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                   <SelectValue placeholder="Select payment method" />
                 </SelectTrigger>
                 <SelectContent>
-                  {paymentMethods.map((method) => (
-                    <SelectItem key={method.id} value={method.id}>
-                      {method.name}
+                  {paymentMethods.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -868,13 +631,11 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
             </div>
           </Card>
 
-          {/* Addresses */}
           <Card>
             <div className="p-6 border-b">
               <h2 className="text-lg font-semibold">Addresses</h2>
             </div>
             <div className="p-6 space-y-6">
-              {/* Shipping Address Form */}
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-gray-700">
                   Shipping Address
@@ -941,24 +702,21 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                       })
                     }
                   />
-                  <div>
-                    <Combobox
-                      value={shippingAddress.country_code}
-                      onChange={(v) =>
-                        setShippingAddress({
-                          ...shippingAddress,
-                          country_code: v,
-                        })
-                      }
-                      options={countryOptions}
-                      placeholder="Country"
-                      searchPlaceholder="Search country..."
-                    />
-                  </div>
+                  <Combobox
+                    value={shippingAddress.country_code}
+                    onChange={(v) =>
+                      setShippingAddress({
+                        ...shippingAddress,
+                        country_code: v,
+                      })
+                    }
+                    options={countryOptions}
+                    placeholder="Country"
+                    searchPlaceholder="Search country..."
+                  />
                 </div>
               </div>
 
-              {/* Billing Address Form */}
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-gray-700">
                   Billing Address
@@ -1025,20 +783,15 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                       })
                     }
                   />
-                  <div>
-                    <Combobox
-                      value={billingAddress.country_code}
-                      onChange={(v) =>
-                        setBillingAddress({
-                          ...billingAddress,
-                          country_code: v,
-                        })
-                      }
-                      options={countryOptions}
-                      placeholder="Country"
-                      searchPlaceholder="Search country..."
-                    />
-                  </div>
+                  <Combobox
+                    value={billingAddress.country_code}
+                    onChange={(v) =>
+                      setBillingAddress({ ...billingAddress, country_code: v })
+                    }
+                    options={countryOptions}
+                    placeholder="Country"
+                    searchPlaceholder="Search country..."
+                  />
                 </div>
               </div>
             </div>

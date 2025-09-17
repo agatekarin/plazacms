@@ -31,6 +31,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Zone {
   id: string;
@@ -81,6 +82,7 @@ export default function CreateShippingMethodPage() {
   const [gateways, setGateways] = useState<Gateway[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const { apiCallJson } = useAuthenticatedFetch();
 
   const [formData, setFormData] = useState<FormData>({
     zone_id: "",
@@ -118,13 +120,14 @@ export default function CreateShippingMethodPage() {
       setLoadingData(true);
 
       // Fetch zones and gateways in parallel
-      const [zonesResponse, gatewaysResponse] = await Promise.all([
-        fetch("/api/admin/shipping/zones?limit=100"),
-        fetch("/api/admin/shipping/gateways?limit=100"),
+      const [zonesData, gatewaysData] = await Promise.all([
+        apiCallJson("/api/admin/shipping/zones?limit=100", {
+          cache: "no-store",
+        }),
+        apiCallJson("/api/admin/shipping/gateways?limit=100", {
+          cache: "no-store",
+        }),
       ]);
-
-      const zonesData = await zonesResponse.json();
-      const gatewaysData = await gatewaysResponse.json();
 
       setZones(zonesData.zones || []);
       setGateways(gatewaysData.gateways || []);
@@ -147,21 +150,11 @@ export default function CreateShippingMethodPage() {
     try {
       setLoading(true);
 
-      const response = await fetch("/api/admin/shipping/methods", {
+      await apiCallJson("/api/admin/shipping/methods", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create method");
-      }
-
-      const data = await response.json();
-      console.log("Method created:", data);
 
       // Redirect to methods list
       router.push("/admin/shipping/methods");

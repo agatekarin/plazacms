@@ -25,6 +25,7 @@ import {
   Users,
 } from "lucide-react";
 import { ZoneCreateForm } from "./ZoneCreateForm";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingZone {
   id: string;
@@ -49,6 +50,7 @@ interface ShippingZoneLocation {
 }
 
 export function ShippingZonesManager() {
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
   const [zones, setZones] = useState<ShippingZone[]>([]);
   const [selectedZone, setSelectedZone] = useState<ShippingZone | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -67,10 +69,9 @@ export function ShippingZonesManager() {
   const loadZones = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/admin/shipping/zones");
-      if (!response.ok) throw new Error("Failed to load zones");
-
-      const data = await response.json();
+      const data = await apiCallJson("/api/admin/shipping/zones", {
+        cache: "no-store",
+      });
       setZones(data.zones || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load zones");
@@ -83,12 +84,10 @@ export function ShippingZonesManager() {
     if (!confirm("Are you sure you want to delete this shipping zone?")) return;
 
     try {
-      const response = await fetch(`/api/admin/shipping/zones/${zoneId}`, {
+      const res = await apiCall(`/api/admin/shipping/zones/${zoneId}`, {
         method: "DELETE",
       });
-
-      if (!response.ok) throw new Error("Failed to delete zone");
-
+      if (!res.ok) throw new Error("Failed to delete zone");
       await loadZones();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete zone");
@@ -98,14 +97,12 @@ export function ShippingZonesManager() {
   const handleStatusToggle = async (zoneId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === "active" ? "inactive" : "active";
-      const response = await fetch(`/api/admin/shipping/zones/${zoneId}`, {
+      const res = await apiCall(`/api/admin/shipping/zones/${zoneId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-
-      if (!response.ok) throw new Error("Failed to update status");
-
+      if (!res.ok) throw new Error("Failed to update status");
       await loadZones();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update status");

@@ -134,7 +134,9 @@ export function useAuthenticatedFetch(
     apiCall,
     apiCallJson,
     session,
-    isAuthenticated: !!session?.accessToken,
+    isAuthenticated: Boolean(
+      (session as any)?.accessToken || lastTokenRef.current
+    ),
     isLoading,
   };
 }

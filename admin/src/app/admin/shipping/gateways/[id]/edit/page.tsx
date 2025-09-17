@@ -38,6 +38,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Zone {
   id: string;
@@ -68,6 +69,7 @@ export default function EditGatewayPage({
   const [zoneSearch, setZoneSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const { apiCallJson } = useAuthenticatedFetch();
   const [formData, setFormData] = useState<GatewayForm>({
     code: "",
     name: "",
@@ -87,17 +89,14 @@ export default function EditGatewayPage({
       setLoadingData(true);
 
       // Fetch gateway data and zones in parallel
-      const [gatewayResponse, zonesResponse] = await Promise.all([
-        fetch(`/api/admin/shipping/gateways/${resolvedParams.id}`),
-        fetch("/api/admin/shipping/zones?limit=100"),
+      const [gatewayData, zonesData] = await Promise.all([
+        apiCallJson(`/api/admin/shipping/gateways/${resolvedParams.id}`, {
+          cache: "no-store",
+        }),
+        apiCallJson("/api/admin/shipping/zones?limit=100", {
+          cache: "no-store",
+        }),
       ]);
-
-      if (!gatewayResponse.ok) {
-        throw new Error("Gateway not found");
-      }
-
-      const gatewayData = await gatewayResponse.json();
-      const zonesData = await zonesResponse.json();
 
       const gateway = gatewayData.gateway;
       setFormData({
@@ -151,24 +150,14 @@ export default function EditGatewayPage({
         zones: zonesData,
       };
 
-      const response = await fetch(
+      const data = await apiCallJson(
         `/api/admin/shipping/gateways/${resolvedParams.id}`,
         {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(submitData),
         }
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update gateway");
-      }
-
-      const data = await response.json();
-      console.log("Gateway updated:", data);
 
       // Redirect to gateway detail page
       router.push(`/admin/shipping/gateways/${resolvedParams.id}`);

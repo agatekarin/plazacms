@@ -227,7 +227,7 @@ export default function AdminSidebar({
 
     const loadSiteSettings = async () => {
       try {
-        if (!session?.accessToken) return; // Wait for session
+        if (!(session as any)?.accessToken) return; // Wait for session
 
         const data: {
           settings?: { logo_url?: string; default_avatar_url?: string };

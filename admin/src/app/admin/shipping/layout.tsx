@@ -14,6 +14,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 const shippingNavItems = [
   {
@@ -64,15 +65,38 @@ export default function ShippingLayout({
   const [stats, setStats] = useState<ShippingStats | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { apiCallJson } = useAuthenticatedFetch();
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
         setIsLoadingStats(true);
-        const response = await fetch("/api/admin/shipping/summary");
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data.stats);
+        const data = await apiCallJson("/api/admin/shipping/summary", {
+          cache: "no-store",
+        }).catch(() => null as any);
+
+        if (!data) return;
+
+        // Support both legacy Next API shape (data.stats) and new Hono shape (data.totals)
+        if (data.stats) {
+          setStats(data.stats as ShippingStats);
+        } else if (data.totals) {
+          const t = data.totals as any;
+          setStats({
+            zones: {
+              active: Number(t.zones_active || 0),
+              total: Number(t.zones || 0),
+            },
+            gateways: {
+              active: Number(t.gateways_active || 0),
+              total: Number(t.gateways || 0),
+            },
+            methods: {
+              active: Number(t.methods_active || 0),
+              total: Number(t.methods || 0),
+            },
+            countries_covered: Number(t.countries_covered || 0),
+          });
         }
       } catch (error) {
         console.error("Failed to fetch shipping stats:", error);
