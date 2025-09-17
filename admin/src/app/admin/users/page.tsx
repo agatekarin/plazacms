@@ -98,6 +98,35 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
+              {loading &&
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr
+                    key={i}
+                    className="border-t border-gray-100 animate-pulse"
+                  >
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-gray-200" />
+                        <div>
+                          <div className="h-4 w-32 bg-gray-200 rounded mb-1" />
+                          <div className="h-3 w-20 bg-gray-100 rounded" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-4 w-48 bg-gray-200 rounded" />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-4 w-16 bg-gray-200 rounded" />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-4 w-24 bg-gray-200 rounded" />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-7 w-24 bg-gray-200 rounded" />
+                    </td>
+                  </tr>
+                ))}
               {!loading &&
                 items?.map((u: UserListRow) => (
                   <tr key={u.id} className="border-t border-gray-100">

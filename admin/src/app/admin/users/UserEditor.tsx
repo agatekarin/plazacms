@@ -75,9 +75,11 @@ function Button({
 export default function UserEditor({
   initialUser,
   initialAddresses,
+  loading,
 }: {
   initialUser?: UserRow | null;
   initialAddresses?: AddressRow[];
+  loading?: boolean;
 }) {
   const router = useRouter();
   const [user, setUser] = useState<UserRow>(

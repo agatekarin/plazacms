@@ -87,9 +87,19 @@ const safeRateLimiter = (
   };
 };
 
+const isRateLimitDisabled = (c: any): boolean => {
+  try {
+    const v = (c as any).env?.DISABLE_RATE_LIMIT as string | undefined;
+    return !!v && /^(1|true|yes)$/i.test(v);
+  } catch {
+    return false;
+  }
+};
+
 // 1b) Protect Auth.js credential sign-in POST as well
 app.use("/api/authjs/signin", (c, next) => {
   if (c.req.method !== "POST") return next();
+  if (isRateLimitDisabled(c)) return next();
   return safeRateLimiter({
     windowMs: 180_000,
     limit: 10,
@@ -105,6 +115,7 @@ app.use("/api/authjs/signin", (c, next) => {
 // 1c) Protect Auth.js credentials callback (actual credentials POST target)
 app.use("/api/authjs/callback/credentials", (c, next) => {
   if (c.req.method !== "POST") return next();
+  if (isRateLimitDisabled(c)) return next();
   return safeRateLimiter({
     windowMs: 180_000,
     limit: 10,
@@ -121,34 +132,36 @@ app.use("/api/authjs/callback/credentials", (c, next) => {
 //    Scope only to business APIs; exclude Auth.js endpoints (/api/authjs/*)
 for (const prefix of ["/api/admin/*", "/api/auth/*", "/api/account/*"]) {
   app.use(prefix, (c, next) =>
-    safeRateLimiter({
-      windowMs: 180_000,
-      limit: 2000,
-      standardHeaders: "draft-6",
-      keyGenerator: (c) => {
-        try {
-          const auth =
-            c.req.header("authorization") || c.req.header("Authorization");
-          if (auth?.startsWith("Bearer ")) {
-            const token = auth.slice(7);
-            const parts = token.split(".");
-            if (parts.length === 3) {
-              const payloadStr = atob(
-                parts[1].replace(/-/g, "+").replace(/_/g, "/")
-              );
-              const payload = JSON.parse(payloadStr);
-              if (typeof payload?.sub === "string")
-                return `user:${payload.sub}`;
-            }
-          }
-        } catch {}
-        return c.req.header("cf-connecting-ip") ?? "unknown";
-      },
-      store: new WorkersKVStore({
-        namespace: c.env.RATE_LIMIT_KV,
-        prefix: "rl:api:",
-      }),
-    })(c, next)
+    isRateLimitDisabled(c) || c.req.path.startsWith("/api/admin/locations")
+      ? next()
+      : safeRateLimiter({
+          windowMs: 180_000,
+          limit: 2000,
+          standardHeaders: "draft-6",
+          keyGenerator: (c) => {
+            try {
+              const auth =
+                c.req.header("authorization") || c.req.header("Authorization");
+              if (auth?.startsWith("Bearer ")) {
+                const token = auth.slice(7);
+                const parts = token.split(".");
+                if (parts.length === 3) {
+                  const payloadStr = atob(
+                    parts[1].replace(/-/g, "+").replace(/_/g, "/")
+                  );
+                  const payload = JSON.parse(payloadStr);
+                  if (typeof payload?.sub === "string")
+                    return `user:${payload.sub}`;
+                }
+              }
+            } catch {}
+            return c.req.header("cf-connecting-ip") ?? "unknown";
+          },
+          store: new WorkersKVStore({
+            namespace: c.env.RATE_LIMIT_KV,
+            prefix: "rl:api:",
+          }),
+        })(c, next)
   );
 }
 
@@ -160,34 +173,36 @@ for (const p of [
   "/api/admin/media/bulk",
 ]) {
   app.use(p, (c, next) =>
-    safeRateLimiter({
-      windowMs: 180_000,
-      limit: 120,
-      standardHeaders: "draft-6",
-      keyGenerator: (c) => {
-        try {
-          const auth =
-            c.req.header("authorization") || c.req.header("Authorization");
-          if (auth?.startsWith("Bearer ")) {
-            const token = auth.slice(7);
-            const parts = token.split(".");
-            if (parts.length === 3) {
-              const payloadStr = atob(
-                parts[1].replace(/-/g, "+").replace(/_/g, "/")
-              );
-              const payload = JSON.parse(payloadStr);
-              if (typeof payload?.sub === "string")
-                return `user:${payload.sub}`;
-            }
-          }
-        } catch {}
-        return c.req.header("cf-connecting-ip") ?? "unknown";
-      },
-      store: new WorkersKVStore({
-        namespace: c.env.RATE_LIMIT_KV,
-        prefix: "rl:api:heavy:",
-      }),
-    })(c, next)
+    isRateLimitDisabled(c)
+      ? next()
+      : safeRateLimiter({
+          windowMs: 180_000,
+          limit: 120,
+          standardHeaders: "draft-6",
+          keyGenerator: (c) => {
+            try {
+              const auth =
+                c.req.header("authorization") || c.req.header("Authorization");
+              if (auth?.startsWith("Bearer ")) {
+                const token = auth.slice(7);
+                const parts = token.split(".");
+                if (parts.length === 3) {
+                  const payloadStr = atob(
+                    parts[1].replace(/-/g, "+").replace(/_/g, "/")
+                  );
+                  const payload = JSON.parse(payloadStr);
+                  if (typeof payload?.sub === "string")
+                    return `user:${payload.sub}`;
+                }
+              }
+            } catch {}
+            return c.req.header("cf-connecting-ip") ?? "unknown";
+          },
+          store: new WorkersKVStore({
+            namespace: c.env.RATE_LIMIT_KV,
+            prefix: "rl:api:heavy:",
+          }),
+        })(c, next)
   );
 }
 

@@ -18,11 +18,14 @@ CLOUDINARY_CLOUD_NAME = "dg4otwgak" # e.g. "your-cloud-name"
 # Secrets (set via wrangler secret put)
 JWT_SECRET = "a41472ad95172231e24b36db3cd45ae42e317ecc5f9872a002ab736d32ba1d49"
 
+# For development phase
+DISABLE_RATE_LIMIT=1
+
 # Hyperdrive configuration
 [[hyperdrive]]
 binding = "HYPERDRIVE"
 id = "279c708c1c1747d7ada5f1fe31c0df8f"
-localConnectionString = "postgresql://neondb_owner:npg_aIuy0lwEGJ8S@ep-long-wildflower-ae91z3hf.c-2.us-east-2.aws.neon.tech/neondb"
+localConnectionString = "postgres://admin:SuperSecret@localhost:5432/plazacms"
 
 # R2 bucket binding for media uploads
 [[r2_buckets]]

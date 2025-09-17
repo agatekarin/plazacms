@@ -202,6 +202,68 @@ methods.post("/", adminMiddleware as any, async (c) => {
   );
 });
 
+// GET /api/admin/shipping/methods/:id - detail
+methods.get("/:id", adminMiddleware as any, async (c) => {
+  const sql = getDb(c as any);
+  const { id } = c.req.param();
+  const rows = await (sql as any).unsafe(
+    `
+    SELECT 
+      sm.id,
+      sm.zone_id,
+      sm.gateway_id,
+      sm.name,
+      sm.method_type,
+      CAST(sm.base_cost AS FLOAT) as base_cost,
+      sm.currency,
+      sm.weight_unit,
+      sm.weight_threshold,
+      CAST(sm.cost_per_kg AS FLOAT) as cost_per_kg,
+      CAST(sm.min_free_threshold AS FLOAT) as min_free_threshold,
+      sm.max_free_weight,
+      sm.max_weight_limit,
+      sm.max_dimensions,
+      sm.restricted_items,
+      sm.description,
+      sm.estimated_days_min,
+      sm.estimated_days_max,
+      sm.sort_order,
+      sm.status,
+      sm.created_at,
+      sm.updated_at,
+      sz.name as zone_name,
+      sz.code as zone_code,
+      sz.status as zone_status,
+      sz.priority as zone_priority,
+      sg.name as gateway_name,
+      sg.code as gateway_code,
+      sg.type as gateway_type,
+      sg.status as gateway_status
+    FROM public.shipping_methods sm
+    JOIN public.shipping_zones sz ON sm.zone_id = sz.id
+    JOIN public.shipping_gateways sg ON sm.gateway_id = sg.id
+    WHERE sm.id = $1
+    LIMIT 1
+  `,
+    [id]
+  );
+  if (!rows[0]) return c.json({ error: "Not found" }, 404);
+
+  const m = rows[0] as any;
+  // Normalize JSON fields if returned as strings
+  if (typeof m.max_dimensions === "string") {
+    try {
+      m.max_dimensions = JSON.parse(m.max_dimensions);
+    } catch {}
+  }
+  if (typeof m.restricted_items === "string") {
+    try {
+      m.restricted_items = JSON.parse(m.restricted_items);
+    } catch {}
+  }
+  return c.json({ method: m });
+});
+
 // PATCH /api/admin/shipping/methods/:id - toggle/update basic fields
 methods.patch("/:id", adminMiddleware as any, async (c) => {
   const sql = getDb(c as any);
@@ -215,10 +277,40 @@ methods.patch("/:id", adminMiddleware as any, async (c) => {
     fields.push(`${k} = $${i++}`);
     values.push(v);
   };
-  if (b.status !== undefined) setF(true, "status", String(b.status));
+  if (b.zone_id !== undefined) setF(true, "zone_id", String(b.zone_id));
+  if (b.gateway_id !== undefined)
+    setF(true, "gateway_id", String(b.gateway_id));
+  if (b.name !== undefined) setF(true, "name", String(b.name));
+  if (b.method_type !== undefined)
+    setF(true, "method_type", String(b.method_type));
+  if (b.base_cost !== undefined)
+    setF(true, "base_cost", Number(b.base_cost || 0));
+  if (b.currency !== undefined) setF(true, "currency", String(b.currency));
+  if (b.weight_unit !== undefined)
+    setF(true, "weight_unit", String(b.weight_unit));
+  if (b.weight_threshold !== undefined)
+    setF(true, "weight_threshold", Number(b.weight_threshold || 0));
+  if (b.cost_per_kg !== undefined)
+    setF(true, "cost_per_kg", Number(b.cost_per_kg || 0));
+  if (b.min_free_threshold !== undefined)
+    setF(true, "min_free_threshold", Number(b.min_free_threshold || 0));
+  if (b.max_free_weight !== undefined)
+    setF(true, "max_free_weight", Number(b.max_free_weight || 0));
+  if (b.max_weight_limit !== undefined)
+    setF(true, "max_weight_limit", Number(b.max_weight_limit || 0));
+  if (b.max_dimensions !== undefined)
+    setF(true, "max_dimensions", JSON.stringify(b.max_dimensions || {}));
+  if (b.restricted_items !== undefined)
+    setF(true, "restricted_items", JSON.stringify(b.restricted_items || []));
+  if (b.description !== undefined)
+    setF(true, "description", String(b.description || ""));
+  if (b.estimated_days_min !== undefined)
+    setF(true, "estimated_days_min", Number(b.estimated_days_min || 0));
+  if (b.estimated_days_max !== undefined)
+    setF(true, "estimated_days_max", Number(b.estimated_days_max || 0));
   if (b.sort_order !== undefined)
     setF(true, "sort_order", Number(b.sort_order));
-  if (b.name !== undefined) setF(true, "name", String(b.name));
+  if (b.status !== undefined) setF(true, "status", String(b.status));
   if (fields.length === 0) return c.json({ error: "No fields to update" }, 400);
   fields.push(`updated_at = CURRENT_TIMESTAMP`);
   const sqlText = `UPDATE public.shipping_methods SET ${fields.join(

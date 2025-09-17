@@ -87,9 +87,10 @@ export default function CreateZonePage() {
   const fetchCountries = async () => {
     try {
       setLoadingCountries(true);
-      const data = await apiCallJson("/api/admin/locations/all", {
-        cache: "no-store",
-      });
+      const data = await apiCallJson(
+        "/api/admin/locations/countries?limit=1000",
+        { cache: "no-store" }
+      );
       setCountries(data.countries || []);
     } catch (error) {
       console.error("Error fetching countries:", error);

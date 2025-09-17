@@ -3,7 +3,7 @@ import { getDb } from "../lib/db";
 import { adminMiddleware } from "../lib/auth";
 
 type AppEnv = {
-  Bindings: Env & { RATE_LIMIT_KV: KVNamespace };
+  Bindings: Env;
   Variables: { user: any };
 };
 
@@ -216,7 +216,7 @@ locations.get("/sync", adminMiddleware as any, async (c) => {
 
 // POST /api/admin/locations/sync
 locations.post("/sync", adminMiddleware as any, async (c) => {
-  const kv = (c.env as any).RATE_LIMIT_KV as KVNamespace; // reuse KV
+  const sql = getDb(c as any);
   const body = await c.req.json().catch(() => ({} as any));
   const format = ["csv", "json"].includes(String(body?.format))
     ? String(body.format)
@@ -228,20 +228,26 @@ locations.post("/sync", adminMiddleware as any, async (c) => {
     : ["countries", "states", "cities"];
   const importId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
-  await kv.put(
-    `locsync:${importId}`,
-    JSON.stringify({
-      id: importId,
-      status: "pending",
-      progress: 0,
-      message: "Queued",
-      started_at: startedAt,
-    }),
-    { expirationTtl: 60 * 60 }
+
+  // Ensure progress table exists and insert initial row
+  await (sql as any).unsafe(
+    `CREATE TABLE IF NOT EXISTS public.location_sync_progress (
+      id uuid PRIMARY KEY,
+      status text NOT NULL,
+      progress int NOT NULL DEFAULT 0,
+      message text,
+      records_imported int,
+      started_at timestamptz NOT NULL DEFAULT NOW(),
+      completed_at timestamptz
+    )`
   );
+  await sql`
+    INSERT INTO public.location_sync_progress (id, status, progress, message, started_at)
+    VALUES (${importId}, ${"pending"}, ${0}, ${"Queued"}, ${startedAt})
+  `;
 
   c.executionCtx.waitUntil(
-    runImport(c, importId, format, tables).catch(() => {})
+    runImport(c, getDb(c as any), importId, format, tables).catch(() => {})
   );
 
   return c.json({
@@ -255,47 +261,52 @@ locations.post("/sync", adminMiddleware as any, async (c) => {
 
 // GET /api/admin/locations/sync/progress/:id
 locations.get("/sync/progress/:id", adminMiddleware as any, async (c) => {
-  const kv = (c.env as any).RATE_LIMIT_KV as KVNamespace;
+  const sql = getDb(c as any);
   const { id } = c.req.param();
-  const v = await kv.get(`locsync:${id}`);
-  if (!v)
+  const rows = await sql`
+    SELECT id, status, progress, message, records_imported, started_at, completed_at
+    FROM public.location_sync_progress WHERE id = ${id}
+  `;
+  if (!rows[0])
     return c.json({ id, status: "unknown", progress: 0, message: "Not found" });
-  return c.json(JSON.parse(v));
+  return c.json(rows[0]);
+});
+
+// GET /api/admin/locations/sync/progress/latest
+locations.get("/sync/progress", adminMiddleware as any, async (c) => {
+  const sql = getDb(c as any);
+  const rows = await (sql as any).unsafe(
+    `SELECT id, status, progress, message, records_imported, started_at, completed_at
+     FROM public.location_sync_progress
+     ORDER BY started_at DESC
+     LIMIT 1`
+  );
+  if (!rows[0]) return c.json({ status: "unknown" });
+  return c.json(rows[0]);
 });
 
 async function runImport(
   c: any,
+  sql: any,
   importId: string,
   format: string,
   tables: string[]
 ) {
-  const kv = (c.env as any).RATE_LIMIT_KV as KVNamespace;
-  const sql = getDb(c as any);
   const BASE =
     "https://raw.githubusercontent.com/dr5hn/countries-states-cities-database/master";
-  const set = async (data: any) =>
-    kv.put(`locsync:${importId}`, JSON.stringify(data), {
-      expirationTtl: 60 * 60,
-    });
   const upd = async (
     status: string,
     progress: number,
     message: string,
     records_imported?: number
   ) => {
-    const v = JSON.parse((await kv.get(`locsync:${importId}`)) || "{}");
-    await set({
-      id: importId,
-      status,
-      progress,
-      message,
-      records_imported,
-      started_at: v.started_at || new Date().toISOString(),
-      completed_at:
-        status === "completed" || status === "failed"
-          ? new Date().toISOString()
-          : undefined,
-    });
+    await (sql as any).unsafe(
+      `UPDATE public.location_sync_progress
+       SET status = $1, progress = $2, message = $3, records_imported = $4,
+           completed_at = CASE WHEN $1 IN ('completed','failed') THEN NOW() ELSE completed_at END
+       WHERE id = $5`,
+      [status, progress, message, records_imported ?? null, importId]
+    );
   };
   try {
     await upd("downloading", 10, "Downloading data...");
@@ -337,15 +348,50 @@ async function runImport(
       let total = 0;
       let prog = 20;
       const step = 80 / selected.length;
+      const batchSizeCountries = 200;
+      const batchSizeStates = 200;
+      const batchSizeCities = 200;
+      const withRetry = async (fn: () => Promise<void>) => {
+        const transient = ["CONNECTION_CLOSED", "ECONNRESET", "ETIMEDOUT"];
+        let attempt = 0;
+        while (true) {
+          try {
+            await fn();
+            return;
+          } catch (e: any) {
+            const msg = String(e?.message || e || "error");
+            if (attempt < 3 && transient.some((t) => msg.includes(t))) {
+              await new Promise((r) =>
+                setTimeout(r, 500 * Math.pow(2, attempt))
+              );
+              attempt++;
+              continue;
+            }
+            throw e;
+          }
+        }
+      };
       for (const t of selected) {
         await upd("importing", Math.round(prog), `Importing ${t}...`);
         const url = `${BASE}/csv/${t}.csv`;
         const res = await fetch(url);
         const txt = await res.text();
         const rows = parseCsv(txt);
-        if (t === "countries") await importCountries(sql, rows);
-        if (t === "states") await importStates(sql, rows);
-        if (t === "cities") await importCities(sql, rows);
+        if (t === "countries") {
+          await withRetry(async () => {
+            await importCountries(sql, rows, batchSizeCountries);
+          });
+        }
+        if (t === "states") {
+          await withRetry(async () => {
+            await importStates(sql, rows, batchSizeStates);
+          });
+        }
+        if (t === "cities") {
+          await withRetry(async () => {
+            await importCities(sql, rows, batchSizeCities);
+          });
+        }
         total += rows.length;
         prog += step;
         await upd(
@@ -394,37 +440,61 @@ function parseCsvLine(line: string): string[] {
   return result.map((v) => v.replace(/^"|"$/g, ""));
 }
 
-async function importCountries(sql: any, countries: any[]) {
+async function importCountries(sql: any, countries: any[], batch = 200) {
   await sql`TRUNCATE TABLE public.countries RESTART IDENTITY CASCADE`;
   if (!countries.length) return;
-  const batch = 1000;
   for (let i = 0; i < countries.length; i += batch) {
     const slice = countries.slice(i, i + batch);
-    const values = slice.map(
-      (c: any) =>
-        sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${String(
-          c.iso3 || ""
-        )}, ${String(c.iso2 || "")}, ${String(c.numeric_code || "")}, ${String(
-          c.phone_code || ""
-        )}, ${String(c.capital || "")}, ${String(c.currency || "")}, ${String(
-          c.currency_name || ""
-        )}, ${String(c.currency_symbol || "")}, ${
-          c.latitude ? Number(c.latitude) : null
-        }, ${c.longitude ? Number(c.longitude) : null}, ${String(
-          c.emoji || ""
-        )}, ${String(c.emojiU || "")})`
-    );
+    const values = slice.map((c: any) => {
+      const phone = c.phone_code ?? c.phonecode ?? c.phoneCode ?? "";
+      const emojiu = c.emojiu ?? c.emojiU ?? "";
+      return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${String(
+        c.iso3 || ""
+      )}, ${String(c.iso2 || "")}, ${String(c.numeric_code || "")}, ${String(
+        phone || ""
+      )}, ${String(c.capital || "")}, ${String(c.currency || "")}, ${String(
+        c.currency_name || ""
+      )}, ${String(c.currency_symbol || "")}, ${String(c.tld || "")}, ${String(
+        c.native || ""
+      )}, ${String(c.region || "")}, ${String(c.subregion || "")}, ${String(
+        c.timezones || ""
+      )}, ${c.latitude ? Number(c.latitude) : null}, ${
+        c.longitude ? Number(c.longitude) : null
+      }, ${String(c.emoji || "")}, ${String(emojiu || "")} )`;
+    });
     await sql`
-      INSERT INTO public.countries (id, name, iso3, iso2, numeric_code, phone_code, capital, currency, currency_name, currency_symbol, latitude, longitude, emoji, emojiU)
+      INSERT INTO public.countries (
+        id, name, iso3, iso2, numeric_code, phone_code, capital, currency,
+        currency_name, currency_symbol, tld, native, region, subregion, timezones,
+        latitude, longitude, emoji, emojiu
+      )
       VALUES ${sql(values)}
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, iso3 = EXCLUDED.iso3, iso2 = EXCLUDED.iso2, updated_at = CURRENT_TIMESTAMP`;
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        iso3 = EXCLUDED.iso3,
+        iso2 = EXCLUDED.iso2,
+        numeric_code = EXCLUDED.numeric_code,
+        phone_code = EXCLUDED.phone_code,
+        capital = EXCLUDED.capital,
+        currency = EXCLUDED.currency,
+        currency_name = EXCLUDED.currency_name,
+        currency_symbol = EXCLUDED.currency_symbol,
+        tld = EXCLUDED.tld,
+        native = EXCLUDED.native,
+        region = EXCLUDED.region,
+        subregion = EXCLUDED.subregion,
+        timezones = EXCLUDED.timezones,
+        latitude = EXCLUDED.latitude,
+        longitude = EXCLUDED.longitude,
+        emoji = EXCLUDED.emoji,
+        emojiu = EXCLUDED.emojiu,
+        updated_at = CURRENT_TIMESTAMP`;
   }
 }
 
-async function importStates(sql: any, states: any[]) {
+async function importStates(sql: any, states: any[], batch = 200) {
   await sql`TRUNCATE TABLE public.states RESTART IDENTITY CASCADE`;
   if (!states.length) return;
-  const batch = 1000;
   for (let i = 0; i < states.length; i += batch) {
     const slice = states.slice(i, i + batch);
     const values = slice.map(
@@ -435,35 +505,34 @@ async function importStates(sql: any, states: any[]) {
           s.fips_code || ""
         )}, ${String(s.iso2 || "")}, ${String(s.type || "")}, ${
           s.latitude ? Number(s.latitude) : null
-        }, ${s.longitude ? Number(s.longitude) : null})`
+        }, ${s.longitude ? Number(s.longitude) : null}, ${String(
+          s.state_code || ""
+        )})`
     );
     await sql`
-      INSERT INTO public.states (id, name, country_id, country_code, fips_code, iso2, type, latitude, longitude)
+      INSERT INTO public.states (id, name, country_id, country_code, fips_code, iso2, type, latitude, longitude, state_code)
       VALUES ${sql(values)}
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = CURRENT_TIMESTAMP`;
   }
 }
 
-async function importCities(sql: any, cities: any[]) {
+async function importCities(sql: any, cities: any[], batch = 200) {
   await sql`TRUNCATE TABLE public.cities RESTART IDENTITY CASCADE`;
   if (!cities.length) return;
-  const batch = 500;
   for (let i = 0; i < cities.length; i += batch) {
     const slice = cities.slice(i, i + batch);
-    const values = slice.map(
-      (c: any) =>
-        sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${Number(
-          c.state_id || 0
-        )}, ${String(c.state_code || "")}, ${Number(
-          c.country_id || 0
-        )}, ${String(c.country_code || "")}, ${
-          c.latitude ? Number(c.latitude) : null
-        }, ${c.longitude ? Number(c.longitude) : null}, ${String(
-          c.wikiDataId || ""
-        )})`
-    );
+    const values = slice.map((c: any) => {
+      const wiki = c.wikiDataId ?? c.wikidataid ?? c.wiki_data_id ?? "";
+      return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${Number(
+        c.state_id || 0
+      )}, ${String(c.state_code || "")}, ${Number(c.country_id || 0)}, ${String(
+        c.country_code || ""
+      )}, ${c.latitude ? Number(c.latitude) : null}, ${
+        c.longitude ? Number(c.longitude) : null
+      }, ${String(wiki || "")})`;
+    });
     await sql`
-      INSERT INTO public.cities (id, name, state_id, state_code, country_id, country_code, latitude, longitude, wikiDataId)
+      INSERT INTO public.cities (id, name, state_id, state_code, country_id, country_code, latitude, longitude, wikidataid)
       VALUES ${sql(values)}
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = CURRENT_TIMESTAMP`;
   }

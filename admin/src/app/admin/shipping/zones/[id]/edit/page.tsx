@@ -92,7 +92,9 @@ export default function EditZonePage({
         apiCallJson(`/api/admin/shipping/zones/${resolvedParams.id}`, {
           cache: "no-store",
         }),
-        apiCallJson("/api/admin/locations/all", { cache: "no-store" }),
+        apiCallJson("/api/admin/locations/countries?limit=1000", {
+          cache: "no-store",
+        }),
       ]);
 
       const zone = zoneData.zone;

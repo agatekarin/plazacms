@@ -31,6 +31,15 @@ CREATE SEQUENCE public.order_global_seq
 	START 1
 	CACHE 1
 	NO CYCLE;
+-- DROP SEQUENCE public.shipping_settings_id_seq;
+
+CREATE SEQUENCE public.shipping_settings_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
 -- DROP SEQUENCE public.states_id_seq;
 
 CREATE SEQUENCE public.states_id_seq
@@ -167,6 +176,33 @@ create trigger set_timestamp_shipping_gateways before
 update
     on
     public.shipping_gateways for each row execute function trigger_set_timestamp();
+
+
+-- public.shipping_settings definition
+
+-- Drop table
+
+-- DROP TABLE public.shipping_settings;
+
+CREATE TABLE public.shipping_settings (
+	id serial4 NOT NULL,
+	default_country text NULL,
+	default_currency text NULL,
+	weight_unit text NULL,
+	dimension_unit text NULL,
+	enable_free_shipping bool DEFAULT false NULL,
+	free_shipping_threshold numeric DEFAULT 0 NULL,
+	max_weight_limit int4 DEFAULT 0 NULL,
+	enable_shipping_zones bool DEFAULT true NULL,
+	enable_shipping_calculator bool DEFAULT true NULL,
+	shipping_tax_status text DEFAULT 'taxable'::text NULL,
+	shipping_tax_class text DEFAULT 'standard'::text NULL,
+	hide_shipping_until_address bool DEFAULT false NULL,
+	enable_debug_mode bool DEFAULT false NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT shipping_settings_pkey PRIMARY KEY (id)
+);
 
 
 -- public.shipping_zones definition

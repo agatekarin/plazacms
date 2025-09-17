@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useSession } from "@hono/auth-js/react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   Select,
   SelectContent,
@@ -53,6 +54,7 @@ export default function UploadModal({
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: session } = useSession();
+  const { uploadWithProgress } = useAuthenticatedFetch();
 
   // Generate unique ID for files
   const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -166,105 +168,30 @@ export default function UploadModal({
         // entity_id will be set when uploading from specific contexts (product editor, etc.)
         // For general media manager uploads, entity_id remains null
 
-        // Create XMLHttpRequest for progress tracking
-        const xhr = new XMLHttpRequest();
-
-        // Progress handler
-        xhr.upload.addEventListener("progress", (e) => {
-          if (e.lengthComputable) {
-            const progress = Math.round((e.loaded / e.total) * 100);
+        // Start upload via centralized auth helper
+        await uploadWithProgress(
+          "/api/admin/media/upload",
+          formData,
+          (progress) => {
             setUploadFiles((prev) =>
               prev.map((f) => (f.id === uploadFile.id ? { ...f, progress } : f))
             );
           }
-        });
-
-        // Response handler
-        xhr.addEventListener("load", () => {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              setUploadFiles((prev) =>
-                prev.map((f) =>
-                  f.id === uploadFile.id
-                    ? {
-                        ...f,
-                        status: "completed" as const,
-                        progress: 100,
-                        media_id: response.media?.id,
-                      }
-                    : f
-                )
-              );
-            } catch (err) {
-              setUploadFiles((prev) =>
-                prev.map((f) =>
-                  f.id === uploadFile.id
-                    ? {
-                        ...f,
-                        status: "error" as const,
-                        error: "Invalid response from server",
-                      }
-                    : f
-                )
-              );
-            }
-          } else {
-            let errorMessage = "Upload failed";
-            try {
-              const errorResponse = JSON.parse(xhr.responseText);
-              errorMessage = errorResponse.error || errorMessage;
-            } catch (err) {
-              // Use default error message
-            }
-
-            setUploadFiles((prev) =>
-              prev.map((f) =>
-                f.id === uploadFile.id
-                  ? {
-                      ...f,
-                      status: "error" as const,
-                      error: errorMessage,
-                    }
-                  : f
-              )
-            );
-          }
-          resolve();
-        });
-
-        // Error handler
-        xhr.addEventListener("error", () => {
+        ).then((response: any) => {
           setUploadFiles((prev) =>
             prev.map((f) =>
               f.id === uploadFile.id
                 ? {
                     ...f,
-                    status: "error" as const,
-                    error: "Network error during upload",
+                    status: "completed" as const,
+                    progress: 100,
+                    media_id: response?.media?.id,
                   }
                 : f
             )
           );
-          resolve();
         });
-
-        // Start upload
-        const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-        const url = base
-          ? `${base}/api/admin/media/upload`
-          : "/api/admin/media/upload";
-        xhr.open("POST", url);
-
-        // Add Authorization header
-        if (session?.accessToken) {
-          xhr.setRequestHeader(
-            "Authorization",
-            `Bearer ${session.accessToken}`
-          );
-        }
-
-        xhr.send(formData);
+        resolve();
       } catch (error) {
         setUploadFiles((prev) =>
           prev.map((f) =>
@@ -272,7 +199,7 @@ export default function UploadModal({
               ? {
                   ...f,
                   status: "error" as const,
-                  error: "Failed to start upload",
+                  error: (error as Error)?.message || "Failed to start upload",
                 }
               : f
           )
