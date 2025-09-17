@@ -11,6 +11,9 @@ importers:
       '@auth/core':
         specifier: ^0.40.0
         version: 0.40.0
+      '@hono-rate-limiter/cloudflare':
+        specifier: ^0.2.2
+        version: 0.2.2(@cloudflare/workers-types@4.20250913.0)(hono@4.9.7)
       '@hono/auth-js':
         specifier: ^1.1.0
         version: 1.1.0(@auth/core@0.40.0)(hono@4.9.7)(react@19.1.1)
@@ -23,6 +26,9 @@ importers:
       hono:
         specifier: ^4.9.7
         version: 4.9.7
+      hono-rate-limiter:
+        specifier: ^0.4.2
+        version: 0.4.2(hono@4.9.7)
       postgres:
         specifier: ^3.4.7
         version: 3.4.7
@@ -262,6 +268,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@hono-rate-limiter/cloudflare@0.2.2':
+    resolution: {integrity: sha512-wMnqeV+cb5Wov2npLIMFtCVm3tiNMtqw9LhPWSzSMwHOzh2qbhI3mCS6s962fxcJ6UUNJhRqDbVMEsB/NinCIQ==}
+    peerDependencies:
+      '@cloudflare/workers-types': ^4.20240529.0
+      hono: ^4.4.8
+
   '@hono/auth-js@1.1.0':
     resolution: {integrity: sha512-GFlycQPDkuSbySTq8hvc73Fb9Wx0TnGff0BdE/v5wwrfC37SoNca5McD+nK94jxA0chggVYvn0CxH68uTylR5A==}
     engines: {node: '>=18.4.0'}
@@ -475,6 +487,11 @@ packages:
 
   glob-to-regexp@0.4.1:
     resolution: {integrity: sha512-lkX1HJXwyMcprw/5YUZc2s7DrpAiHB21/V+E1rHUrVNokkvB6bqMzT0VfV6/86ZNabt1k14YOIaT7nDvOX3Iiw==}
+
+  hono-rate-limiter@0.4.2:
+    resolution: {integrity: sha512-AAtFqgADyrmbDijcRTT/HJfwqfvhalya2Zo+MgfdrMPas3zSMD8SU03cv+ZsYwRU1swv7zgVt0shwN059yzhjw==}
+    peerDependencies:
+      hono: ^4.1.1
 
   hono@4.9.7:
     resolution: {integrity: sha512-t4Te6ERzIaC48W3x4hJmBwgNlLhmiEdEE5ViYb02ffw4ignHNHa5IBtPjmbKstmtKa8X6C35iWwK4HaqvrzG9w==}
@@ -726,6 +743,11 @@ snapshots:
   '@esbuild/win32-x64@0.25.4':
     optional: true
 
+  '@hono-rate-limiter/cloudflare@0.2.2(@cloudflare/workers-types@4.20250913.0)(hono@4.9.7)':
+    dependencies:
+      '@cloudflare/workers-types': 4.20250913.0
+      hono: 4.9.7
+
   '@hono/auth-js@1.1.0(@auth/core@0.40.0)(hono@4.9.7)(react@19.1.1)':
     dependencies:
       '@auth/core': 0.40.0
@@ -909,6 +931,10 @@ snapshots:
     optional: true
 
   glob-to-regexp@0.4.1: {}
+
+  hono-rate-limiter@0.4.2(hono@4.9.7):
+    dependencies:
+      hono: 4.9.7
 
   hono@4.9.7: {}
 

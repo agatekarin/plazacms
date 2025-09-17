@@ -20,3 +20,8 @@ JWT_SECRET = "a41472ad95172231e24b36db3cd45ae42e317ecc5f9872a002ab736d32ba1d49"
 binding = "HYPERDRIVE"
 id = "279c708c1c1747d7ada5f1fe31c0df8f"
 localConnectionString = "postgresql://neondb_owner:npg_aIuy0lwEGJ8S@ep-long-wildflower-ae91z3hf.c-2.us-east-2.aws.neon.tech/neondb"
+
+# Rate Limiting storage (Workers KV)
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "1a7e662eb5904a6ab7653751b0fbabfd" # TODO: replace with your KV namespace id

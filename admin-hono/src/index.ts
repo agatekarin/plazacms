@@ -5,6 +5,10 @@ import { prettyJSON } from "hono/pretty-json";
 import { secureHeaders } from "hono/secure-headers";
 import { authHandler, initAuthConfig } from "@hono/auth-js";
 import Credentials from "@auth/core/providers/credentials";
+import { rateLimiter } from "hono-rate-limiter";
+import { WorkersKVStore } from "@hono-rate-limiter/cloudflare";
+// Types provided globally by @cloudflare/workers-types
+type EnvWithRateLimit = Env & { RATE_LIMIT_KV: KVNamespace };
 
 // Import routes
 import authRoutes from "./routes/auth";
@@ -30,7 +34,10 @@ import ordersRoutes from "./routes/orders";
 import paymentsRoutes from "./routes/payments";
 
 // Create main app
-const app = new Hono<{ Bindings: Env; Variables: { user: any } }>();
+const app = new Hono<{
+  Bindings: EnvWithRateLimit;
+  Variables: { user: any };
+}>();
 
 // Global middleware
 app.use("*", logger());
@@ -47,6 +54,113 @@ app.use(
     allowHeaders: ["Content-Type", "Authorization", "Accept"],
   })
 );
+
+// Rate limiting
+// 1) Legacy /api/auth/login limiter removed (we use Auth.js /api/authjs/signin)
+
+// 1b) Protect Auth.js credential sign-in POST as well
+app.use("/api/authjs/signin", (c, next) => {
+  if (c.req.method !== "POST") return next();
+  return rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+    windowMs: 180_000,
+    limit: 10,
+    standardHeaders: "draft-6",
+    keyGenerator: (c) => c.req.header("cf-connecting-ip") ?? "unknown",
+    store: new WorkersKVStore({
+      namespace: c.env.RATE_LIMIT_KV,
+      prefix: "rl:auth:",
+    }),
+  })(c, next);
+});
+
+// 1c) Protect Auth.js credentials callback (actual credentials POST target)
+app.use("/api/authjs/callback/credentials", (c, next) => {
+  if (c.req.method !== "POST") return next();
+  return rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+    windowMs: 180_000,
+    limit: 10,
+    standardHeaders: "draft-6",
+    keyGenerator: (c) => c.req.header("cf-connecting-ip") ?? "unknown",
+    store: new WorkersKVStore({
+      namespace: c.env.RATE_LIMIT_KV,
+      prefix: "rl:auth:",
+    }),
+  })(c, next);
+});
+
+// 2) General API rate limit (prefer per-user when available, fallback to IP)
+//    Scope only to business APIs; exclude Auth.js endpoints (/api/authjs/*)
+for (const prefix of ["/api/admin/*", "/api/auth/*", "/api/account/*"]) {
+  app.use(prefix, (c, next) =>
+    rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+      windowMs: 180_000,
+      limit: 2000,
+      standardHeaders: "draft-6",
+      keyGenerator: (c) => {
+        try {
+          const auth =
+            c.req.header("authorization") || c.req.header("Authorization");
+          if (auth?.startsWith("Bearer ")) {
+            const token = auth.slice(7);
+            const parts = token.split(".");
+            if (parts.length === 3) {
+              const payloadStr = atob(
+                parts[1].replace(/-/g, "+").replace(/_/g, "/")
+              );
+              const payload = JSON.parse(payloadStr);
+              if (typeof payload?.sub === "string")
+                return `user:${payload.sub}`;
+            }
+          }
+        } catch {}
+        return c.req.header("cf-connecting-ip") ?? "unknown";
+      },
+      store: new WorkersKVStore({
+        namespace: c.env.RATE_LIMIT_KV,
+        prefix: "rl:api:",
+      }),
+    })(c, next)
+  );
+}
+
+// 3) Heavy endpoints – stricter limits per user (fallback IP)
+for (const p of [
+  "/api/admin/products/import",
+  "/api/admin/products/export",
+  "/api/admin/media/upload",
+  "/api/admin/media/bulk",
+]) {
+  app.use(p, (c, next) =>
+    rateLimiter<{ Bindings: EnvWithRateLimit; Variables: { user: any } }>({
+      windowMs: 180_000,
+      limit: 120,
+      standardHeaders: "draft-6",
+      keyGenerator: (c) => {
+        try {
+          const auth =
+            c.req.header("authorization") || c.req.header("Authorization");
+          if (auth?.startsWith("Bearer ")) {
+            const token = auth.slice(7);
+            const parts = token.split(".");
+            if (parts.length === 3) {
+              const payloadStr = atob(
+                parts[1].replace(/-/g, "+").replace(/_/g, "/")
+              );
+              const payload = JSON.parse(payloadStr);
+              if (typeof payload?.sub === "string")
+                return `user:${payload.sub}`;
+            }
+          }
+        } catch {}
+        return c.req.header("cf-connecting-ip") ?? "unknown";
+      },
+      store: new WorkersKVStore({
+        namespace: c.env.RATE_LIMIT_KV,
+        prefix: "rl:api:heavy:",
+      }),
+    })(c, next)
+  );
+}
 
 // Auth.js configuration (Hono middleware)
 app.use(
