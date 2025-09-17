@@ -4,6 +4,42 @@ import { getDb } from "../lib/db";
 
 const media = new Hono<{ Bindings: Env; Variables: { user: any } }>();
 
+function buildCloudinaryFetchUrl(
+  originalUrl: string,
+  env: Env,
+  options?: {
+    width?: number;
+    height?: number;
+    quality?: number | "auto";
+    format?: "auto" | "webp" | "avif" | "jpg" | "png";
+    crop?: "fill" | "fit" | "scale" | "crop" | "thumb";
+    gravity?: "center" | "face" | "faces" | "north" | "south" | "east" | "west";
+  }
+) {
+  const cloudName = (env as any).CLOUDINARY_CLOUD_NAME as string | undefined;
+  if (!cloudName) return originalUrl;
+  const {
+    width,
+    height,
+    quality = "auto",
+    format = "auto",
+    crop = "fill",
+    gravity = "center",
+  } = options || {};
+  const transforms: string[] = [];
+  transforms.push(`f_${format}`, `q_${quality}`);
+  if (width || height) {
+    if (width) transforms.push(`w_${width}`);
+    if (height) transforms.push(`h_${height}`);
+    transforms.push(`c_${crop}`);
+    if (crop === "fill" || crop === "crop") transforms.push(`g_${gravity}`);
+  }
+  const transformString = transforms.join(",");
+  return `https://res.cloudinary.com/${cloudName}/image/fetch/${transformString}/${encodeURIComponent(
+    originalUrl
+  )}`;
+}
+
 // GET /api/admin/media - List media with pagination and filters
 media.get("/", adminMiddleware as any, async (c) => {
   try {
@@ -125,9 +161,15 @@ media.get("/:id", adminMiddleware as any, async (c) => {
       return c.json({ error: "Media not found" }, 404);
     }
 
+    const item = (result as any)[0];
+    const optimized_url = buildCloudinaryFetchUrl(
+      item.file_url,
+      (c as any).env,
+      { width: 800, height: 600, crop: "fit", quality: 85, format: "auto" }
+    );
     return c.json({
       success: true,
-      media: result[0],
+      media: { ...item, optimized_url },
     });
   } catch (error: any) {
     console.error("Media GET error:", error);
@@ -223,6 +265,23 @@ media.delete("/:id", adminMiddleware as any, async (c) => {
 
     if (media.length === 0) {
       return c.json({ error: "Media not found" }, 404);
+    }
+
+    // Delete from R2 storage if configured
+    try {
+      const publicBase = ((c as any).env?.R2_PUBLIC_URL || "").replace(
+        /\/$/,
+        ""
+      );
+      let key = String((media as any)[0]?.file_url || "");
+      if (publicBase && key.startsWith(publicBase)) {
+        key = key.slice(publicBase.length + 1);
+      }
+      if ((c as any).env?.R2 && key) {
+        await ((c as any).env.R2 as R2Bucket).delete(key);
+      }
+    } catch (e) {
+      console.warn("R2 delete warning:", e);
     }
 
     // Delete from database

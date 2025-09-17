@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Refund {
   id: string;
@@ -92,19 +93,17 @@ export default function TransactionDetail({
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [refundLoading, setRefundLoading] = useState(false);
+  const { apiCallJson } = useAuthenticatedFetch();
 
   const fetchTransaction = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/transactions/${transactionId}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch transaction");
-      }
-
-      const data = await response.json();
+      const data = await apiCallJson(
+        `/api/admin/transactions/${transactionId}`,
+        {
+          cache: "no-store",
+        }
+      );
       setTransaction(data.transaction);
       setError("");
     } catch (err) {
@@ -143,7 +142,7 @@ export default function TransactionDetail({
 
     try {
       setRefundLoading(true);
-      const response = await fetch("/api/admin/transactions/refunds", {
+      await apiCallJson("/api/admin/transactions/refunds", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -155,11 +154,6 @@ export default function TransactionDetail({
           status: "pending",
         }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to create refund");
-      }
 
       // Reset form and refresh data
       setRefundAmount("");

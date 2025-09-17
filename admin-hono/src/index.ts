@@ -32,6 +32,7 @@ import changePasswordRoutes from "./routes/change-password";
 import usersRoutes from "./routes/users";
 import ordersRoutes from "./routes/orders";
 import paymentsRoutes from "./routes/payments";
+import transactionsRoutes from "./routes/transactions";
 
 // Create main app
 const app = new Hono<{
@@ -294,6 +295,7 @@ app.route("/api/admin/settings/general", settingsGeneralRoutes);
 app.route("/api/admin/users", usersRoutes);
 app.route("/api/admin/orders", ordersRoutes);
 app.route("/api/admin/payments", paymentsRoutes);
+app.route("/api/admin/transactions", transactionsRoutes);
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler

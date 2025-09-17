@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Refund {
   id: string;
@@ -62,6 +63,7 @@ export default function RefundsManager() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const { apiCallJson } = useAuthenticatedFetch();
 
   const fetchRefunds = async () => {
     try {
@@ -74,18 +76,12 @@ export default function RefundsManager() {
       if (search) params.append("q", search);
       if (statusFilter) params.append("status", statusFilter);
 
-      const response = await fetch(
+      const data = await apiCallJson(
         `/api/admin/transactions/refunds?${params}`,
         {
           cache: "no-store",
         }
       );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch refunds");
-      }
-
-      const data = await response.json();
       setRefunds(data.items || []);
       setTotal(data.total || 0);
       setError("");
