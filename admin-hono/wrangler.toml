@@ -6,6 +6,8 @@ compatibility_flags = ["nodejs_compat"]
 [observability.logs]
 enabled = true
 
+
+
 # Environment variables
 [vars]
 ADMIN_EMAIL = "admin@local"

@@ -65,6 +65,7 @@ interface ShippingMethod {
     unit?: string;
   };
   restricted_items: string[];
+  restricted_products: string[];
   description: string;
   estimated_days_min: number;
   estimated_days_max: number;
@@ -340,12 +341,16 @@ export default function ShippingMethodsPage() {
                             {method.weight_unit}
                           </div>
                         )}
-                        {method.restricted_items &&
-                          method.restricted_items.length > 0 && (
-                            <div className="text-xs text-red-500 mt-1">
-                              {method.restricted_items.length} restrictions
-                            </div>
-                          )}
+                        {((method.restricted_items &&
+                          method.restricted_items.length > 0) ||
+                          (method.restricted_products &&
+                            method.restricted_products.length > 0)) && (
+                          <div className="text-xs text-red-500 mt-1">
+                            {(method.restricted_items?.length || 0) +
+                              (method.restricted_products?.length || 0)}{" "}
+                            restrictions
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>

@@ -59,6 +59,7 @@ interface ShippingMethod {
     unit?: string;
   };
   restricted_items: string[];
+  restricted_products: string[];
   description: string;
   estimated_days_min: number;
   estimated_days_max: number;
@@ -496,20 +497,48 @@ export default function ShippingMethodDetailPage({
               </div>
             )}
 
-            {method.restricted_items && method.restricted_items.length > 0 && (
+            {(method.restricted_items && method.restricted_items.length > 0) ||
+            (method.restricted_products &&
+              method.restricted_products.length > 0) ? (
               <div>
                 <Label className="text-sm font-medium text-gray-500">
                   Restricted Items
                 </Label>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {method.restricted_items.map((item, index) => (
-                    <Badge key={index} variant="secondary" className="text-xs">
-                      {item}
-                    </Badge>
-                  ))}
+                <div className="space-y-2 mt-2">
+                  {method.restricted_items &&
+                    method.restricted_items.length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">
+                          Custom Items:
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {method.restricted_items.map((item, index) => (
+                            <Badge
+                              key={index}
+                              variant="secondary"
+                              className="text-xs"
+                            >
+                              {item}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  {method.restricted_products &&
+                    method.restricted_products.length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">
+                          Products ({method.restricted_products.length}):
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          {method.restricted_products.length} specific
+                          product(s) restricted
+                        </div>
+                      </div>
+                    )}
                 </div>
               </div>
-            )}
+            ) : null}
           </CardContent>
         </Card>
 

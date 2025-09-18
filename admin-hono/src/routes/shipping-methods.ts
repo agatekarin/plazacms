@@ -71,6 +71,7 @@ methods.get("/", adminMiddleware as any, async (c) => {
       sm.max_weight_limit,
       sm.max_dimensions,
       sm.restricted_items,
+      sm.restricted_products,
       sm.description,
       sm.estimated_days_min,
       sm.estimated_days_max,
@@ -95,9 +96,30 @@ methods.get("/", adminMiddleware as any, async (c) => {
     params.concat([limit, offset])
   );
 
+  // Parse JSON fields for each method
+  const methods = rows.map((m: any) => {
+    // Normalize JSON fields if returned as strings
+    if (typeof m.max_dimensions === "string") {
+      try {
+        m.max_dimensions = JSON.parse(m.max_dimensions);
+      } catch {}
+    }
+    if (typeof m.restricted_items === "string") {
+      try {
+        m.restricted_items = JSON.parse(m.restricted_items);
+      } catch {}
+    }
+    if (typeof m.restricted_products === "string") {
+      try {
+        m.restricted_products = JSON.parse(m.restricted_products);
+      } catch {}
+    }
+    return m;
+  });
+
   const totalPages = Math.ceil(total / limit);
   return c.json({
-    methods: rows,
+    methods,
     pagination: {
       page,
       limit,
@@ -128,6 +150,7 @@ methods.post("/", adminMiddleware as any, async (c) => {
     max_weight_limit,
     max_dimensions,
     restricted_items,
+    restricted_products,
     description,
     estimated_days_min,
     estimated_days_max,
@@ -168,10 +191,10 @@ methods.post("/", adminMiddleware as any, async (c) => {
     `INSERT INTO public.shipping_methods (
       zone_id, gateway_id, name, method_type, base_cost, currency,
       weight_unit, weight_threshold, cost_per_kg, min_free_threshold, max_free_weight,
-      max_weight_limit, max_dimensions, restricted_items, description,
+      max_weight_limit, max_dimensions, restricted_items, restricted_products, description,
       estimated_days_min, estimated_days_max, status, sort_order
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
     ) RETURNING *`,
     [
       zone_id,
@@ -188,6 +211,7 @@ methods.post("/", adminMiddleware as any, async (c) => {
       Number(max_weight_limit || 30000),
       JSON.stringify(max_dimensions || {}),
       JSON.stringify(restricted_items || []),
+      JSON.stringify(restricted_products || []),
       description || "",
       Number(estimated_days_min || 1),
       Number(estimated_days_max || 7),
@@ -224,6 +248,7 @@ methods.get("/:id", adminMiddleware as any, async (c) => {
       sm.max_weight_limit,
       sm.max_dimensions,
       sm.restricted_items,
+      sm.restricted_products,
       sm.description,
       sm.estimated_days_min,
       sm.estimated_days_max,
@@ -259,6 +284,11 @@ methods.get("/:id", adminMiddleware as any, async (c) => {
   if (typeof m.restricted_items === "string") {
     try {
       m.restricted_items = JSON.parse(m.restricted_items);
+    } catch {}
+  }
+  if (typeof m.restricted_products === "string") {
+    try {
+      m.restricted_products = JSON.parse(m.restricted_products);
     } catch {}
   }
   return c.json({ method: m });
@@ -302,6 +332,12 @@ methods.patch("/:id", adminMiddleware as any, async (c) => {
     setF(true, "max_dimensions", JSON.stringify(b.max_dimensions || {}));
   if (b.restricted_items !== undefined)
     setF(true, "restricted_items", JSON.stringify(b.restricted_items || []));
+  if (b.restricted_products !== undefined)
+    setF(
+      true,
+      "restricted_products",
+      JSON.stringify(b.restricted_products || [])
+    );
   if (b.description !== undefined)
     setF(true, "description", String(b.description || ""));
   if (b.estimated_days_min !== undefined)

@@ -98,6 +98,7 @@ export async function GET(request: NextRequest) {
         sm.max_weight_limit,
         sm.max_dimensions,
         sm.restricted_items,
+        sm.restricted_products,
         sm.description,
         sm.estimated_days_min,
         sm.estimated_days_max,
@@ -163,6 +164,7 @@ export async function POST(request: NextRequest) {
       max_weight_limit,
       max_dimensions,
       restricted_items,
+      restricted_products,
       description,
       estimated_days_min,
       estimated_days_max,
@@ -232,10 +234,10 @@ export async function POST(request: NextRequest) {
       INSERT INTO shipping_methods (
         zone_id, gateway_id, name, method_type, base_cost, currency,
         weight_unit, weight_threshold, cost_per_kg, min_free_threshold, max_free_weight,
-        max_weight_limit, max_dimensions, restricted_items, description,
+        max_weight_limit, max_dimensions, restricted_items, restricted_products, description,
         estimated_days_min, estimated_days_max, status, sort_order
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *
     `;
 
@@ -254,6 +256,7 @@ export async function POST(request: NextRequest) {
       max_weight_limit || 30000,
       JSON.stringify(max_dimensions || {}),
       JSON.stringify(restricted_items || []),
+      JSON.stringify(restricted_products || []),
       description || "",
       estimated_days_min || 1,
       estimated_days_max || 7,
