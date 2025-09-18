@@ -26,6 +26,7 @@ import {
   Trash2,
   MoreHorizontal,
   RotateCcw,
+  Package,
 } from "lucide-react";
 import {
   Dialog,
@@ -49,6 +50,7 @@ interface Review {
   admin_response?: string;
   created_at: string;
   updated_at: string;
+  product_id: string;
   product_name: string;
   product_slug: string;
   user_name?: string;
@@ -692,6 +694,19 @@ export function ReviewManager() {
                           }
                         >
                           <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title="View Product"
+                          className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+                          onClick={() =>
+                            window.open(
+                              `/admin/products/${review.product_id}`,
+                              "_blank"
+                            )
+                          }
+                        >
+                          <Package className="w-4 h-4" />
                         </button>
                         {review.status !== "approved" && (
                           <button

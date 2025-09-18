@@ -479,7 +479,23 @@ export function ReviewDetail({
                 <Label className="text-sm font-medium text-gray-700">
                   Product Name
                 </Label>
-                <p className="text-sm text-gray-900">{review.product_name}</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-900">{review.product_name}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      window.open(
+                        `/admin/products/${review.product_id}`,
+                        "_blank"
+                      )
+                    }
+                    className="ml-2"
+                  >
+                    <Eye className="w-4 h-4 mr-1" />
+                    View Product
+                  </Button>
+                </div>
               </div>
               <div>
                 <Label className="text-sm font-medium text-gray-700">

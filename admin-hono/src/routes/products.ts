@@ -159,17 +159,88 @@ products.get("/:id", adminMiddleware as any, async (c) => {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "Missing id" }, 400);
 
-  const rows = await sql`
-    SELECT p.id, p.name, p.slug, p.description, p.regular_price, p.currency, p.stock, p.category_id, p.status, p.sku,
-           (p.weight::int) AS weight, p.sale_price, p.sale_start_date, p.sale_end_date, p.tax_class_id, p.featured_image_id,
-           CASE WHEN EXISTS (SELECT 1 FROM public.product_variants pv WHERE pv.product_id = p.id)
-                THEN 'variable' ELSE 'simple' END as product_type
+  try {
+    console.log(`Fetching product with ID: ${id}`);
+
+    // Get basic product info
+    const productRows = await sql`
+      SELECT p.id, p.name, p.slug, p.description, p.regular_price, p.currency, p.stock, 
+             p.category_id, p.status, p.sku, p.weight, p.sale_price, p.sale_start_date, 
+             p.sale_end_date, p.tax_class_id, p.featured_image_id, p.created_at, p.updated_at,
+             p.product_type, m.file_url as featured_image_url
       FROM public.products p
+      LEFT JOIN public.media m ON m.id = p.featured_image_id
       WHERE p.id = ${id}
-  `;
-  const item = rows?.[0];
-  if (!item) return c.json({ error: "Not found" }, 404);
-  return c.json({ item });
+    `;
+
+    const product = productRows?.[0];
+    if (!product) {
+      console.log(`Product not found for ID: ${id}`);
+      return c.json({ error: "Not found" }, 404);
+    }
+
+    // Get product category (single category via category_id)
+    const categories = product.category_id
+      ? await sql`
+      SELECT c.id, c.name
+      FROM public.categories c
+      WHERE c.id = ${product.category_id}
+    `
+      : [];
+
+    // Get product attributes through variants (attributes are linked to variants, not products directly)
+    const attributes = await sql`
+      SELECT DISTINCT pa.id, pa.name, pav.value
+      FROM public.product_attributes pa
+      INNER JOIN public.product_attribute_values pav ON pav.attribute_id = pa.id
+      INNER JOIN public.product_variant_attribute_values pvav ON pvav.attribute_value_id = pav.id
+      INNER JOIN public.product_variants pv ON pv.id = pvav.product_variant_id
+      WHERE pv.product_id = ${id}
+    `;
+
+    // Get product variants
+    const variants = await sql`
+      SELECT id, sku, regular_price as price, stock, status
+      FROM public.product_variants
+      WHERE product_id = ${id}
+      ORDER BY sku
+    `;
+
+    // Get gallery images
+    const gallery_images = await sql`
+      SELECT m.id, m.file_url as url, m.alt_text
+      FROM public.media m
+      INNER JOIN public.product_images pi ON pi.media_id = m.id
+      WHERE pi.product_id = ${id}
+      ORDER BY pi.display_order
+    `;
+
+    // Get review statistics
+    const reviewStats = await sql`
+      SELECT 
+        COUNT(*)::int as review_count,
+        COALESCE(AVG(rating), 0)::float as average_rating
+      FROM public.reviews
+      WHERE product_id = ${id} AND status = 'approved'
+    `;
+    const stats = reviewStats?.[0] || { review_count: 0, average_rating: 0 };
+
+    // Combine all data
+    const item = {
+      ...product,
+      categories,
+      attributes,
+      variants,
+      gallery_images,
+      review_count: stats.review_count,
+      average_rating: stats.average_rating,
+    };
+
+    return c.json({ item });
+  } catch (error) {
+    console.error("Error fetching product:", error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // PATCH /api/admin/products/:id
