@@ -220,7 +220,7 @@ export default function ReviewAnalyticsPage() {
                     Helpful Votes
                   </p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {analytics.helpful_votes_total.toLocaleString()}
+                    {analytics.helpful_votes_total?.toLocaleString() || 0}
                   </p>
                 </div>
                 <ThumbsUp className="w-8 h-8 text-purple-600" />
@@ -354,7 +354,7 @@ export default function ReviewAnalyticsPage() {
                     variant="outline"
                     className="bg-purple-50 text-purple-700"
                   >
-                    {analytics.reviews_with_images_percentage.toFixed(1)}%
+                    {analytics.reviews_with_images_percentage?.toFixed(1) || 0}%
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
@@ -363,9 +363,9 @@ export default function ReviewAnalyticsPage() {
                     variant="outline"
                     className="bg-green-50 text-green-700"
                   >
-                    {analytics.reviews_with_admin_response_percentage.toFixed(
+                    {analytics.reviews_with_admin_response_percentage?.toFixed(
                       1
-                    )}
+                    ) || 0}
                     %
                   </Badge>
                 </div>

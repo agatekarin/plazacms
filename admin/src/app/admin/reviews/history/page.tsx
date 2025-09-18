@@ -88,11 +88,20 @@ export default function ReviewHistoryPage() {
         sort: filters.sort,
       }).toString();
 
+      // This would normally come from the current user context
+      const currentUserId = "current-user-id"; // Replace with actual user ID
       const response = await apiCallJson(
-        `/api/customer/reviews/my?${queryParams}`
+        `/api/customer/reviews/user/${currentUserId}?${queryParams}`
       );
-      setReviews(response.data);
-      setPagination(response.meta);
+      setReviews(response.data || []);
+      setPagination(
+        response.meta || {
+          current_page: 1,
+          per_page: 10,
+          total_pages: 1,
+          total_items: 0,
+        }
+      );
     } catch (error) {
       console.error("Error fetching review history:", error);
       toast.error("Failed to load review history");

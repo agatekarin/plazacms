@@ -23,14 +23,39 @@ export default function ReviewSubmissionPage() {
 
   // Fetch product info
   useEffect(() => {
-    if (productId) {
-      // In a real app, you would fetch this from an API
-      setProductInfo({
-        id: productId,
-        name: "Sample Product", // This would come from API
-        image: "/placeholder-product.jpg",
-      });
-    }
+    const fetchProductInfo = async () => {
+      if (productId) {
+        try {
+          // Fetch product details from API
+          const response = await fetch(`/api/admin/products/${productId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setProductInfo({
+              id: data.item.id,
+              name: data.item.name,
+              image: data.item.featured_image_url || "/placeholder-product.jpg",
+            });
+          } else {
+            // Fallback to sample data if API fails
+            setProductInfo({
+              id: productId,
+              name: "Product",
+              image: "/placeholder-product.jpg",
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching product info:", error);
+          // Fallback to sample data
+          setProductInfo({
+            id: productId,
+            name: "Product",
+            image: "/placeholder-product.jpg",
+          });
+        }
+      }
+    };
+
+    fetchProductInfo();
   }, [productId]);
 
   const handleReviewSubmitted = (review: any) => {

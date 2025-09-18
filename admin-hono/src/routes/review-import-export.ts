@@ -1,22 +1,61 @@
-import { Hono } from 'hono';
-import { getDb } from '../lib/db';
-import { adminMiddleware } from '../lib/auth';
+import { Hono } from "hono";
+import { getDb } from "../lib/db";
+import { adminMiddleware } from "../lib/auth";
 
-const reviewImportExportRoutes = new Hono<{ Bindings: Env; Variables: { user: any } }>();
+const reviewImportExportRoutes = new Hono<{
+  Bindings: Env;
+  Variables: { user: any };
+}>();
 
 // =====================================================
 // REVIEW IMPORT/EXPORT API ROUTES
 // =====================================================
 
+// GET /api/admin/reviews/import-export/stats - Get import/export statistics
+reviewImportExportRoutes.get("/stats", adminMiddleware, async (c) => {
+  try {
+    const sql = getDb(c);
+
+    // Get total reviews count
+    const totalQuery = `
+      SELECT COUNT(*)::int as total_reviews
+      FROM public.reviews
+    `;
+    const totalResult = await sql.unsafe(totalQuery, []);
+    const totalReviews = totalResult[0]?.total_reviews || 0;
+
+    // Get reviews with images count
+    const withImagesQuery = `
+      SELECT COUNT(DISTINCT r.id)::int as reviews_with_images
+      FROM public.reviews r
+      INNER JOIN public.review_images ri ON r.id = ri.review_id
+    `;
+    const withImagesResult = await sql.unsafe(withImagesQuery, []);
+    const reviewsWithImages = withImagesResult[0]?.reviews_with_images || 0;
+
+    // TODO: Add last_export_date and last_import_date tracking
+    // For now, return mock data
+    return c.json({
+      total_reviews: totalReviews,
+      reviews_with_images: reviewsWithImages,
+      last_export_date: null,
+      last_import_date: null,
+    });
+  } catch (error) {
+    console.error("Error fetching import/export stats:", error);
+    return c.json({ error: "Failed to fetch stats" }, 500);
+  }
+});
+
 // GET /api/admin/reviews/export - Export reviews to CSV/Excel
-reviewImportExportRoutes.get('/export', adminMiddleware, async (c) => {
+reviewImportExportRoutes.get("/export", adminMiddleware, async (c) => {
   try {
     const url = new URL(c.req.url);
-    const format = url.searchParams.get('format') || 'csv';
-    const status = url.searchParams.get('status') || '';
-    const productId = url.searchParams.get('product_id') || '';
-    const dateFrom = url.searchParams.get('date_from') || '';
-    const dateTo = url.searchParams.get('date_to') || '';
+    const format = url.searchParams.get("format") || "csv";
+    const status = url.searchParams.get("status") || "";
+    const productId = url.searchParams.get("product_id") || "";
+    const dateFrom = url.searchParams.get("date_from") || "";
+    const dateTo = url.searchParams.get("date_to") || "";
 
     // Build WHERE conditions
     const conditions: string[] = [];
@@ -47,7 +86,8 @@ reviewImportExportRoutes.get('/export', adminMiddleware, async (c) => {
       paramIndex++;
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     // Get reviews data
     const reviewsQuery = `
@@ -99,110 +139,111 @@ reviewImportExportRoutes.get('/export', adminMiddleware, async (c) => {
     const sql = getDb(c);
     const reviews = await sql.unsafe(reviewsQuery, params);
 
-    if (format === 'csv') {
+    if (format === "csv") {
       // Generate CSV
       const csvHeaders = [
-        'ID',
-        'Rating',
-        'Comment',
-        'Status',
-        'Verified Purchase',
-        'Helpful Count',
-        'Admin Response',
-        'Moderation Status',
-        'Moderation Notes',
-        'Created At',
-        'Updated At',
-        'Product Name',
-        'Product Slug',
-        'User Name',
-        'User Email',
-        'Order Number',
-        'Order Item Name',
-        'Order Item Price',
-        'Order Item Quantity',
-        'Images'
+        "ID",
+        "Rating",
+        "Comment",
+        "Status",
+        "Verified Purchase",
+        "Helpful Count",
+        "Admin Response",
+        "Moderation Status",
+        "Moderation Notes",
+        "Created At",
+        "Updated At",
+        "Product Name",
+        "Product Slug",
+        "User Name",
+        "User Email",
+        "Order Number",
+        "Order Item Name",
+        "Order Item Price",
+        "Order Item Quantity",
+        "Images",
       ];
 
-      const csvRows = reviews.map(review => [
+      const csvRows = reviews.map((review) => [
         review.id,
         review.rating,
-        `"${(review.comment || '').replace(/"/g, '""')}"`,
+        `"${(review.comment || "").replace(/"/g, '""')}"`,
         review.status,
-        review.is_verified_purchase ? 'Yes' : 'No',
+        review.is_verified_purchase ? "Yes" : "No",
         review.helpful_count,
-        `"${(review.admin_response || '').replace(/"/g, '""')}"`,
+        `"${(review.admin_response || "").replace(/"/g, '""')}"`,
         review.moderation_status,
-        `"${(review.moderation_notes || '').replace(/"/g, '""')}"`,
+        `"${(review.moderation_notes || "").replace(/"/g, '""')}"`,
         review.created_at,
         review.updated_at,
-        `"${(review.product_name || '').replace(/"/g, '""')}"`,
+        `"${(review.product_name || "").replace(/"/g, '""')}"`,
         review.product_slug,
-        `"${(review.user_name || '').replace(/"/g, '""')}"`,
+        `"${(review.user_name || "").replace(/"/g, '""')}"`,
         review.user_email,
         review.order_number,
-        `"${(review.order_item_name || '').replace(/"/g, '""')}"`,
+        `"${(review.order_item_name || "").replace(/"/g, '""')}"`,
         review.order_item_price,
         review.order_item_quantity,
-        `"${JSON.stringify(review.images).replace(/"/g, '""')}"`
+        `"${JSON.stringify(review.images).replace(/"/g, '""')}"`,
       ]);
 
       const csvContent = [csvHeaders, ...csvRows]
-        .map(row => row.join(','))
-        .join('\n');
+        .map((row) => row.join(","))
+        .join("\n");
 
       return new Response(csvContent, {
         headers: {
-          'Content-Type': 'text/csv',
-          'Content-Disposition': `attachment; filename="reviews-export-${new Date().toISOString().split('T')[0]}.csv"`
-        }
+          "Content-Type": "text/csv",
+          "Content-Disposition": `attachment; filename="reviews-export-${
+            new Date().toISOString().split("T")[0]
+          }.csv"`,
+        },
       });
     } else {
       // Return JSON format
       return c.json({
         reviews,
         export_info: {
-          format: 'json',
+          format: "json",
           total_count: reviews.length,
           exported_at: new Date().toISOString(),
           filters: {
             status,
             product_id: productId,
             date_from: dateFrom,
-            date_to: dateTo
-          }
-        }
+            date_to: dateTo,
+          },
+        },
       });
     }
-
   } catch (error) {
-    console.error('Error exporting reviews:', error);
-    return c.json({ error: 'Failed to export reviews' }, 500);
+    console.error("Error exporting reviews:", error);
+    return c.json({ error: "Failed to export reviews" }, 500);
   }
 });
 
 // POST /api/admin/reviews/import - Import reviews from CSV/JSON
-reviewImportExportRoutes.post('/import', adminMiddleware, async (c) => {
+reviewImportExportRoutes.post("/import", adminMiddleware, async (c) => {
   try {
     const body = await c.req.json();
     const { reviews, options = {} } = body;
 
     if (!reviews || !Array.isArray(reviews) || reviews.length === 0) {
-      return c.json({ error: 'Reviews array is required' }, 400);
+      return c.json({ error: "Reviews array is required" }, 400);
     }
 
     const {
       skip_duplicates = true,
       update_existing = false,
-      default_status = 'pending',
-      default_moderation_status = 'pending'
+      default_status = "pending",
+      default_moderation_status = "pending",
     } = options;
 
     const results = {
       imported: 0,
       updated: 0,
       skipped: 0,
-      errors: [] as any[]
+      errors: [] as any[],
     };
 
     for (const reviewData of reviews) {
@@ -216,34 +257,34 @@ reviewImportExportRoutes.post('/import', adminMiddleware, async (c) => {
           comment,
           reviewer_name,
           reviewer_email,
-          review_type = 'imported',
+          review_type = "imported",
           status = default_status,
           moderation_status = default_moderation_status,
           is_verified_purchase = false,
-          images = []
+          images = [],
         } = reviewData;
 
         // Validate required fields
         if (!product_id || !rating || rating < 1 || rating > 5) {
           results.errors.push({
             review: reviewData,
-            error: 'Missing required fields: product_id and rating (1-5)'
+            error: "Missing required fields: product_id and rating (1-5)",
           });
           continue;
         }
 
         const sql = getDb(c);
-        
+
         // Check if product exists
         const productCheck = await sql.unsafe(
-          'SELECT id FROM public.products WHERE id = $1',
+          "SELECT id FROM public.products WHERE id = $1",
           [product_id]
         );
 
         if (productCheck.length === 0) {
           results.errors.push({
             review: reviewData,
-            error: 'Product not found'
+            error: "Product not found",
           });
           continue;
         }
@@ -251,14 +292,14 @@ reviewImportExportRoutes.post('/import', adminMiddleware, async (c) => {
         // Check if user exists (if provided)
         if (user_id) {
           const userCheck = await sql.unsafe(
-            'SELECT id FROM public.users WHERE id = $1',
+            "SELECT id FROM public.users WHERE id = $1",
             [user_id]
           );
 
           if (userCheck.length === 0) {
             results.errors.push({
               review: reviewData,
-              error: 'User not found'
+              error: "User not found",
             });
             continue;
           }
@@ -267,7 +308,7 @@ reviewImportExportRoutes.post('/import', adminMiddleware, async (c) => {
         // Check for existing review (if skip_duplicates is true)
         if (skip_duplicates) {
           const existingReview = await sql.unsafe(
-            'SELECT id FROM public.reviews WHERE product_id = $1 AND user_id = $2 AND rating = $3',
+            "SELECT id FROM public.reviews WHERE product_id = $1 AND user_id = $2 AND rating = $3",
             [product_id, user_id, rating]
           );
 
@@ -295,7 +336,7 @@ reviewImportExportRoutes.post('/import', adminMiddleware, async (c) => {
                 reviewer_email,
                 status,
                 moderation_status,
-                is_verified_purchase
+                is_verified_purchase,
               ]);
 
               results.updated++;
@@ -329,7 +370,7 @@ reviewImportExportRoutes.post('/import', adminMiddleware, async (c) => {
           review_type,
           status,
           moderation_status,
-          is_verified_purchase
+          is_verified_purchase,
         ]);
 
         // Handle images if provided
@@ -337,116 +378,120 @@ reviewImportExportRoutes.post('/import', adminMiddleware, async (c) => {
           for (const [index, mediaId] of images.entries()) {
             try {
               await sql.unsafe(
-                'INSERT INTO public.review_images (review_id, media_id, display_order) VALUES ($1, $2, $3) ON CONFLICT (review_id, media_id) DO NOTHING',
+                "INSERT INTO public.review_images (review_id, media_id, display_order) VALUES ($1, $2, $3) ON CONFLICT (review_id, media_id) DO NOTHING",
                 [newReview[0].id, mediaId, index + 1]
               );
             } catch (imageError) {
-              console.error('Error adding review image:', imageError);
+              console.error("Error adding review image:", imageError);
             }
           }
         }
 
         results.imported++;
-
       } catch (error) {
         results.errors.push({
           review: reviewData,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
 
     return c.json({
-      message: 'Import completed',
-      results
+      message: "Import completed",
+      results,
     });
-
   } catch (error) {
-    console.error('Error importing reviews:', error);
-    return c.json({ error: 'Failed to import reviews' }, 500);
+    console.error("Error importing reviews:", error);
+    return c.json({ error: "Failed to import reviews" }, 500);
   }
 });
 
 // GET /api/admin/reviews/import/template - Get import template
-reviewImportExportRoutes.get('/import/template', adminMiddleware, async (c) => {
+reviewImportExportRoutes.get("/import/template", adminMiddleware, async (c) => {
   try {
     const url = new URL(c.req.url);
-    const format = url.searchParams.get('format') || 'csv';
+    const format = url.searchParams.get("format") || "csv";
 
     const template = {
       headers: [
-        'product_id',
-        'user_id',
-        'order_id',
-        'order_item_id',
-        'rating',
-        'comment',
-        'reviewer_name',
-        'reviewer_email',
-        'review_type',
-        'status',
-        'moderation_status',
-        'is_verified_purchase',
-        'images'
+        "product_id",
+        "user_id",
+        "order_id",
+        "order_item_id",
+        "rating",
+        "comment",
+        "reviewer_name",
+        "reviewer_email",
+        "review_type",
+        "status",
+        "moderation_status",
+        "is_verified_purchase",
+        "images",
       ],
       sample_data: [
         {
-          product_id: 'uuid-of-product',
-          user_id: 'uuid-of-user (optional)',
-          order_id: 'uuid-of-order (optional)',
-          order_item_id: 'uuid-of-order-item (optional)',
+          product_id: "uuid-of-product",
+          user_id: "uuid-of-user (optional)",
+          order_id: "uuid-of-order (optional)",
+          order_item_id: "uuid-of-order-item (optional)",
           rating: 5,
-          comment: 'Great product!',
-          reviewer_name: 'John Doe',
-          reviewer_email: 'john@example.com',
-          review_type: 'imported',
-          status: 'pending',
-          moderation_status: 'pending',
+          comment: "Great product!",
+          reviewer_name: "John Doe",
+          reviewer_email: "john@example.com",
+          review_type: "imported",
+          status: "pending",
+          moderation_status: "pending",
           is_verified_purchase: false,
-          images: '["media-uuid-1", "media-uuid-2"]'
-        }
+          images: '["media-uuid-1", "media-uuid-2"]',
+        },
       ],
       instructions: [
-        'product_id: Required. UUID of the product being reviewed',
-        'user_id: Optional. UUID of the user (leave empty for guest reviews)',
-        'order_id: Optional. UUID of the order',
-        'order_item_id: Optional. UUID of the order item',
-        'rating: Required. Integer from 1 to 5',
-        'comment: Optional. Review text',
-        'reviewer_name: Optional. Name of the reviewer',
-        'reviewer_email: Optional. Email of the reviewer',
-        'review_type: Optional. Type of review (imported, user, guest)',
-        'status: Optional. Review status (pending, approved, rejected, hidden)',
-        'moderation_status: Optional. Moderation status (pending, approved, rejected, flagged)',
-        'is_verified_purchase: Optional. Boolean indicating if this is a verified purchase',
-        'images: Optional. JSON array of media UUIDs'
-      ]
+        "product_id: Required. UUID of the product being reviewed",
+        "user_id: Optional. UUID of the user (leave empty for guest reviews)",
+        "order_id: Optional. UUID of the order",
+        "order_item_id: Optional. UUID of the order item",
+        "rating: Required. Integer from 1 to 5",
+        "comment: Optional. Review text",
+        "reviewer_name: Optional. Name of the reviewer",
+        "reviewer_email: Optional. Email of the reviewer",
+        "review_type: Optional. Type of review (imported, user, guest)",
+        "status: Optional. Review status (pending, approved, rejected, hidden)",
+        "moderation_status: Optional. Moderation status (pending, approved, rejected, flagged)",
+        "is_verified_purchase: Optional. Boolean indicating if this is a verified purchase",
+        "images: Optional. JSON array of media UUIDs",
+      ],
     };
 
-    if (format === 'csv') {
-      const csvHeaders = template.headers.join(',');
-      const csvSample = template.sample_data.map(row => 
-        template.headers.map(header => {
-          const value = row[header as keyof typeof row];
-          return typeof value === 'string' && value.includes(',') ? `"${value}"` : value;
-        }).join(',')
-      ).join('\n');
+    if (format === "csv") {
+      const csvHeaders = template.headers.join(",");
+      const csvSample = template.sample_data
+        .map((row) =>
+          template.headers
+            .map((header) => {
+              const value = row[header as keyof typeof row];
+              return typeof value === "string" && value.includes(",")
+                ? `"${value}"`
+                : value;
+            })
+            .join(",")
+        )
+        .join("\n");
 
-      const csvContent = [csvHeaders, csvSample].join('\n');
+      const csvContent = [csvHeaders, csvSample].join("\n");
 
       return new Response(csvContent, {
         headers: {
-          'Content-Type': 'text/csv',
-          'Content-Disposition': 'attachment; filename="reviews-import-template.csv"'
-        }
+          "Content-Type": "text/csv",
+          "Content-Disposition":
+            'attachment; filename="reviews-import-template.csv"',
+        },
       });
     } else {
       return c.json(template);
     }
-
   } catch (error) {
-    console.error('Error generating import template:', error);
-    return c.json({ error: 'Failed to generate import template' }, 500);
+    console.error("Error generating import template:", error);
+    return c.json({ error: "Failed to generate import template" }, 500);
   }
 });
 

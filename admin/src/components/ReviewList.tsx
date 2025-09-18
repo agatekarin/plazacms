@@ -118,8 +118,15 @@ export function ReviewList({
         `/api/customer/reviews/product/${productId}?${queryParams}`
       );
 
-      setReviews(response.data);
-      setPagination(response.meta);
+      setReviews(response.data || []);
+      setPagination(
+        response.meta || {
+          current_page: 1,
+          total_pages: 1,
+          total_items: 0,
+          per_page: itemsPerPage,
+        }
+      );
     } catch (error) {
       console.error("Error fetching reviews:", error);
       toast.error("Failed to load reviews");

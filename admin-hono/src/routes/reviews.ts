@@ -133,6 +133,176 @@ reviewsRoutes.get("/", adminMiddleware, async (c) => {
   }
 });
 
+// GET /api/admin/reviews/analytics - must be before ":id" route to avoid clash
+reviewsRoutes.get("/analytics", adminMiddleware, async (c) => {
+  try {
+    const url = new URL(c.req.url);
+    const productId = url.searchParams.get("product_id") || "";
+    let dateFrom = url.searchParams.get("date_from") || "";
+    let dateTo = url.searchParams.get("date_to") || "";
+    const period =
+      url.searchParams.get("period") || url.searchParams.get("timeRange") || "";
+
+    if (period && !dateFrom && !dateTo) {
+      const now = new Date();
+      const toIso = (d: Date) => d.toISOString();
+      dateTo = toIso(now);
+      const from = new Date(now);
+      switch (period) {
+        case "7d":
+          from.setDate(now.getDate() - 7);
+          break;
+        case "30d":
+          from.setDate(now.getDate() - 30);
+          break;
+        case "90d":
+          from.setDate(now.getDate() - 90);
+          break;
+        case "1y":
+          from.setFullYear(now.getFullYear() - 1);
+          break;
+        case "all":
+        default:
+          dateFrom = "";
+          dateTo = "";
+      }
+      if (period !== "all") {
+        dateFrom = toIso(from);
+      }
+    }
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+    if (productId) {
+      conditions.push(`r.product_id = $${paramIndex}`);
+      params.push(productId);
+      paramIndex++;
+    }
+    if (dateFrom) {
+      conditions.push(`r.created_at >= $${paramIndex}`);
+      params.push(dateFrom);
+      paramIndex++;
+    }
+    if (dateTo) {
+      conditions.push(`r.created_at <= $${paramIndex}`);
+      params.push(dateTo);
+      paramIndex++;
+    }
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const statsQuery = `
+      SELECT 
+        COUNT(*)::int as total_reviews,
+        COALESCE(AVG(rating), 0)::float as average_rating,
+        COUNT(CASE WHEN rating = 5 THEN 1 END)::int as five_star_count,
+        COUNT(CASE WHEN rating = 4 THEN 1 END)::int as four_star_count,
+        COUNT(CASE WHEN rating = 3 THEN 1 END)::int as three_star_count,
+        COUNT(CASE WHEN rating = 2 THEN 1 END)::int as two_star_count,
+        COUNT(CASE WHEN rating = 1 THEN 1 END)::int as one_star_count,
+        COUNT(CASE WHEN is_verified_purchase = true THEN 1 END)::int as verified_reviews_count,
+        COUNT(CASE WHEN status = 'approved' THEN 1 END)::int as approved_reviews_count,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END)::int as pending_reviews_count,
+        COUNT(CASE WHEN status = 'rejected' THEN 1 END)::int as rejected_reviews_count,
+        COUNT(CASE WHEN admin_response IS NOT NULL THEN 1 END)::int as responded_reviews_count,
+        COALESCE(SUM(helpful_count), 0)::int as total_helpful_votes
+      FROM public.reviews r
+      ${whereClause}
+    `;
+
+    const sql = getDb(c);
+    const stats = (await sql.unsafe(statsQuery, params))[0];
+
+    const imagesCountQuery = `
+      SELECT COUNT(DISTINCT ri.review_id)::int AS with_images
+      FROM public.review_images ri
+      JOIN public.reviews r ON r.id = ri.review_id
+      ${whereClause}
+    `;
+    const withImagesRow = (await sql.unsafe(imagesCountQuery, params))[0] || {
+      with_images: 0,
+    };
+
+    const topProductsQuery = `
+      SELECT r.product_id, p.name as product_name, COUNT(*)::int as review_count, COALESCE(AVG(r.rating),0)::float as average_rating
+      FROM public.reviews r
+      JOIN public.products p ON p.id = r.product_id
+      ${whereClause}
+      GROUP BY r.product_id, p.name
+      ORDER BY review_count DESC
+      LIMIT 5
+    `;
+    const topProducts = await sql.unsafe(topProductsQuery, params);
+
+    const topReviewersQuery = `
+      SELECT r.user_id, u.email as user_email, COUNT(*)::int as review_count, COALESCE(AVG(r.rating),0)::float as average_rating
+      FROM public.reviews r
+      LEFT JOIN public.users u ON u.id = r.user_id
+      ${whereClause}
+      GROUP BY r.user_id, u.email
+      ORDER BY review_count DESC
+      LIMIT 5
+    `;
+    const topReviewers = await sql.unsafe(topReviewersQuery, params);
+
+    const monthlyTrendsQuery = `
+      SELECT to_char(date_trunc('month', r.created_at), 'YYYY-MM') as month,
+             COUNT(*)::int as reviews_count,
+             COALESCE(AVG(r.rating),0)::float as average_rating
+      FROM public.reviews r
+      ${whereClause}
+      GROUP BY 1
+      ORDER BY 1 DESC
+      LIMIT 6
+    `;
+    const monthlyTrendsDesc = await sql.unsafe(monthlyTrendsQuery, params);
+    const monthlyTrends = [...monthlyTrendsDesc].reverse();
+
+    const total = Number(stats?.total_reviews || 0);
+    const approvalRate =
+      total > 0 ? (Number(stats.approved_reviews_count) / total) * 100 : 0;
+    const verifiedPct =
+      total > 0 ? (Number(stats.verified_reviews_count) / total) * 100 : 0;
+    const withImagesPct =
+      total > 0 ? (Number(withImagesRow.with_images) / total) * 100 : 0;
+    const withAdminRespPct =
+      total > 0 ? (Number(stats.responded_reviews_count) / total) * 100 : 0;
+
+    const rating_distribution = {
+      "1": Number(stats.one_star_count || 0),
+      "2": Number(stats.two_star_count || 0),
+      "3": Number(stats.three_star_count || 0),
+      "4": Number(stats.four_star_count || 0),
+      "5": Number(stats.five_star_count || 0),
+    } as const;
+
+    const status_distribution = {
+      pending: Number(stats.pending_reviews_count || 0),
+      approved: Number(stats.approved_reviews_count || 0),
+      rejected: Number(stats.rejected_reviews_count || 0),
+    } as const;
+
+    return c.json({
+      total_reviews: total,
+      average_rating: Number(stats.average_rating || 0),
+      approval_rate: approvalRate,
+      total_helpful_votes: Number(stats.total_helpful_votes || 0),
+      rating_distribution,
+      status_distribution,
+      verified_purchase_percentage: verifiedPct,
+      with_images_percentage: withImagesPct,
+      with_admin_response_percentage: withAdminRespPct,
+      top_products: topProducts,
+      top_reviewers: topReviewers,
+      monthly_trends: monthlyTrends,
+    });
+  } catch (error) {
+    console.error("Error fetching review analytics:", error);
+    return c.json({ error: "Failed to fetch review analytics" }, 500);
+  }
+});
+
 // GET /api/admin/reviews/:id - Get review detail
 reviewsRoutes.get("/:id", adminMiddleware, async (c) => {
   try {
@@ -172,7 +342,7 @@ reviewsRoutes.get("/:id", adminMiddleware, async (c) => {
         ri.media_id,
         ri.display_order,
         m.filename,
-        m.url,
+        m.file_url as url,
         m.alt_text
       FROM public.review_images ri
       LEFT JOIN public.media m ON ri.media_id = m.id
@@ -204,6 +374,10 @@ reviewsRoutes.patch("/:id", adminMiddleware, async (c) => {
       moderation_notes,
       admin_response,
       admin_response_date,
+      // Inline edit fields
+      rating,
+      comment,
+      created_at,
     } = body;
 
     const updateFields: string[] = [];
@@ -237,6 +411,25 @@ reviewsRoutes.patch("/:id", adminMiddleware, async (c) => {
     if (admin_response_date !== undefined) {
       updateFields.push(`admin_response_date = $${paramIndex}`);
       params.push(admin_response_date);
+      paramIndex++;
+    }
+
+    // Allow admins to inline-edit rating/comment/created_at
+    if (rating !== undefined) {
+      updateFields.push(`rating = $${paramIndex}`);
+      params.push(Number(rating));
+      paramIndex++;
+    }
+
+    if (comment !== undefined) {
+      updateFields.push(`comment = $${paramIndex}`);
+      params.push(comment);
+      paramIndex++;
+    }
+
+    if (created_at !== undefined) {
+      updateFields.push(`created_at = $${paramIndex}`);
+      params.push(created_at);
       paramIndex++;
     }
 
@@ -379,13 +572,48 @@ reviewsRoutes.post("/:id/response", adminMiddleware, async (c) => {
   }
 });
 
-// GET /api/admin/reviews/analytics - Review analytics
+// GET /api/admin/reviews/analytics - Review analytics (consolidated)
+/* DUPLICATE REMOVED - see consolidated handler earlier in file */
+/*
 reviewsRoutes.get("/analytics", adminMiddleware, async (c) => {
   try {
     const url = new URL(c.req.url);
     const productId = url.searchParams.get("product_id") || "";
-    const dateFrom = url.searchParams.get("date_from") || "";
-    const dateTo = url.searchParams.get("date_to") || "";
+    let dateFrom = url.searchParams.get("date_from") || "";
+    let dateTo = url.searchParams.get("date_to") || "";
+    // Support period/timeRange shorthands: 7d, 30d, 90d, 1y, all
+    const period =
+      url.searchParams.get("period") || url.searchParams.get("timeRange") || "";
+
+    if (period && !dateFrom && !dateTo) {
+      // Compute dateFrom based on period
+      const now = new Date();
+      const toIso = (d: Date) => d.toISOString();
+      dateTo = toIso(now);
+      const from = new Date(now);
+      switch (period) {
+        case "7d":
+          from.setDate(now.getDate() - 7);
+          break;
+        case "30d":
+          from.setDate(now.getDate() - 30);
+          break;
+        case "90d":
+          from.setDate(now.getDate() - 90);
+          break;
+        case "1y":
+          from.setFullYear(now.getFullYear() - 1);
+          break;
+        case "all":
+        default:
+          // leave dateFrom empty to include all
+          dateFrom = "";
+          dateTo = "";
+      }
+      if (period !== "all") {
+        dateFrom = toIso(from);
+      }
+    }
 
     // Build WHERE conditions
     const conditions: string[] = [];
@@ -413,75 +641,122 @@ reviewsRoutes.get("/analytics", adminMiddleware, async (c) => {
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // Get review statistics
+    // Get review statistics and analytics matching frontend shape
     const statsQuery = `
       SELECT 
-        COUNT(*) as total_reviews,
-        AVG(rating) as average_rating,
-        COUNT(CASE WHEN rating = 5 THEN 1 END) as five_star_count,
-        COUNT(CASE WHEN rating = 4 THEN 1 END) as four_star_count,
-        COUNT(CASE WHEN rating = 3 THEN 1 END) as three_star_count,
-        COUNT(CASE WHEN rating = 2 THEN 1 END) as two_star_count,
-        COUNT(CASE WHEN rating = 1 THEN 1 END) as one_star_count,
-        COUNT(CASE WHEN is_verified_purchase = true THEN 1 END) as verified_reviews_count,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_reviews_count,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_reviews_count,
-        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_reviews_count,
-        COUNT(CASE WHEN admin_response IS NOT NULL THEN 1 END) as responded_reviews_count
+        COUNT(*)::int as total_reviews,
+        COALESCE(AVG(rating), 0)::float as average_rating,
+        COUNT(CASE WHEN rating = 5 THEN 1 END)::int as five_star_count,
+        COUNT(CASE WHEN rating = 4 THEN 1 END)::int as four_star_count,
+        COUNT(CASE WHEN rating = 3 THEN 1 END)::int as three_star_count,
+        COUNT(CASE WHEN rating = 2 THEN 1 END)::int as two_star_count,
+        COUNT(CASE WHEN rating = 1 THEN 1 END)::int as one_star_count,
+        COUNT(CASE WHEN is_verified_purchase = true THEN 1 END)::int as verified_reviews_count,
+        COUNT(CASE WHEN status = 'approved' THEN 1 END)::int as approved_reviews_count,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END)::int as pending_reviews_count,
+        COUNT(CASE WHEN status = 'rejected' THEN 1 END)::int as rejected_reviews_count,
+        COUNT(CASE WHEN admin_response IS NOT NULL THEN 1 END)::int as responded_reviews_count,
+        COALESCE(SUM(helpful_count), 0)::int as total_helpful_votes
       FROM public.reviews r
       ${whereClause}
     `;
 
     const sql = getDb(c);
-    const statsResult = await sql.unsafe(statsQuery, params);
-    const stats = statsResult[0];
+    const stats = (await sql.unsafe(statsQuery, params))[0];
 
-    // Get recent reviews
-    const recentReviewsQuery = `
-      SELECT 
-        r.id,
-        r.rating,
-        r.comment,
-        r.created_at,
-        r.status,
-        p.name as product_name,
-        u.name as user_name
-      FROM public.reviews r
-      LEFT JOIN public.products p ON r.product_id = p.id
-      LEFT JOIN public.users u ON r.user_id = u.id
+    // With images percentage
+    const imagesCountQuery = `
+      SELECT COUNT(DISTINCT ri.review_id)::int AS with_images
+      FROM public.review_images ri
+      JOIN public.reviews r ON r.id = ri.review_id
       ${whereClause}
-      ORDER BY r.created_at DESC
-      LIMIT 10
     `;
+    const withImagesRow = (await sql.unsafe(imagesCountQuery, params))[0] || {
+      with_images: 0,
+    };
 
-    const recentReviews = await sql.unsafe(recentReviewsQuery, params);
+    // Top products
+    const topProductsQuery = `
+      SELECT r.product_id, p.name as product_name, COUNT(*)::int as review_count, COALESCE(AVG(r.rating),0)::float as average_rating
+      FROM public.reviews r
+      JOIN public.products p ON p.id = r.product_id
+      ${whereClause}
+      GROUP BY r.product_id, p.name
+      ORDER BY review_count DESC
+      LIMIT 5
+    `;
+    const topProducts = await sql.unsafe(topProductsQuery, params);
 
-    // Get rating distribution
-    const ratingDistribution = [
-      { rating: 5, count: parseInt(stats.five_star_count || "0") },
-      { rating: 4, count: parseInt(stats.four_star_count || "0") },
-      { rating: 3, count: parseInt(stats.three_star_count || "0") },
-      { rating: 2, count: parseInt(stats.two_star_count || "0") },
-      { rating: 1, count: parseInt(stats.one_star_count || "0") },
-    ];
+    // Top reviewers
+    const topReviewersQuery = `
+      SELECT r.user_id, u.email as user_email, COUNT(*)::int as review_count, COALESCE(AVG(r.rating),0)::float as average_rating
+      FROM public.reviews r
+      LEFT JOIN public.users u ON u.id = r.user_id
+      ${whereClause}
+      GROUP BY r.user_id, u.email
+      ORDER BY review_count DESC
+      LIMIT 5
+    `;
+    const topReviewers = await sql.unsafe(topReviewersQuery, params);
+
+    // Monthly trends (last 6 buckets within filter)
+    const monthlyTrendsQuery = `
+      SELECT to_char(date_trunc('month', r.created_at), 'YYYY-MM') as month,
+             COUNT(*)::int as reviews_count,
+             COALESCE(AVG(r.rating),0)::float as average_rating
+      FROM public.reviews r
+      ${whereClause}
+      GROUP BY 1
+      ORDER BY 1 DESC
+      LIMIT 6
+    `;
+    const monthlyTrendsDesc = await sql.unsafe(monthlyTrendsQuery, params);
+    const monthlyTrends = [...monthlyTrendsDesc].reverse();
+
+    const total = Number(stats.total_reviews || 0);
+    const approvalRate =
+      total > 0 ? (Number(stats.approved_reviews_count) / total) * 100 : 0;
+    const verifiedPct =
+      total > 0 ? (Number(stats.verified_reviews_count) / total) * 100 : 0;
+    const withImagesPct =
+      total > 0 ? (Number(withImagesRow.with_images) / total) * 100 : 0;
+    const withAdminRespPct =
+      total > 0 ? (Number(stats.responded_reviews_count) / total) * 100 : 0;
+
+    // Build rating distribution object as strings "1".."5"
+    const rating_distribution = {
+      "1": Number(stats.one_star_count || 0),
+      "2": Number(stats.two_star_count || 0),
+      "3": Number(stats.three_star_count || 0),
+      "4": Number(stats.four_star_count || 0),
+      "5": Number(stats.five_star_count || 0),
+    } as const;
+
+    const status_distribution = {
+      pending: Number(stats.pending_reviews_count || 0),
+      approved: Number(stats.approved_reviews_count || 0),
+      rejected: Number(stats.rejected_reviews_count || 0),
+    } as const;
 
     return c.json({
-      stats: {
-        total_reviews: parseInt(stats.total_reviews || "0"),
-        average_rating: parseFloat(stats.average_rating || "0"),
-        verified_reviews_count: parseInt(stats.verified_reviews_count || "0"),
-        approved_reviews_count: parseInt(stats.approved_reviews_count || "0"),
-        pending_reviews_count: parseInt(stats.pending_reviews_count || "0"),
-        rejected_reviews_count: parseInt(stats.rejected_reviews_count || "0"),
-        responded_reviews_count: parseInt(stats.responded_reviews_count || "0"),
-      },
-      rating_distribution: ratingDistribution,
-      recent_reviews: recentReviews,
+      total_reviews: total,
+      average_rating: Number(stats.average_rating || 0),
+      approval_rate: approvalRate,
+      total_helpful_votes: Number(stats.total_helpful_votes || 0),
+      rating_distribution,
+      status_distribution,
+      verified_purchase_percentage: verifiedPct,
+      with_images_percentage: withImagesPct,
+      with_admin_response_percentage: withAdminRespPct,
+      top_products: topProducts,
+      top_reviewers: topReviewers,
+      monthly_trends: monthlyTrends,
     });
   } catch (error) {
     console.error("Error fetching review analytics:", error);
     return c.json({ error: "Failed to fetch review analytics" }, 500);
   }
 });
+*/
 
 export default reviewsRoutes;

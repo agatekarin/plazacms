@@ -26,14 +26,15 @@ import {
   Image as ImageIcon,
   User,
   Calendar,
-  MoreHorizontal,
 } from "lucide-react";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import toast from "react-hot-toast";
 
 // Types
@@ -108,6 +109,64 @@ export function ReviewManager() {
 
   const [selectedReviews, setSelectedReviews] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isEditSaving, setIsEditSaving] = useState(false);
+  const [editingReview, setEditingReview] = useState<
+    | (Pick<Review, "id" | "rating" | "comment" | "created_at"> & {
+        product_name: string;
+      })
+    | null
+  >(null);
+
+  const toInputDateTime = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const y = d.getFullYear();
+      const m = pad(d.getMonth() + 1);
+      const day = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mm = pad(d.getMinutes());
+      return `${y}-${m}-${day}T${hh}:${mm}`;
+    } catch {
+      return "";
+    }
+  };
+
+  const openEdit = (review: Review) => {
+    setEditingReview({
+      id: review.id,
+      rating: review.rating,
+      comment: review.comment,
+      created_at: review.created_at,
+      product_name: review.product_name,
+    });
+    setIsEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editingReview) return;
+    try {
+      setIsEditSaving(true);
+      await apiCallJson(`/api/admin/reviews/${editingReview.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          rating: editingReview.rating,
+          comment: editingReview.comment,
+          created_at: new Date(editingReview.created_at).toISOString(),
+        }),
+      });
+      toast.success("Review updated successfully");
+      setIsEditOpen(false);
+      setEditingReview(null);
+      fetchReviews();
+    } catch (e) {
+      toast.error("Failed to update review");
+      console.error("Edit error:", e);
+    } finally {
+      setIsEditSaving(false);
+    }
+  };
 
   // Fetch reviews with current filters
   const fetchReviews = useCallback(async () => {
@@ -484,126 +543,119 @@ export function ReviewManager() {
               No reviews found
             </div>
           ) : (
-            <div className="space-y-4">
-              {reviews.map((review) => (
-                <div
-                  key={review.id}
-                  className="border rounded-lg p-4 hover:bg-gray-50"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3 flex-1">
+            <div className="w-full overflow-auto rounded-lg border">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white border-b z-10">
+                  <tr>
+                    <th className="w-10 p-3 text-left">
                       <input
                         type="checkbox"
-                        checked={selectedReviews.includes(review.id)}
-                        onChange={() => handleSelectReview(review.id)}
-                        className="mt-1 rounded border-gray-300"
+                        checked={
+                          selectedReviews.length === reviews.length &&
+                          reviews.length > 0
+                        }
+                        onChange={handleSelectAll}
+                        className="rounded border-gray-300"
                       />
-
-                      <div className="flex-1 space-y-2">
-                        {/* Header */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {renderStars(review.rating)}
-                          {getStatusBadge(review.status)}
-                          {review.is_verified_purchase && (
-                            <Badge
-                              variant="outline"
-                              className="bg-blue-50 text-blue-700"
-                            >
-                              <User className="w-3 h-3 mr-1" />
-                              Verified
-                            </Badge>
-                          )}
-                          {review.image_count > 0 && (
-                            <Badge
-                              variant="outline"
-                              className="bg-purple-50 text-purple-700"
-                            >
-                              <ImageIcon className="w-3 h-3 mr-1" />
-                              {review.image_count} image(s)
-                            </Badge>
-                          )}
+                    </th>
+                    <th className="p-3 text-left">Product & Comment</th>
+                    <th className="p-3 text-left">User</th>
+                    <th className="p-3 text-left">Rating</th>
+                    <th className="p-3 text-left">Status</th>
+                    <th className="p-3 text-left">Helpful</th>
+                    <th className="p-3 text-left">Date</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reviews.map((review) => (
+                    <tr
+                      key={review.id}
+                      className="border-b hover:bg-gray-50 align-top"
+                    >
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedReviews.includes(review.id)}
+                          onChange={() => handleSelectReview(review.id)}
+                          className="rounded border-gray-300"
+                        />
+                      </td>
+                      <td className="p-3">
+                        <div className="font-medium text-gray-900">
+                          {review.product_name}
                         </div>
-
-                        {/* Product & User Info */}
-                        <div className="text-sm text-gray-600">
-                          <span className="font-medium">
-                            {review.product_name}
-                          </span>
-                          {review.user_name && (
-                            <span> • by {review.user_name}</span>
-                          )}
-                          {review.order_number && (
-                            <span> • Order #{review.order_number}</span>
-                          )}
-                        </div>
-
-                        {/* Comment */}
-                        <p className="text-gray-800 line-clamp-2">
-                          {review.comment}
-                        </p>
-
-                        {/* Admin Response */}
                         {review.admin_response && (
-                          <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
-                            <p className="text-sm font-medium text-blue-800">
-                              Admin Response:
-                            </p>
-                            <p className="text-sm text-blue-700">
-                              {review.admin_response}
-                            </p>
+                          <div className="mt-2 bg-blue-50 border-l-4 border-blue-400 p-2 rounded text-xs text-blue-700">
+                            {review.admin_response}
                           </div>
                         )}
-
-                        {/* Footer */}
-                        <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {new Date(review.created_at).toLocaleDateString()}
-                          </span>
-                          {review.helpful_count > 0 && (
-                            <span>{review.helpful_count} helpful</span>
-                          )}
+                        <div className="mt-1 text-gray-800 line-clamp-2">
+                          {review.comment}
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            window.open(`/admin/reviews/${review.id}`, "_blank")
-                          }
-                        >
-                          <Eye className="w-4 h-4 mr-2" />
-                          View Details
-                        </DropdownMenuItem>
-                        {review.status !== "approved" && (
-                          <DropdownMenuItem
-                            onClick={() => handleApproveReview(review.id)}
+                      </td>
+                      <td className="p-3">
+                        {review.user_name || review.user_email || "-"}
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`w-4 h-4 ${
+                                i < review.rating
+                                  ? "text-yellow-400 fill-current"
+                                  : "text-gray-300"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-3">{getStatusBadge(review.status)}</td>
+                      <td className="p-3">{review.helpful_count}</td>
+                      <td className="p-3">
+                        {new Date(review.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-3 justify-end text-xs">
+                          <a
+                            href={`/admin/reviews/${review.id}`}
+                            target="_blank"
+                            className="text-gray-700 hover:underline"
                           >
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Approve
-                          </DropdownMenuItem>
-                        )}
-                        {review.status !== "rejected" && (
-                          <DropdownMenuItem
-                            onClick={() => handleRejectReview(review.id)}
+                            View
+                          </a>
+                          {review.status !== "approved" && (
+                            <button
+                              type="button"
+                              className="text-green-600 hover:underline"
+                              onClick={() => handleApproveReview(review.id)}
+                            >
+                              Approve
+                            </button>
+                          )}
+                          {review.status !== "rejected" && (
+                            <button
+                              type="button"
+                              className="text-red-600 hover:underline"
+                              onClick={() => handleRejectReview(review.id)}
+                            >
+                              Reject
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="text-blue-600 hover:underline"
+                            onClick={() => openEdit(review)}
                           >
-                            <XCircle className="w-4 h-4 mr-2" />
-                            Reject
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              ))}
+                            Edit
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
@@ -635,6 +687,85 @@ export function ReviewManager() {
           </Button>
         </div>
       )}
+      {/* Edit Modal */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Edit Review{" "}
+              {editingReview?.product_name
+                ? `for ${editingReview.product_name}`
+                : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {editingReview && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Rating</label>
+                <Select
+                  value={String(editingReview.rating)}
+                  onValueChange={(v) =>
+                    setEditingReview({ ...editingReview, rating: Number(v) })
+                  }
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 Stars</SelectItem>
+                    <SelectItem value="4">4 Stars</SelectItem>
+                    <SelectItem value="3">3 Stars</SelectItem>
+                    <SelectItem value="2">2 Stars</SelectItem>
+                    <SelectItem value="1">1 Star</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Comment</label>
+                <Textarea
+                  value={editingReview.comment}
+                  onChange={(e) =>
+                    setEditingReview({
+                      ...editingReview,
+                      comment: e.target.value,
+                    })
+                  }
+                  rows={4}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Date</label>
+                <Input
+                  type="datetime-local"
+                  value={toInputDateTime(editingReview.created_at)}
+                  onChange={(e) =>
+                    setEditingReview({
+                      ...editingReview,
+                      created_at: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditOpen(false)}
+              disabled={isEditSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={saveEdit}
+              disabled={isEditSaving}
+            >
+              {isEditSaving ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -176,7 +176,6 @@ customers.get("/:id", adminMiddleware as any, async (c) => {
       p.name as product_name,
       p.slug as product_slug,
       r.rating,
-      r.title,
       r.comment,
       r.status,
       r.is_verified_purchase,

@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+// Removed unused imports
 import {
   Select,
   SelectContent,
@@ -27,7 +26,6 @@ import {
   Clock,
   XCircle,
   Filter,
-  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -79,7 +77,7 @@ export function ReviewAnalytics({
   timeRange = "30d",
   onTimeRangeChange,
 }: ReviewAnalyticsProps) {
-  const { apiCallJson, isLoading } = useAuthenticatedFetch({
+  const { apiCallJson } = useAuthenticatedFetch({
     onError: (url, error) => {
       toast.error(error?.message || "Failed to load analytics");
     },
@@ -88,15 +86,16 @@ export function ReviewAnalytics({
   const [analytics, setAnalytics] = useState<ReviewAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedTimeRange, setSelectedTimeRange] = useState(timeRange);
+  const [productId, setProductId] = useState<string>("");
 
   // Fetch analytics data
   const fetchAnalytics = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
-        timeRange: selectedTimeRange,
+        period: selectedTimeRange,
+        ...(productId && { product_id: productId }),
       }).toString();
-
       const data = await apiCallJson(`/api/admin/reviews/analytics?${params}`);
       setAnalytics(data);
     } catch (error) {
@@ -105,7 +104,7 @@ export function ReviewAnalytics({
     } finally {
       setLoading(false);
     }
-  }, [apiCallJson, selectedTimeRange]);
+  }, [apiCallJson, selectedTimeRange, productId]);
 
   useEffect(() => {
     fetchAnalytics();
@@ -136,14 +135,7 @@ export function ReviewAnalytics({
     );
   };
 
-  const getTrendIcon = (current: number, previous: number) => {
-    if (current > previous) {
-      return <TrendingUp className="h-4 w-4 text-green-500" />;
-    } else if (current < previous) {
-      return <TrendingDown className="h-4 w-4 text-red-500" />;
-    }
-    return <div className="h-4 w-4" />;
-  };
+  // Removed unused getTrendIcon function
 
   if (loading) {
     return (
@@ -181,6 +173,12 @@ export function ReviewAnalytics({
         </div>
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-gray-500" />
+          <input
+            value={productId}
+            onChange={(e) => setProductId(e.target.value)}
+            placeholder="Product ID (optional)"
+            className="h-9 px-3 border rounded-md text-sm"
+          />
           <Select
             value={selectedTimeRange}
             onValueChange={handleTimeRangeChange}
@@ -545,7 +543,7 @@ export function ReviewAnalytics({
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {analytics.monthly_trends.slice(0, 6).map((trend, index) => (
+            {analytics.monthly_trends.slice(0, 6).map((trend) => (
               <div
                 key={trend.month}
                 className="flex items-center justify-between p-3 border rounded-lg"

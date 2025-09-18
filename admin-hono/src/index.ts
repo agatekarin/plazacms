@@ -358,7 +358,7 @@ app.route("/api/admin/reviews", reviewsRoutes);
 app.route("/api/admin/reviews", reviewImagesRoutes);
 app.route("/api/admin/reviews", reviewImportExportRoutes);
 app.route("/api/admin/reviews", reviewEmailNotificationsRoutes);
-app.route("/api/reviews", customerReviewsRoutes);
+app.route("/api/customer/reviews", customerReviewsRoutes);
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler

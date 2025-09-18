@@ -50,6 +50,10 @@ export function ReviewHelpful({
         if (currentVote === vote) {
           await apiCallJson(`/api/customer/reviews/${reviewId}/helpful`, {
             method: "DELETE",
+            body: JSON.stringify({
+              user_id: null, // TODO: Get from user context/auth when authentication is implemented
+              ip_address: window?.location?.hostname || "127.0.0.1", // Use hostname as fallback IP identifier
+            }),
           });
 
           setCurrentVote(null);
@@ -62,6 +66,8 @@ export function ReviewHelpful({
             method: "POST",
             body: JSON.stringify({
               is_helpful: vote === "helpful",
+              user_id: null, // TODO: Get from user context/auth when authentication is implemented
+              ip_address: window?.location?.hostname || "127.0.0.1", // Use hostname as fallback IP identifier
             }),
           });
 
