@@ -18,6 +18,7 @@ reviewsRoutes.get("/", adminMiddleware, async (c) => {
     const status = url.searchParams.get("status") || "";
     const rating = url.searchParams.get("rating") || "";
     const productId = url.searchParams.get("product_id") || "";
+    const productIds = url.searchParams.get("product_ids") || "";
     const userId = url.searchParams.get("user_id") || "";
     const verifiedOnly = url.searchParams.get("verified_only") === "true";
     const sortBy = url.searchParams.get("sort_by") || "created_at";
@@ -53,6 +54,17 @@ reviewsRoutes.get("/", adminMiddleware, async (c) => {
       conditions.push(`r.product_id = $${paramIndex}`);
       params.push(productId);
       paramIndex++;
+    }
+
+    if (productIds) {
+      const productIdArray = productIds.split(",").filter((id) => id.trim());
+      if (productIdArray.length > 0) {
+        const placeholders = productIdArray
+          .map(() => `$${paramIndex++}`)
+          .join(",");
+        conditions.push(`r.product_id IN (${placeholders})`);
+        params.push(...productIdArray);
+      }
     }
 
     if (userId) {
@@ -758,5 +770,84 @@ reviewsRoutes.get("/analytics", adminMiddleware, async (c) => {
   }
 });
 */
+
+// DELETE /api/admin/reviews/bulk - Delete multiple reviews
+reviewsRoutes.delete("/bulk", adminMiddleware, async (c) => {
+  try {
+    const body = await c.req.json();
+    const { review_ids } = body;
+
+    if (!review_ids || !Array.isArray(review_ids) || review_ids.length === 0) {
+      return c.json({ error: "review_ids array is required" }, 400);
+    }
+
+    const sql = getDb(c);
+
+    // Delete in transaction
+    const placeholders = review_ids.map((_, i) => `$${i + 1}`).join(",");
+
+    // Delete associated data first
+    await sql.unsafe(
+      `DELETE FROM public.review_images WHERE review_id IN (${placeholders})`,
+      review_ids
+    );
+
+    await sql.unsafe(
+      `DELETE FROM public.review_helpful_votes WHERE review_id IN (${placeholders})`,
+      review_ids
+    );
+
+    // Delete the reviews
+    const result = await sql.unsafe(
+      `DELETE FROM public.reviews WHERE id IN (${placeholders}) RETURNING id`,
+      review_ids
+    );
+
+    return c.json({
+      message: `${result.length} reviews deleted successfully`,
+      deleted_count: result.length,
+    });
+  } catch (error) {
+    console.error("Error deleting reviews:", error);
+    return c.json({ error: "Failed to delete reviews" }, 500);
+  }
+});
+
+// DELETE /api/admin/reviews/:id - Delete a single review
+reviewsRoutes.delete("/:id", adminMiddleware, async (c) => {
+  try {
+    const { id } = c.req.param();
+    const sql = getDb(c);
+
+    // Check if review exists
+    const existingReview = await sql.unsafe(
+      "SELECT id FROM public.reviews WHERE id = $1",
+      [id]
+    );
+
+    if (existingReview.length === 0) {
+      return c.json({ error: "Review not found" }, 404);
+    }
+
+    // Delete associated review images first
+    await sql.unsafe("DELETE FROM public.review_images WHERE review_id = $1", [
+      id,
+    ]);
+
+    // Delete helpful votes
+    await sql.unsafe(
+      "DELETE FROM public.review_helpful_votes WHERE review_id = $1",
+      [id]
+    );
+
+    // Delete the review
+    await sql.unsafe("DELETE FROM public.reviews WHERE id = $1", [id]);
+
+    return c.json({ message: "Review deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting review:", error);
+    return c.json({ error: "Failed to delete review" }, 500);
+  }
+});
 
 export default reviewsRoutes;

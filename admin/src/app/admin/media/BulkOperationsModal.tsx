@@ -117,7 +117,7 @@ export default function BulkOperationsModal({
 
     // Confirm delete operation
     if (operation === "delete") {
-      const referencedFiles = mediaInfo.filter((m) => m.is_referenced);
+      const referencedFiles = mediaInfo?.filter((m) => m.is_referenced) || [];
 
       if (referencedFiles.length > 0) {
         toast.error(
@@ -179,7 +179,7 @@ export default function BulkOperationsModal({
 
   if (!isOpen) return null;
 
-  const referencedCount = mediaInfo.filter((m) => m.is_referenced).length;
+  const referencedCount = mediaInfo?.filter((m) => m.is_referenced).length || 0;
   const canDelete = referencedCount === 0;
 
   return (
@@ -204,7 +204,7 @@ export default function BulkOperationsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {loading && !mediaInfo.length ? (
+          {loading && !mediaInfo?.length ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
               <span className="ml-2 text-gray-600">Loading media info...</span>
@@ -214,10 +214,10 @@ export default function BulkOperationsModal({
               {/* Selected Files Summary */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <h3 className="font-medium text-gray-900 mb-3">
-                  Selected Files ({mediaInfo.length})
+                  Selected Files ({mediaInfo?.length || 0})
                 </h3>
                 <div className="max-h-32 overflow-y-auto space-y-1">
-                  {mediaInfo.map((media) => (
+                  {mediaInfo?.map((media) => (
                     <div
                       key={media.id}
                       className="flex items-center justify-between text-sm py-1"

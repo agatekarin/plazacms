@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ProductSelector } from "@/components/ProductSelector";
 import {
   Select,
   SelectContent,
@@ -23,9 +23,9 @@ import {
   XCircle,
   Clock,
   Star,
-  Image as ImageIcon,
-  User,
-  Calendar,
+  Trash2,
+  MoreHorizontal,
+  RotateCcw,
 } from "lucide-react";
 import {
   Dialog,
@@ -108,7 +108,7 @@ export function ReviewManager() {
   });
 
   const [selectedReviews, setSelectedReviews] = useState<string[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isEditSaving, setIsEditSaving] = useState(false);
   const [editingReview, setEditingReview] = useState<
@@ -182,6 +182,9 @@ export function ReviewManager() {
         ...(filters.productId && { product_id: filters.productId }),
         ...(filters.userId && { user_id: filters.userId }),
         ...(filters.verifiedOnly && { verified_only: "true" }),
+        ...(selectedProductIds.length > 0 && {
+          product_ids: selectedProductIds.join(","),
+        }),
         sort_by: filters.sortBy,
         sort_order: filters.sortOrder,
       });
@@ -192,7 +195,13 @@ export function ReviewManager() {
     } catch (error) {
       console.error("Error fetching reviews:", error);
     }
-  }, [apiCallJson, pagination.page, pagination.limit, filters]);
+  }, [
+    apiCallJson,
+    pagination.page,
+    pagination.limit,
+    filters,
+    selectedProductIds,
+  ]);
 
   // Load reviews on mount and when filters change
   useEffect(() => {
@@ -280,6 +289,29 @@ export function ReviewManager() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedReviews.length === 0) return;
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${selectedReviews.length} reviews? This action cannot be undone.`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      const promises = selectedReviews.map((id) =>
+        apiCallJson(`/api/admin/reviews/${id}`, { method: "DELETE" })
+      );
+
+      await Promise.all(promises);
+      toast.success(`${selectedReviews.length} reviews deleted successfully`);
+      setSelectedReviews([]);
+      fetchReviews();
+    } catch (error) {
+      toast.error("Failed to delete reviews");
+    }
+  };
+
   // Handle individual review actions
   const handleApproveReview = async (reviewId: string) => {
     try {
@@ -303,6 +335,24 @@ export function ReviewManager() {
       fetchReviews();
     } catch (error) {
       toast.error("Failed to reject review");
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this review? This action cannot be undone."
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      await apiCallJson(`/api/admin/reviews/${reviewId}`, {
+        method: "DELETE",
+      });
+      toast.success("Review deleted successfully");
+      fetchReviews();
+    } catch (error) {
+      toast.error("Failed to delete review");
     }
   };
 
@@ -378,146 +428,134 @@ export function ReviewManager() {
       </div>
 
       {/* Filters */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Filters</CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowFilters(!showFilters)}
+      <div className="bg-white rounded-lg border p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+          {/* Search */}
+          <div className="space-y-2 lg:col-span-2">
+            <label className="text-sm font-medium">Search</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                placeholder="Search reviews..."
+                value={filters.search}
+                onChange={(e) => handleFilterChange("search", e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          {/* Product Selector */}
+          <div className="space-y-2 lg:col-span-2">
+            <label className="text-sm font-medium">Products</label>
+            <ProductSelector
+              selectedProducts={selectedProductIds}
+              onSelectionChange={setSelectedProductIds}
+              placeholder="Filter by products..."
+              className="w-full"
+            />
+          </div>
+
+          {/* Status */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Status</label>
+            <Select
+              value={filters.status}
+              onValueChange={(value) => handleFilterChange("status", value)}
             >
-              <Filter className="w-4 h-4 mr-2" />
-              {showFilters ? "Hide" : "Show"} Filters
+              <SelectTrigger>
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="hidden">Hidden</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Rating */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Rating</label>
+            <Select
+              value={filters.rating}
+              onValueChange={(value) => handleFilterChange("rating", value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All ratings" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All ratings</SelectItem>
+                <SelectItem value="5">5 stars</SelectItem>
+                <SelectItem value="4">4 stars</SelectItem>
+                <SelectItem value="3">3 stars</SelectItem>
+                <SelectItem value="2">2 stars</SelectItem>
+                <SelectItem value="1">1 star</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Sort */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Sort by</label>
+            <Select
+              value={`${filters.sortBy}-${filters.sortOrder}`}
+              onValueChange={(value) => {
+                const [sortBy, sortOrder] = value.split("-");
+                handleFilterChange("sortBy", sortBy);
+                handleFilterChange("sortOrder", sortOrder);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at-desc">Newest first</SelectItem>
+                <SelectItem value="created_at-asc">Oldest first</SelectItem>
+                <SelectItem value="rating-desc">Highest rating</SelectItem>
+                <SelectItem value="rating-asc">Lowest rating</SelectItem>
+                <SelectItem value="helpful_count-desc">Most helpful</SelectItem>
+                <SelectItem value="product_name-asc">Product A-Z</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Reset Filters */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">&nbsp;</label>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full flex items-center justify-center gap-2"
+              onClick={() => {
+                setFilters({
+                  search: "",
+                  status: "all",
+                  rating: "all",
+                  productId: "",
+                  userId: "",
+                  verifiedOnly: false,
+                  sortBy: "created_at",
+                  sortOrder: "desc",
+                });
+                setSelectedProductIds([]);
+              }}
+              title="Reset all filters"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
             </Button>
           </div>
-        </CardHeader>
-
-        {showFilters && (
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Search */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Search</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    placeholder="Search reviews..."
-                    value={filters.search}
-                    onChange={(e) =>
-                      handleFilterChange("search", e.target.value)
-                    }
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-
-              {/* Status */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Status</label>
-                <Select
-                  value={filters.status}
-                  onValueChange={(value) => handleFilterChange("status", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
-                    <SelectItem value="hidden">Hidden</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Rating */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Rating</label>
-                <Select
-                  value={filters.rating}
-                  onValueChange={(value) => handleFilterChange("rating", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All ratings" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All ratings</SelectItem>
-                    <SelectItem value="5">5 stars</SelectItem>
-                    <SelectItem value="4">4 stars</SelectItem>
-                    <SelectItem value="3">3 stars</SelectItem>
-                    <SelectItem value="2">2 stars</SelectItem>
-                    <SelectItem value="1">1 star</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Sort */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Sort by</label>
-                <Select
-                  value={`${filters.sortBy}-${filters.sortOrder}`}
-                  onValueChange={(value) => {
-                    const [sortBy, sortOrder] = value.split("-");
-                    handleFilterChange("sortBy", sortBy);
-                    handleFilterChange("sortOrder", sortOrder);
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="created_at-desc">
-                      Newest first
-                    </SelectItem>
-                    <SelectItem value="created_at-asc">Oldest first</SelectItem>
-                    <SelectItem value="rating-desc">Highest rating</SelectItem>
-                    <SelectItem value="rating-asc">Lowest rating</SelectItem>
-                    <SelectItem value="helpful_count-desc">
-                      Most helpful
-                    </SelectItem>
-                    <SelectItem value="product_name-asc">
-                      Product A-Z
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        )}
-      </Card>
-
-      {/* Bulk Actions */}
-      {selectedReviews.length > 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">
-                {selectedReviews.length} review(s) selected
-              </span>
-              <div className="flex items-center gap-2">
-                <Button size="sm" onClick={handleBulkApprove}>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Approve All
-                </Button>
-                <Button size="sm" variant="danger" onClick={handleBulkReject}>
-                  <XCircle className="w-4 h-4 mr-2" />
-                  Reject All
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+        </div>
+      </div>
 
       {/* Reviews List */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">
-              Reviews ({pagination.total})
-            </CardTitle>
+      <div className="bg-white rounded-lg border">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-medium">Reviews ({pagination.total})</h3>
+          <div className="flex items-center gap-3">
+            {/* Select All */}
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -528,138 +566,170 @@ export function ReviewManager() {
                 onChange={handleSelectAll}
                 className="rounded border-gray-300"
               />
-              <span className="text-sm text-gray-600">Select all</span>
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="text-sm text-gray-600 hover:text-gray-800 hover:underline cursor-pointer"
+              >
+                {selectedReviews.length > 0
+                  ? `${selectedReviews.length} selected`
+                  : "Select all"}
+              </button>
             </div>
-          </div>
-        </CardHeader>
 
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            </div>
-          ) : reviews.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              No reviews found
-            </div>
-          ) : (
-            <div className="w-full overflow-auto rounded-lg border">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white border-b z-10">
-                  <tr>
-                    <th className="w-10 p-3 text-left">
+            {/* Bulk Actions */}
+            {selectedReviews.length > 0 && (
+              <div className="flex items-center gap-2 border-l pl-3">
+                <Button size="sm" variant="outline" onClick={handleBulkApprove}>
+                  <CheckCircle className="w-4 h-4" />
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleBulkReject}>
+                  <XCircle className="w-4 h-4" />
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleBulkDelete}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedReviews([])}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ×
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        ) : reviews.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">No reviews found</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="w-10 p-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedReviews.length === reviews.length &&
+                        reviews.length > 0
+                      }
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300"
+                    />
+                  </th>
+                  <th className="p-3 text-left">Product & Comment</th>
+                  <th className="p-3 text-left">User</th>
+                  <th className="p-3 text-left">Rating</th>
+                  <th className="p-3 text-left">Status</th>
+                  <th className="p-3 text-left">Helpful</th>
+                  <th className="p-3 text-left">Date</th>
+                  <th className="p-3 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reviews.map((review) => (
+                  <tr
+                    key={review.id}
+                    className="border-b hover:bg-gray-50 align-top"
+                  >
+                    <td className="p-3">
                       <input
                         type="checkbox"
-                        checked={
-                          selectedReviews.length === reviews.length &&
-                          reviews.length > 0
-                        }
-                        onChange={handleSelectAll}
+                        checked={selectedReviews.includes(review.id)}
+                        onChange={() => handleSelectReview(review.id)}
                         className="rounded border-gray-300"
                       />
-                    </th>
-                    <th className="p-3 text-left">Product & Comment</th>
-                    <th className="p-3 text-left">User</th>
-                    <th className="p-3 text-left">Rating</th>
-                    <th className="p-3 text-left">Status</th>
-                    <th className="p-3 text-left">Helpful</th>
-                    <th className="p-3 text-left">Date</th>
-                    <th className="p-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reviews.map((review) => (
-                    <tr
-                      key={review.id}
-                      className="border-b hover:bg-gray-50 align-top"
-                    >
-                      <td className="p-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedReviews.includes(review.id)}
-                          onChange={() => handleSelectReview(review.id)}
-                          className="rounded border-gray-300"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <div className="font-medium text-gray-900">
-                          {review.product_name}
+                    </td>
+                    <td className="p-3">
+                      <div className="font-medium text-gray-900">
+                        {review.product_name}
+                      </div>
+                      {review.admin_response && (
+                        <div className="mt-2 bg-blue-50 border-l-4 border-blue-400 p-2 rounded text-xs text-blue-700">
+                          {review.admin_response}
                         </div>
-                        {review.admin_response && (
-                          <div className="mt-2 bg-blue-50 border-l-4 border-blue-400 p-2 rounded text-xs text-blue-700">
-                            {review.admin_response}
-                          </div>
-                        )}
-                        <div className="mt-1 text-gray-800 line-clamp-2">
-                          {review.comment}
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        {review.user_name || review.user_email || "-"}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Star
-                              key={i}
-                              className={`w-4 h-4 ${
-                                i < review.rating
-                                  ? "text-yellow-400 fill-current"
-                                  : "text-gray-300"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-3">{getStatusBadge(review.status)}</td>
-                      <td className="p-3">{review.helpful_count}</td>
-                      <td className="p-3">
-                        {new Date(review.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-3 justify-end text-xs">
-                          <a
-                            href={`/admin/reviews/${review.id}`}
-                            target="_blank"
-                            className="text-gray-700 hover:underline"
-                          >
-                            View
-                          </a>
-                          {review.status !== "approved" && (
-                            <button
-                              type="button"
-                              className="text-green-600 hover:underline"
-                              onClick={() => handleApproveReview(review.id)}
-                            >
-                              Approve
-                            </button>
-                          )}
-                          {review.status !== "rejected" && (
-                            <button
-                              type="button"
-                              className="text-red-600 hover:underline"
-                              onClick={() => handleRejectReview(review.id)}
-                            >
-                              Reject
-                            </button>
-                          )}
+                      )}
+                      <div className="mt-1 text-gray-800 line-clamp-2">
+                        {review.comment}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      {review.user_name || review.user_email || "-"}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`w-4 h-4 ${
+                              i < review.rating
+                                ? "text-yellow-400 fill-current"
+                                : "text-gray-300"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                    <td className="p-3">{getStatusBadge(review.status)}</td>
+                    <td className="p-3">{review.helpful_count}</td>
+                    <td className="p-3">
+                      {new Date(review.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2 justify-center">
+                        <button
+                          type="button"
+                          title="View Review"
+                          className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
+                          onClick={() =>
+                            window.open(`/admin/reviews/${review.id}`, "_blank")
+                          }
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {review.status !== "approved" && (
                           <button
                             type="button"
-                            className="text-blue-600 hover:underline"
-                            onClick={() => openEdit(review)}
+                            title="Approve Review"
+                            className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded"
+                            onClick={() => handleApproveReview(review.id)}
                           >
-                            Edit
+                            <CheckCircle className="w-4 h-4" />
                           </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                        )}
+                        {review.status !== "rejected" && (
+                          <button
+                            type="button"
+                            title="Reject Review"
+                            className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                            onClick={() => handleRejectReview(review.id)}
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title="Delete Review"
+                          className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                          onClick={() => handleDeleteReview(review.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Pagination */}
       {pagination.totalPages > 1 && (
