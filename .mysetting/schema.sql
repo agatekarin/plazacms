@@ -480,6 +480,7 @@ CREATE TABLE public.shipping_methods (
 	sort_order int4 DEFAULT 0 NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	restricted_products jsonb DEFAULT '[]'::jsonb NULL,
 	CONSTRAINT shipping_methods_method_type_check CHECK (((method_type)::text = ANY ((ARRAY['flat'::character varying, 'weight_based'::character varying, 'free_shipping'::character varying, 'percentage'::character varying])::text[]))),
 	CONSTRAINT shipping_methods_pkey PRIMARY KEY (id),
 	CONSTRAINT shipping_methods_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying])::text[]))),

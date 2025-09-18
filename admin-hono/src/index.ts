@@ -41,6 +41,7 @@ import settingsShippingRoutes from "./routes/settings-shipping";
 import shippingCalculatorRoutes from "./routes/shipping-calculator";
 import shippingSummaryRoutes from "./routes/shipping-summary";
 import variantsRoutes from "./routes/variants";
+import customersRoutes from "./routes/customers";
 
 // Create main app
 const app = new Hono<{
@@ -336,6 +337,7 @@ app.route("/api/admin/media/bulk", mediaBulkRoutes);
 app.route("/api/admin/media", mediaRoutes);
 app.route("/api/admin/settings/general", settingsGeneralRoutes);
 app.route("/api/admin/users", usersRoutes);
+app.route("/api/admin/customers", customersRoutes);
 app.route("/api/admin/orders", ordersRoutes);
 app.route("/api/admin/payments", paymentsRoutes);
 app.route("/api/admin/transactions", transactionsRoutes);

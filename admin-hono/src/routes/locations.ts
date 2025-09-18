@@ -38,23 +38,46 @@ locations.get("/states", adminMiddleware as any, async (c) => {
   const sql = getDb(c as any);
   const url = new URL(c.req.url);
   const countryId = url.searchParams.get("country_id");
+  const countryCode = url.searchParams.get("country_code");
   const search = (url.searchParams.get("search") || "").trim();
   const limit = Math.max(
     1,
     Math.min(1000, parseInt(url.searchParams.get("limit") || "100", 10))
   );
-  if (!countryId)
-    return c.json({ error: "country_id parameter is required" }, 400);
+
+  if (!countryId && !countryCode)
+    return c.json(
+      { error: "country_id or country_code parameter is required" },
+      400
+    );
+
   try {
-    const rows = await sql`
-      SELECT id, name, country_id
-      FROM public.states
-      WHERE country_id = ${countryId} ${
-      search ? (sql as any)`AND name ILIKE ${"%" + search + "%"}` : sql``
+    let rows;
+    if (countryId) {
+      // Use country_id directly
+      rows = await sql`
+        SELECT s.id, s.name, s.country_id, c.iso2 as country_code
+        FROM public.states s
+        LEFT JOIN public.countries c ON s.country_id = c.id
+        WHERE s.country_id = ${countryId} ${
+        search ? (sql as any)`AND s.name ILIKE ${"%" + search + "%"}` : sql``
+      }
+        ORDER BY s.name ASC
+        LIMIT ${limit}
+      `;
+    } else {
+      // Use country_code to find country_id first
+      rows = await sql`
+        SELECT s.id, s.name, s.country_id, c.iso2 as country_code
+        FROM public.states s
+        LEFT JOIN public.countries c ON s.country_id = c.id
+        WHERE c.iso2 = ${countryCode} ${
+        search ? (sql as any)`AND s.name ILIKE ${"%" + search + "%"}` : sql``
+      }
+        ORDER BY s.name ASC
+        LIMIT ${limit}
+      `;
     }
-      ORDER BY name ASC
-      LIMIT ${limit}
-    `;
     return c.json({ states: rows, total: rows.length });
   } catch (e) {
     return c.json({ error: "Failed to fetch states" }, 500);

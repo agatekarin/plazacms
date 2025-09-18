@@ -22,7 +22,11 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
   - `email_verified` (TIMESTAMPTZ): Waktu verifikasi email.
   - `image` (TEXT): URL gambar profil pengguna.
   - `role` (TEXT): Peran pengguna ('admin', 'vendor', 'customer', 'guest').
+  - `password_hash` (TEXT): Hash password pengguna.
+  - `created_at` (TIMESTAMPTZ): Waktu pembuatan akun.
+  - `updated_at` (TIMESTAMPTZ): Waktu terakhir update.
 - **Hubungan:** Direferensikan oleh `accounts`, `sessions`, `media`, `products`, `reviews`, `user_addresses`, `carts`, `orders`.
+- **Fitur Baru:** Customer Admin Management dengan address management dan order tracking.
 
 ### `accounts`
 
@@ -315,7 +319,7 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
 
 ## 🏡 Alamat Pengguna
 
-### `user_addresses`
+### `user_addresses` ✅ **ENHANCED**
 
 - **Tujuan:** Menyimpan alamat-alamat yang telah disimpan oleh pengguna untuk kemudahan checkout.
 - **Kolom Penting:**
@@ -330,7 +334,14 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
   - `postal_code` (TEXT): Kode pos.
   - `country` (TEXT): Negara.
   - `is_default` (BOOLEAN): Penanda alamat default.
+  - `created_at` (TIMESTAMPTZ): Waktu pembuatan alamat.
+  - `updated_at` (TIMESTAMPTZ): Waktu terakhir update.
 - **Hubungan:** Mereferensikan `users`.
+- **Fitur Baru:**
+  - ✅ **Country & State Selectors** dengan search functionality
+  - ✅ **Admin Management** untuk CRUD operations
+  - ✅ **Default Address** management
+  - ✅ **Mobile-friendly** UI dengan proper validation
 
 ---
 
@@ -374,31 +385,39 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
   - `created_at`, `updated_at` (TIMESTAMPTZ): Timestamp tracking.
 - **Hubungan:** Direferensikan oleh `shipping_methods`.
 
-### `shipping_methods` ✅
+### `shipping_methods` ✅ **ENHANCED**
 
-- **Tujuan:** Mendefinisikan metode pengiriman per gateway dengan aturan pricing fleksibel.
+- **Tujuan:** Mendefinisikan metode pengiriman per gateway dengan aturan pricing fleksibel dan item restrictions.
 - **Kolom Penting:**
   - `id` (UUID): Primary Key.
   - `gateway_id` (UUID): Foreign Key ke `shipping_gateways.id`.
   - `zone_id` (UUID): Foreign Key ke `shipping_zones.id`.
   - `name` (TEXT): Nama metode (misal: "JNE Regular", "JNE Express").
   - `description` (TEXT): Deskripsi metode pengiriman.
-  - `method_type` (TEXT): Tipe metode ('flat_rate', 'weight_based', 'percentage').
+  - `method_type` (TEXT): Tipe metode ('flat', 'weight_based', 'free_shipping', 'percentage').
   - `base_cost` (DECIMAL): Biaya dasar pengiriman.
   - `cost_per_kg` (DECIMAL): Biaya tambahan per kilogram.
-  - `percentage_rate` (DECIMAL): Persentase dari total order.
-  - `minimum_cost` (DECIMAL): Minimum cost yang dikenakan.
-  - `maximum_cost` (DECIMAL): Maximum cost cap.
-  - `free_shipping_threshold` (DECIMAL): Threshold untuk free shipping.
-  - `min_weight` (DECIMAL): Minimum weight requirement.
-  - `max_weight` (DECIMAL): Maximum weight limit.
+  - `weight_threshold` (INTEGER): Weight threshold untuk perhitungan.
+  - `min_free_threshold` (DECIMAL): Minimum threshold untuk free shipping.
+  - `max_free_weight` (INTEGER): Maximum weight untuk free shipping.
+  - `max_weight_limit` (INTEGER): Maximum weight limit.
+  - `max_dimensions` (JSONB): Maximum dimensions (length, width, height).
+  - `restricted_items` (JSONB): Array of restricted item names.
+  - `restricted_products` (JSONB): Array of restricted product IDs.
   - `estimated_days_min` (INTEGER): Minimum delivery days.
   - `estimated_days_max` (INTEGER): Maximum delivery days.
   - `currency` (CHAR(3)): Currency code (misal: "IDR", "USD").
+  - `weight_unit` (VARCHAR(10)): Weight unit ('g', 'kg', 'lb', 'oz').
   - `status` (TEXT): Status method ('active', 'inactive').
+  - `sort_order` (INTEGER): Display order.
   - `created_at`, `updated_at` (TIMESTAMPTZ): Timestamp tracking.
 - **Hubungan:** Mereferensikan `shipping_gateways` dan `shipping_zones`.
 - **Index:** Multiple indexes untuk performance optimization.
+- **Fitur Baru:**
+  - ✅ **Restricted Items** - Custom item restrictions
+  - ✅ **Restricted Products** - Product-specific restrictions dengan ProductSelector
+  - ✅ **Enhanced UI** dengan search functionality dan image display
+  - ✅ **Flexible Restrictions** - Support untuk both custom items dan specific products
 
 ### `countries` ✅ **REFERENCE TABLE**
 
