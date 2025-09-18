@@ -134,14 +134,15 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
   - `image_id` (UUID): Foreign Key ke `media.id` untuk gambar kategori.
 - **Hubungan:** Direferensikan oleh `products`.
 
-### `products`
+### `products` ✅ **ENHANCED**
 
-- **Tujuan:** Menyimpan informasi dasar tentang produk.
+- **Tujuan:** Data produk induk dengan review integration dan comprehensive product management.
 - **Kolom Penting:**
   - `id` (UUID): Primary Key.
   - `name` (TEXT): Nama produk.
   - `slug` (TEXT): Slug URL produk, unik.
-  - `description` (TEXT): Deskripsi produk.
+  - `description` (TEXT): Deskripsi produk lengkap.
+  - `short_description` (TEXT): Deskripsi singkat untuk listing.
   - `regular_price` (NUMERIC): Harga produk tanpa diskon.
   - `sale_price` (NUMERIC): Harga produk saat diskon.
   - `sale_start_date` (TIMESTAMPTZ): Tanggal mulai diskon.
@@ -154,7 +155,23 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
   - `weight` (NUMERIC): Berat produk (untuk perhitungan pengiriman).
   - `sku` (TEXT): Stock Keeping Unit produk, unik.
   - `tax_class_id` (UUID): Foreign Key ke `tax_classes.id`.
-- **Hubungan:** Direferensikan oleh `product_images`, `product_variants`, `reviews`.
+  - `featured_image_id` (UUID): Foreign Key ke `media.id` untuk featured image.
+  - `product_type` (TEXT): Tipe produk ('simple', 'variable').
+  - `review_count` (INTEGER): Computed field untuk jumlah approved reviews.
+  - `average_rating` (NUMERIC): Computed field untuk average rating.
+  - `created_at` (TIMESTAMPTZ): Waktu pembuatan.
+  - `updated_at` (TIMESTAMPTZ): Waktu update terakhir.
+- **Enhanced Features:**
+  - **Review Integration** → Live review count dan average rating dalam product listing
+  - **Featured Image** → Direct reference ke featured image untuk fast loading
+  - **Product Types** → Simple vs Variable product support
+  - **Short Description** → Separate field untuk product listings dan cards
+  - **Comprehensive Detail API** → All related data (categories, attributes, variants, gallery, reviews) dalam single endpoint
+  - **Category Integration** → Single category dengan proper foreign key relationship
+  - **Variant Support** → Attributes linked through variants dengan proper many-to-many relationship
+  - **Gallery Images** → Multiple images dengan display order via product_images table
+  - **Database Schema Fixes** → Corrected queries untuk proper variant dan attribute relationships
+- **Hubungan:** Mereferensikan `categories`, `users`, `tax_classes`, `media`. Direferensikan oleh `product_images`, `product_variants`, `reviews`, `order_items`.
 
 ### `product_images`
 
@@ -276,44 +293,140 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
   - `carrier_id` (UUID, opsional/deprecated): Jika masih ada tabel carrier terpisah.
 - **Hubungan:** Mereferensikan `users`, `payment_methods`, `shipping_methods`. Direferensikan oleh `order_items`.
 
-### `order_items`
+### `order_items` ✅ **ENHANCED**
 
-- **Tujuan:** Menyimpan detail item-item yang termasuk dalam sebuah pesanan.
+- **Tujuan:** Detail item pesanan dengan review integration dan product tracking.
 - **Kolom Penting:**
   - `id` (UUID): Primary Key.
   - `order_id` (UUID): Foreign Key ke `orders.id`.
   - `product_variant_id` (UUID): Foreign Key ke `product_variants.id`.
+  - `product_id` (UUID): Foreign Key ke `products.id` (untuk review requests).
   - `product_name` (TEXT): Nama produk saat dipesan (untuk historis).
   - `product_price` (NUMERIC): Harga produk saat dipesan (untuk historis).
   - `quantity` (INTEGER): Jumlah item.
-- **Hubungan:** Mereferensikan `orders` dan `product_variants`.
+  - `has_review` (BOOLEAN): Computed field untuk review status tracking.
+- **Enhanced Features:**
+  - **Review Integration** → Link ke product untuk review requests
+  - **Review Status Tracking** → Check if customer sudah review item ini
+  - **Product Reference** → Direct link ke product untuk review functionality
+  - **Historical Data** → Preserve product info saat order dibuat
+- **Hubungan:** Mereferensikan `orders`, `product_variants`, `products`. Direferensikan oleh `reviews` (via order_id), `email_notifications`.
 
 ---
 
-## 💬 Ulasan Produk
+## 💬 Review Management System ✅ **FULLY IMPLEMENTED**
 
-### `reviews`
+### `reviews` ✅ **ENHANCED**
 
-- **Tujuan:** Menyimpan ulasan produk dari pengguna atau tamu.
+- **Tujuan:** Comprehensive review system dengan moderation, analytics, dan email notifications.
 - **Kolom Penting:**
   - `id` (UUID): Primary Key.
   - `product_id` (UUID): Foreign Key ke `products.id`.
-  - `user_id` (UUID): Foreign Key ke `users.id` (NULL jika ulasan tamu).
-  - `reviewer_name` (TEXT): Nama pengulas (untuk tamu).
-  - `reviewer_email` (TEXT): Email pengulas (untuk tamu).
-  - `review_type` (TEXT): Tipe ulasan ('user', 'guest', 'imported').
-  - `rating` (INTEGER): Peringkat (1-5).
-  - `comment` (TEXT): Komentar ulasan.
-- **Hubungan:** Mereferensikan `products` dan `users` (opsional), direferensikan oleh `review_images`.
+  - `user_id` (UUID): Foreign Key ke `users.id` (null jika tamu).
+  - `guest_name` (TEXT): Nama tamu jika user_id null.
+  - `guest_email` (TEXT): Email tamu jika user_id null.
+  - `rating` (INTEGER): Rating 1-5.
+  - `title` (TEXT): Judul ulasan (optional).
+  - `comment` (TEXT): Isi ulasan.
+  - `status` (TEXT): Status ('pending', 'approved', 'rejected').
+  - `moderation_status` (TEXT): Status moderasi ('none', 'flagged', 'reviewed').
+  - `moderation_notes` (TEXT): Catatan moderator.
+  - `admin_response` (TEXT): Response dari admin.
+  - `admin_response_date` (TIMESTAMPTZ): Tanggal admin response.
+  - `helpful_count` (INTEGER): Jumlah helpful votes.
+  - `unhelpful_count` (INTEGER): Jumlah unhelpful votes.
+  - `verified_purchase` (BOOLEAN): Apakah pembeli terverifikasi.
+  - `order_id` (UUID): Foreign Key ke `orders.id` untuk verified purchases.
+  - `ip_address` (TEXT): IP address untuk tracking dan spam prevention.
+  - `created_at` (TIMESTAMPTZ): Waktu pembuatan.
+  - `updated_at` (TIMESTAMPTZ): Waktu update terakhir.
+- **Enhanced Features:**
+  - **Complete Moderation System** → Admin dapat approve, reject, flag, dan respond
+  - **Guest Review Support** → Tamu dapat memberikan review dengan name/email
+  - **Verified Purchase Tracking** → Link ke order untuk verified buyer badges
+  - **Admin Response System** → Official responses dari admin
+  - **Helpful Voting System** → Users dapat vote reviews sebagai helpful/unhelpful
+  - **Analytics Integration** → Comprehensive statistics dan trending data
+  - **Email Notifications** → Automated review requests dan responses
+- **Hubungan:** Mereferensikan `products`, `users`, `orders`, direferensikan oleh `review_images`, `review_helpful_votes`.
 
-### `review_images`
+### `review_images` ✅ **ENHANCED**
 
-- **Tujuan:** Menghubungkan ulasan dengan gambar-gambar yang diunggah oleh pengulas.
+- **Tujuan:** Gambar review terintegrasi dengan media management system.
 - **Kolom Penting:**
+  - `id` (UUID): Primary Key.
   - `review_id` (UUID): Foreign Key ke `reviews.id`.
   - `media_id` (UUID): Foreign Key ke `media.id`.
-  - `display_order` (INTEGER): Urutan tampilan gambar ulasan.
+  - `display_order` (INTEGER): Urutan tampilan gambar.
+  - `created_at` (TIMESTAMPTZ): Waktu upload.
+- **Enhanced Features:**
+  - **R2 Storage Integration** → Images stored di Cloudflare R2
+  - **Media Management** → Full integration dengan existing media system
+  - **SEO-friendly URLs** → Proper image URLs dengan folder organization
+  - **Display Ordering** → Proper sequence untuk multiple images
 - **Hubungan:** Mereferensikan `reviews` dan `media`.
+
+### `review_helpful_votes` ✅ **NEW**
+
+- **Tujuan:** Voting system untuk helpful/unhelpful reviews dengan spam prevention.
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `review_id` (UUID): Foreign Key ke `reviews.id`.
+  - `user_id` (UUID): Foreign Key ke `users.id` (null jika guest).
+  - `ip_address` (TEXT): IP address untuk guest tracking.
+  - `is_helpful` (BOOLEAN): true = helpful, false = unhelpful.
+  - `created_at` (TIMESTAMPTZ): Waktu voting.
+- **Features:**
+  - **User & Guest Voting** → Support untuk registered users dan guests
+  - **IP-based Prevention** → Prevent duplicate voting dari same IP
+  - **Automatic Counting** → Triggers update helpful_count di reviews table
+  - **Vote History** → Complete audit trail untuk all votes
+- **Hubungan:** Mereferensikan `reviews` dan `users`.
+
+### `email_templates` ✅ **NEW**
+
+- **Tujuan:** Customizable email templates untuk review notification system.
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `name` (TEXT): Template name (misal: "Review Request").
+  - `subject` (TEXT): Subject line dengan variable support.
+  - `content` (TEXT): HTML/text content dengan placeholders.
+  - `type` (TEXT): Template type ('review_request', 'review_response').
+  - `is_active` (BOOLEAN): Active status.
+  - `variables` (JSONB): Available variables documentation.
+  - `created_at` (TIMESTAMPTZ): Creation time.
+  - `updated_at` (TIMESTAMPTZ): Last update time.
+- **Features:**
+  - **Variable System** → {{customer_name}}, {{product_name}}, {{review_link}}
+  - **Multi-type Support** → Different templates untuk different scenarios
+  - **Active/Inactive Control** → Enable/disable tanpa delete
+  - **JSONB Variables** → Flexible variable definition
+- **Hubungan:** Direferensikan oleh `email_notifications`.
+
+### `email_notifications` ✅ **NEW**
+
+- **Tujuan:** Complete audit log untuk semua review-related email notifications.
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `type` (TEXT): Notification type ('review_request', 'review_response').
+  - `recipient_email` (TEXT): Email penerima.
+  - `subject` (TEXT): Actual subject yang dikirim.
+  - `content` (TEXT): Actual content yang dikirim.
+  - `template_id` (UUID): Foreign Key ke `email_templates.id`.
+  - `order_id` (UUID): Foreign Key ke `orders.id` (untuk review requests).
+  - `order_item_id` (UUID): Foreign Key ke `order_items.id`.
+  - `review_id` (UUID): Foreign Key ke `reviews.id` (untuk responses).
+  - `status` (TEXT): Delivery status ('pending', 'sent', 'failed').
+  - `sent_at` (TIMESTAMPTZ): Actual send time.
+  - `error_message` (TEXT): Error details jika gagal.
+  - `created_at` (TIMESTAMPTZ): Creation time.
+- **Features:**
+  - **Complete Email Audit** → Track semua email notifications
+  - **Error Logging** → Detailed error tracking untuk troubleshooting
+  - **Multi-context Support** → Orders, items, reviews
+  - **Delivery Status** → Monitor email delivery success
+  - **Template Integration** → Link ke template yang digunakan
+- **Hubungan:** Mereferensikan `email_templates`, `orders`, `order_items`, `reviews`.
 
 ---
 
