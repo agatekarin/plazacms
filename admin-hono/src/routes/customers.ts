@@ -168,10 +168,34 @@ customers.get("/:id", adminMiddleware as any, async (c) => {
   `;
   const orders = await (sql as any).unsafe(ordersSql, [id]);
 
+  // Get reviews
+  const reviewsSql = `
+    SELECT 
+      r.id,
+      r.product_id,
+      p.name as product_name,
+      p.slug as product_slug,
+      r.rating,
+      r.title,
+      r.comment,
+      r.status,
+      r.is_verified_purchase,
+      r.helpful_count,
+      r.created_at,
+      r.updated_at
+    FROM public.reviews r
+    LEFT JOIN public.products p ON p.id = r.product_id
+    WHERE r.user_id = $1
+    ORDER BY r.created_at DESC
+    LIMIT 20
+  `;
+  const reviews = await (sql as any).unsafe(reviewsSql, [id]);
+
   return c.json({
     customer,
     addresses,
     recentOrders: orders,
+    reviews,
   });
 });
 

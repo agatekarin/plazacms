@@ -11,6 +11,7 @@ import {
   MapPinIcon,
   ShoppingBagIcon,
   ClockIcon,
+  StarIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ interface OrderItem {
   quantity: number;
   variant_sku?: string;
   product_slug?: string;
+  product_id?: string;
+  has_review?: boolean;
 }
 
 interface Transaction {
@@ -85,6 +88,9 @@ export default function OrderDetail({ orderId }: OrderDetailProps) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sendingReviewRequests, setSendingReviewRequests] = useState<
+    Set<string>
+  >(new Set());
   const { apiCallJson } = useAuthenticatedFetch();
 
   const fetchOrder = async () => {
@@ -97,6 +103,30 @@ export default function OrderDetail({ orderId }: OrderDetailProps) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const sendReviewRequest = async (orderItemId: string) => {
+    try {
+      setSendingReviewRequests((prev) => new Set(prev).add(orderItemId));
+      await apiCallJson(
+        `/api/admin/orders/${orderId}/items/${orderItemId}/request-review`,
+        {
+          method: "POST",
+        }
+      );
+      // Refresh order data to update review status
+      await fetchOrder();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to send review request"
+      );
+    } finally {
+      setSendingReviewRequests((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(orderItemId);
+        return newSet;
+      });
     }
   };
 
@@ -247,6 +277,28 @@ export default function OrderDetail({ orderId }: OrderDetailProps) {
                         <p className="text-sm text-gray-500">
                           SKU: {item.variant_sku}
                         </p>
+                      )}
+                      {order.status === "delivered" && item.product_id && (
+                        <div className="mt-2">
+                          {item.has_review ? (
+                            <Badge className="bg-green-100 text-green-800">
+                              Review Submitted
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => sendReviewRequest(item.id)}
+                              disabled={sendingReviewRequests.has(item.id)}
+                              className="flex items-center gap-1"
+                            >
+                              <StarIcon className="h-3 w-3" />
+                              {sendingReviewRequests.has(item.id)
+                                ? "Sending..."
+                                : "Request Review"}
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div className="text-right">

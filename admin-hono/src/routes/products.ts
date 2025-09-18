@@ -15,6 +15,10 @@ const sortMap: Record<string, string> = {
   price_desc: "p.regular_price DESC",
   stock_asc: "p.stock ASC",
   stock_desc: "p.stock DESC",
+  reviews_asc: "review_count ASC",
+  reviews_desc: "review_count DESC",
+  rating_asc: "average_rating ASC",
+  rating_desc: "average_rating DESC",
 };
 
 // GET /api/admin/products
@@ -74,10 +78,21 @@ products.get("/", adminMiddleware as any, async (c) => {
   const items = await sql`
     SELECT p.id, p.name, p.slug, p.sku, p.status, p.stock, p.regular_price, p.currency, p.created_at,
            c.name AS category_name, p.featured_image_id,
-           m.file_url AS featured_image_url, m.filename AS featured_image_filename
+           m.file_url AS featured_image_url, m.filename AS featured_image_filename,
+           COALESCE(r.review_count, 0) AS review_count,
+           COALESCE(r.average_rating, 0) AS average_rating
       FROM public.products p
       LEFT JOIN public.categories c ON c.id = p.category_id
       LEFT JOIN public.media m ON m.id = p.featured_image_id
+      LEFT JOIN (
+        SELECT 
+          product_id,
+          COUNT(*) AS review_count,
+          AVG(rating) AS average_rating
+        FROM public.reviews 
+        WHERE status = 'approved'
+        GROUP BY product_id
+      ) r ON r.product_id = p.id
       ${whereSql}
       ORDER BY ${sql.unsafe(orderBy)}
       LIMIT ${pageSize} OFFSET ${offset}

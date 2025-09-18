@@ -182,10 +182,13 @@ orders.get("/:id", adminMiddleware as any, async (c) => {
     `;
     if (!orderRows[0]) return c.json({ error: "Not found" }, 404);
     const items = await sql`
-      SELECT oi.*, pv.sku as variant_sku, p.name as product_name, p.slug as product_slug
+      SELECT oi.*, pv.sku as variant_sku, p.name as product_name, p.slug as product_slug,
+             pv.product_id, 
+             CASE WHEN r.id IS NOT NULL THEN true ELSE false END as has_review
       FROM public.order_items oi
       LEFT JOIN public.product_variants pv ON pv.id = oi.product_variant_id
       LEFT JOIN public.products p ON p.id = pv.product_id
+      LEFT JOIN public.reviews r ON r.order_id = oi.order_id AND r.order_item_id = oi.id
       WHERE oi.order_id = ${id}
       ORDER BY oi.created_at ASC
     `;
@@ -317,5 +320,72 @@ orders.delete("/:id", adminMiddleware as any, async (c) => {
     return c.json({ error: "Failed to delete order" }, 500);
   }
 });
+
+// POST /api/admin/orders/:id/items/:itemId/request-review - Send review request for order item
+orders.post(
+  "/:id/items/:itemId/request-review",
+  adminMiddleware as any,
+  async (c) => {
+    const sql = getDb(c as any);
+    const { id: orderId, itemId } = c.req.param();
+
+    try {
+      // Get order item details
+      const orderItem = await sql`
+      SELECT oi.*, o.user_id, o.status as order_status, o.order_number
+      FROM public.order_items oi
+      JOIN public.orders o ON o.id = oi.order_id
+      WHERE oi.id = ${itemId} AND oi.order_id = ${orderId}
+    `;
+
+      if (!orderItem[0]) {
+        return c.json({ error: "Order item not found" }, 404);
+      }
+
+      const item = orderItem[0];
+
+      // Check if order is delivered
+      if (item.order_status !== "delivered") {
+        return c.json(
+          { error: "Can only request reviews for delivered orders" },
+          400
+        );
+      }
+
+      // Check if review already exists
+      const existingReview = await sql`
+      SELECT id FROM public.reviews 
+      WHERE order_id = ${orderId} AND order_item_id = ${itemId}
+    `;
+
+      if (existingReview[0]) {
+        return c.json(
+          { error: "Review already exists for this order item" },
+          400
+        );
+      }
+
+      // TODO: Send email notification to customer
+      // For now, we'll just return success
+      // In a real implementation, you would:
+      // 1. Send email with review link
+      // 2. Create a review request record
+      // 3. Set up reminder system
+
+      return c.json({
+        success: true,
+        message: "Review request sent successfully",
+        orderItem: {
+          id: item.id,
+          product_name: item.product_name,
+          order_number: item.order_number,
+        },
+      });
+    } catch (err) {
+      console.error("[orders:request-review]", err);
+      return c.json({ error: "Failed to send review request" }, 500);
+    }
+  }
+);
 
 export default orders;

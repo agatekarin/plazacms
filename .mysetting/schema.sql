@@ -997,41 +997,6 @@ update
     public.products for each row execute function set_updated_at();
 
 
--- public.reviews definition
-
--- Drop table
-
--- DROP TABLE public.reviews;
-
-CREATE TABLE public.reviews (
-	id uuid DEFAULT uuid_generate_v4() NOT NULL,
-	product_id uuid NOT NULL,
-	user_id uuid NULL,
-	rating int4 NOT NULL,
-	"comment" text NULL,
-	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	reviewer_name text NULL,
-	reviewer_email text NULL,
-	review_type text DEFAULT 'user'::text NOT NULL,
-	CONSTRAINT reviews_pkey PRIMARY KEY (id),
-	CONSTRAINT reviews_rating_check CHECK (((rating >= 1) AND (rating <= 5))),
-	CONSTRAINT reviews_review_type_check CHECK ((review_type = ANY (ARRAY['user'::text, 'guest'::text, 'imported'::text]))),
-	CONSTRAINT reviews_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE,
-	CONSTRAINT reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
-);
-CREATE INDEX idx_reviews_product_created ON public.reviews USING btree (product_id, created_at DESC);
-CREATE INDEX idx_reviews_product_id ON public.reviews USING btree (product_id);
-CREATE INDEX idx_reviews_user_id ON public.reviews USING btree (user_id);
-
--- Table Triggers
-
-create trigger trg_set_updated_at_reviews before
-update
-    on
-    public.reviews for each row execute function set_updated_at();
-
-
 -- public.payment_refunds definition
 
 -- Drop table
@@ -1114,23 +1079,6 @@ update
     public.product_variants for each row execute function set_updated_at();
 
 
--- public.review_images definition
-
--- Drop table
-
--- DROP TABLE public.review_images;
-
-CREATE TABLE public.review_images (
-	review_id uuid NOT NULL,
-	media_id uuid NOT NULL,
-	display_order int4 DEFAULT 0 NOT NULL,
-	CONSTRAINT review_images_pkey PRIMARY KEY (review_id, media_id),
-	CONSTRAINT review_images_media_id_fkey FOREIGN KEY (media_id) REFERENCES public.media(id) ON DELETE CASCADE,
-	CONSTRAINT review_images_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.reviews(id) ON DELETE CASCADE
-);
-CREATE INDEX idx_review_images_review_id ON public.review_images USING btree (review_id);
-
-
 -- public.cart_items definition
 
 -- Drop table
@@ -1175,12 +1123,15 @@ CREATE TABLE public.order_items (
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	product_variant_id uuid DEFAULT uuid_nil() NOT NULL,
+	product_id uuid NULL,
 	CONSTRAINT order_items_order_id_product_variant_id_key UNIQUE (order_id, product_variant_id),
 	CONSTRAINT order_items_pkey PRIMARY KEY (id),
 	CONSTRAINT order_items_quantity_check CHECK ((quantity > 0)),
 	CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE,
+	CONSTRAINT order_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE RESTRICT,
 	CONSTRAINT order_items_product_variant_id_fkey FOREIGN KEY (product_variant_id) REFERENCES public.product_variants(id) ON DELETE RESTRICT
 );
+CREATE INDEX idx_order_items_product_id ON public.order_items USING btree (product_id);
 
 -- Table Triggers
 
@@ -1222,6 +1173,204 @@ CREATE TABLE public.product_variant_images (
 	CONSTRAINT product_variant_images_product_variant_id_fkey FOREIGN KEY (product_variant_id) REFERENCES public.product_variants(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_product_variant_images_product_variant_id ON public.product_variant_images USING btree (product_variant_id);
+
+
+-- public.reviews definition
+
+-- Drop table
+
+-- DROP TABLE public.reviews;
+
+CREATE TABLE public.reviews (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	product_id uuid NOT NULL,
+	user_id uuid NULL,
+	rating int4 NOT NULL,
+	"comment" text NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	reviewer_name text NULL,
+	reviewer_email text NULL,
+	review_type text DEFAULT 'user'::text NOT NULL,
+	order_id uuid NULL,
+	order_item_id uuid NULL,
+	status text DEFAULT 'pending'::text NOT NULL,
+	is_verified_purchase bool DEFAULT false NOT NULL,
+	helpful_count int4 DEFAULT 0 NOT NULL,
+	admin_response text NULL,
+	admin_response_date timestamptz NULL,
+	moderation_status text DEFAULT 'approved'::text NOT NULL,
+	moderation_notes text NULL,
+	CONSTRAINT reviews_moderation_status_check CHECK ((moderation_status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'flagged'::text]))),
+	CONSTRAINT reviews_pkey PRIMARY KEY (id),
+	CONSTRAINT reviews_rating_check CHECK (((rating >= 1) AND (rating <= 5))),
+	CONSTRAINT reviews_review_type_check CHECK ((review_type = ANY (ARRAY['user'::text, 'guest'::text, 'imported'::text]))),
+	CONSTRAINT reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'hidden'::text]))),
+	CONSTRAINT reviews_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE SET NULL,
+	CONSTRAINT reviews_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES public.order_items(id) ON DELETE SET NULL,
+	CONSTRAINT reviews_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE,
+	CONSTRAINT reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_reviews_moderation_status ON public.reviews USING btree (moderation_status);
+CREATE INDEX idx_reviews_order_id ON public.reviews USING btree (order_id);
+CREATE INDEX idx_reviews_order_item_id ON public.reviews USING btree (order_item_id);
+CREATE INDEX idx_reviews_product_created ON public.reviews USING btree (product_id, created_at DESC);
+CREATE INDEX idx_reviews_product_id ON public.reviews USING btree (product_id);
+CREATE INDEX idx_reviews_status ON public.reviews USING btree (status);
+CREATE INDEX idx_reviews_user_id ON public.reviews USING btree (user_id);
+CREATE INDEX idx_reviews_verified_purchase ON public.reviews USING btree (is_verified_purchase);
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_reviews before
+update
+    on
+    public.reviews for each row execute function set_updated_at();
+
+
+-- public.review_helpful_votes definition
+
+-- Drop table
+
+-- DROP TABLE public.review_helpful_votes;
+
+CREATE TABLE public.review_helpful_votes (
+	id uuid DEFAULT uuid_generate_v4() NOT NULL,
+	review_id uuid NOT NULL,
+	user_id uuid NULL,
+	ip_address inet NULL,
+	is_helpful bool NOT NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT review_helpful_votes_pkey PRIMARY KEY (id),
+	CONSTRAINT review_helpful_votes_unique_vote UNIQUE (review_id, user_id, ip_address),
+	CONSTRAINT review_helpful_votes_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.reviews(id) ON DELETE CASCADE,
+	CONSTRAINT review_helpful_votes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_review_helpful_votes_ip_address ON public.review_helpful_votes USING btree (ip_address);
+CREATE INDEX idx_review_helpful_votes_review_id ON public.review_helpful_votes USING btree (review_id);
+CREATE INDEX idx_review_helpful_votes_user_id ON public.review_helpful_votes USING btree (user_id);
+
+-- Table Triggers
+
+create trigger trg_update_review_helpful_count after
+insert
+    or
+delete
+    or
+update
+    on
+    public.review_helpful_votes for each row execute function update_review_helpful_count();
+
+
+-- public.review_images definition
+
+-- Drop table
+
+-- DROP TABLE public.review_images;
+
+CREATE TABLE public.review_images (
+	review_id uuid NOT NULL,
+	media_id uuid NOT NULL,
+	display_order int4 DEFAULT 0 NOT NULL,
+	CONSTRAINT review_images_pkey PRIMARY KEY (review_id, media_id),
+	CONSTRAINT review_images_media_id_fkey FOREIGN KEY (media_id) REFERENCES public.media(id) ON DELETE CASCADE,
+	CONSTRAINT review_images_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.reviews(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_review_images_display_order ON public.review_images USING btree (review_id, display_order);
+CREATE INDEX idx_review_images_media_id ON public.review_images USING btree (media_id);
+CREATE INDEX idx_review_images_review_id ON public.review_images USING btree (review_id);
+
+
+-- public.review_details source
+
+CREATE OR REPLACE VIEW public.review_details
+AS SELECT r.id,
+    r.product_id,
+    r.user_id,
+    r.rating,
+    r.comment,
+    r.created_at,
+    r.updated_at,
+    r.reviewer_name,
+    r.reviewer_email,
+    r.review_type,
+    r.order_id,
+    r.order_item_id,
+    r.status,
+    r.is_verified_purchase,
+    r.helpful_count,
+    r.admin_response,
+    r.admin_response_date,
+    r.moderation_status,
+    r.moderation_notes,
+    p.name AS product_name,
+    p.slug AS product_slug,
+    u.name AS user_name,
+    u.email AS user_email,
+    o.order_number,
+    oi.product_name AS order_item_name,
+    oi.product_price AS order_item_price,
+    oi.quantity AS order_item_quantity,
+    COALESCE(json_agg(json_build_object('media_id', ri.media_id, 'display_order', ri.display_order) ORDER BY ri.display_order) FILTER (WHERE ri.media_id IS NOT NULL), '[]'::json) AS images
+   FROM reviews r
+     LEFT JOIN products p ON r.product_id = p.id
+     LEFT JOIN users u ON r.user_id = u.id
+     LEFT JOIN orders o ON r.order_id = o.id
+     LEFT JOIN order_items oi ON r.order_item_id = oi.id
+     LEFT JOIN review_images ri ON r.id = ri.review_id
+  GROUP BY r.id, p.name, p.slug, u.name, u.email, o.order_number, oi.product_name, oi.product_price, oi.quantity;
+
+
+-- public.review_stats source
+
+CREATE OR REPLACE VIEW public.review_stats
+AS SELECT p.id AS product_id,
+    p.name AS product_name,
+    count(r.id) AS total_reviews,
+    avg(r.rating) AS average_rating,
+    count(
+        CASE
+            WHEN r.rating = 5 THEN 1
+            ELSE NULL::integer
+        END) AS five_star_count,
+    count(
+        CASE
+            WHEN r.rating = 4 THEN 1
+            ELSE NULL::integer
+        END) AS four_star_count,
+    count(
+        CASE
+            WHEN r.rating = 3 THEN 1
+            ELSE NULL::integer
+        END) AS three_star_count,
+    count(
+        CASE
+            WHEN r.rating = 2 THEN 1
+            ELSE NULL::integer
+        END) AS two_star_count,
+    count(
+        CASE
+            WHEN r.rating = 1 THEN 1
+            ELSE NULL::integer
+        END) AS one_star_count,
+    count(
+        CASE
+            WHEN r.is_verified_purchase = true THEN 1
+            ELSE NULL::integer
+        END) AS verified_reviews_count,
+    count(
+        CASE
+            WHEN r.status = 'approved'::text THEN 1
+            ELSE NULL::integer
+        END) AS approved_reviews_count,
+    count(
+        CASE
+            WHEN r.status = 'pending'::text THEN 1
+            ELSE NULL::integer
+        END) AS pending_reviews_count
+   FROM products p
+     LEFT JOIN reviews r ON p.id = r.product_id
+  GROUP BY p.id, p.name;
 
 
 
@@ -1515,18 +1664,18 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text
 AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
@@ -1569,18 +1718,18 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
  RETURNS bytea
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
  RETURNS bytea
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -1660,6 +1809,28 @@ AS $function$
 BEGIN
   NEW.updated_at = CURRENT_TIMESTAMP;
   RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.update_review_helpful_count();
+
+CREATE OR REPLACE FUNCTION public.update_review_helpful_count()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- Update helpful_count in reviews table
+  UPDATE public.reviews 
+  SET helpful_count = (
+    SELECT COUNT(*) 
+    FROM public.review_helpful_votes 
+    WHERE review_id = COALESCE(NEW.review_id, OLD.review_id) 
+    AND is_helpful = true
+  )
+  WHERE id = COALESCE(NEW.review_id, OLD.review_id);
+  
+  RETURN COALESCE(NEW, OLD);
 END;
 $function$
 ;

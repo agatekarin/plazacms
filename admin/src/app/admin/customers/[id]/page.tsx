@@ -15,6 +15,8 @@ import {
   Phone,
   Globe,
   CheckCircle,
+  Star,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +78,21 @@ interface Order {
   updated_at: string;
 }
 
+interface Review {
+  id: string;
+  product_id: string;
+  product_name: string;
+  product_slug: string;
+  rating: number;
+  title: string;
+  comment: string;
+  status: string;
+  is_verified_purchase: boolean;
+  helpful_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export default function CustomerDetailPage({
   params,
 }: {
@@ -86,6 +103,7 @@ export default function CustomerDetailPage({
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [resolvedParams, setResolvedParams] = useState<{ id: string } | null>(
     null
@@ -110,6 +128,7 @@ export default function CustomerDetailPage({
       setCustomer(data.customer);
       setAddresses(data.addresses || []);
       setRecentOrders(data.recentOrders || []);
+      setReviews(data.reviews || []);
     } catch (error) {
       console.error("Error fetching customer data:", error);
     } finally {
@@ -161,6 +180,19 @@ export default function CustomerDetailPage({
         return "bg-red-100 text-red-800";
       case "processing":
         return "bg-blue-100 text-blue-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getReviewStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "pending":
+        return "bg-yellow-100 text-yellow-800";
+      case "approved":
+        return "bg-green-100 text-green-800";
+      case "rejected":
+        return "bg-red-100 text-red-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -306,13 +338,14 @@ export default function CustomerDetailPage({
 
       {/* Tabs */}
       <Tabs defaultValue="addresses" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="addresses">
             Addresses ({addresses.length})
           </TabsTrigger>
           <TabsTrigger value="orders">
             Recent Orders ({recentOrders.length})
           </TabsTrigger>
+          <TabsTrigger value="reviews">Reviews ({reviews.length})</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -441,6 +474,105 @@ export default function CustomerDetailPage({
                     ))}
                   </TableBody>
                 </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Reviews Tab */}
+        <TabsContent value="reviews" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Star className="h-5 w-5" />
+                Product Reviews
+              </CardTitle>
+              <CardDescription>
+                Reviews written by this customer
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {reviews.length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600 mb-4">No reviews found</p>
+                  <p className="text-sm text-gray-500">
+                    This customer hasn&apos;t written any reviews yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {reviews.map((review) => (
+                    <Card key={review.id} className="relative">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Link
+                                href={`/admin/products/${review.product_id}`}
+                                className="font-medium text-blue-600 hover:text-blue-800"
+                              >
+                                {review.product_name}
+                              </Link>
+                              <Badge
+                                className={getReviewStatusColor(review.status)}
+                              >
+                                {review.status}
+                              </Badge>
+                            </div>
+
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="flex items-center gap-1">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className={`h-4 w-4 ${
+                                      i < review.rating
+                                        ? "text-yellow-400 fill-current"
+                                        : "text-gray-300"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-sm text-gray-600">
+                                {review.rating}/5
+                              </span>
+                              {review.is_verified_purchase && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Verified Purchase
+                                </Badge>
+                              )}
+                            </div>
+
+                            <h4 className="font-medium mb-2">{review.title}</h4>
+                            <p className="text-sm text-gray-600 mb-2">
+                              {review.comment}
+                            </p>
+
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <span>
+                                Written {formatDate(review.created_at)}
+                              </span>
+                              {review.helpful_count > 0 && (
+                                <span>
+                                  {review.helpful_count} helpful votes
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Link href={`/admin/reviews/${review.id}`}>
+                              <Button variant="outline" size="sm">
+                                View Review
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

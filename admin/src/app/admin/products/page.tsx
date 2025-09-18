@@ -23,6 +23,8 @@ type ProductRow = {
   category_name?: string;
   featured_image_url?: string;
   featured_image_filename?: string;
+  review_count?: number;
+  average_rating?: number;
 };
 
 export default function ProductsPage() {

@@ -42,6 +42,11 @@ import shippingCalculatorRoutes from "./routes/shipping-calculator";
 import shippingSummaryRoutes from "./routes/shipping-summary";
 import variantsRoutes from "./routes/variants";
 import customersRoutes from "./routes/customers";
+import reviewsRoutes from "./routes/reviews";
+import reviewImagesRoutes from "./routes/review-images";
+import reviewImportExportRoutes from "./routes/review-import-export";
+import customerReviewsRoutes from "./routes/customer-reviews";
+import reviewEmailNotificationsRoutes from "./routes/review-email-notifications";
 
 // Create main app
 const app = new Hono<{
@@ -349,6 +354,11 @@ app.route("/api/admin/settings/shipping", settingsShippingRoutes);
 app.route("/api/admin/shipping/calculator", shippingCalculatorRoutes);
 app.route("/api/admin/shipping/summary", shippingSummaryRoutes);
 app.route("/api/admin/variants", variantsRoutes);
+app.route("/api/admin/reviews", reviewsRoutes);
+app.route("/api/admin/reviews", reviewImagesRoutes);
+app.route("/api/admin/reviews", reviewImportExportRoutes);
+app.route("/api/admin/reviews", reviewEmailNotificationsRoutes);
+app.route("/api/reviews", customerReviewsRoutes);
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler
