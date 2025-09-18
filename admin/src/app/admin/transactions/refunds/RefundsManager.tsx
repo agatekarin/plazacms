@@ -15,7 +15,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Refund {
@@ -63,6 +69,7 @@ export default function RefundsManager() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const [totalRefundedAmount, setTotalRefundedAmount] = useState(0);
   const { apiCallJson } = useAuthenticatedFetch();
 
   const fetchRefunds = async () => {
@@ -84,6 +91,7 @@ export default function RefundsManager() {
       );
       setRefunds(data.items || []);
       setTotal(data.total || 0);
+      setTotalRefundedAmount(data.sum || 0);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -103,7 +111,7 @@ export default function RefundsManager() {
   };
 
   const handleStatusFilter = (value: string) => {
-    setStatusFilter(value);
+    setStatusFilter(value === "all" ? "" : value);
     setPage(1);
   };
 
@@ -125,11 +133,6 @@ export default function RefundsManager() {
   };
 
   const totalPages = Math.ceil(total / pageSize);
-  const totalRefundAmount = refunds.reduce(
-    (sum, refund) =>
-      refund.status === "succeeded" ? sum + refund.amount : sum,
-    0
-  );
 
   return (
     <div className="space-y-6">
@@ -150,11 +153,19 @@ export default function RefundsManager() {
           </div>
 
           <div className="flex gap-3">
-            <Select value={statusFilter} onValueChange={handleStatusFilter}>
-              <option value="">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="succeeded">Succeeded</option>
-              <option value="failed">Failed</option>
+            <Select
+              value={statusFilter || "all"}
+              onValueChange={handleStatusFilter}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="succeeded">Succeeded</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+              </SelectContent>
             </Select>
 
             <Button
@@ -216,7 +227,7 @@ export default function RefundsManager() {
                 Amount Refunded
               </p>
               <p className="text-xl font-semibold text-gray-900">
-                {formatCurrency(totalRefundAmount)}
+                {formatCurrency(totalRefundedAmount)}
               </p>
             </div>
           </div>
