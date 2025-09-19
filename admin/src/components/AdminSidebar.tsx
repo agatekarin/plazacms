@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   HomeIcon,
@@ -25,6 +25,10 @@ import {
   UserIcon,
   GlobeAltIcon,
   MapIcon,
+  EnvelopeIcon,
+  PaperAirplaneIcon,
+  ChartPieIcon,
+  ClockIcon,
 } from "@heroicons/react/24/outline";
 
 import {
@@ -36,6 +40,10 @@ import {
   UsersIcon as UsersIconSolid,
   ChartBarIcon as ChartBarIconSolid,
   CogIcon as CogIconSolid,
+  EnvelopeIcon as EnvelopeIconSolid,
+  PaperAirplaneIcon as PaperAirplaneIconSolid,
+  ChartPieIcon as ChartPieIconSolid,
+  ClockIcon as ClockIconSolid,
 } from "@heroicons/react/24/solid";
 
 interface MenuItem {
@@ -130,6 +138,35 @@ const menuItems: MenuItem[] = [
     iconSolid: ChartBarIconSolid,
   },
   {
+    id: "reviews",
+    label: "Reviews",
+    icon: ChatBubbleLeftRightIcon,
+    iconSolid: ChatBubbleLeftRightIcon,
+    children: [
+      {
+        id: "all-reviews",
+        label: "All Reviews",
+        href: "/admin/reviews",
+        icon: ChatBubbleLeftRightIcon,
+        iconSolid: ChatBubbleLeftRightIcon,
+      },
+      {
+        id: "review-analytics",
+        label: "Analytics",
+        href: "/admin/reviews/analytics",
+        icon: ChartBarIcon,
+        iconSolid: ChartBarIconSolid,
+      },
+      {
+        id: "review-import-export",
+        label: "Import/Export",
+        href: "/admin/reviews/import-export",
+        icon: DocumentTextIcon,
+        iconSolid: DocumentTextIcon,
+      },
+    ],
+  },
+  {
     id: "marketing",
     label: "Marketing",
     icon: ChatBubbleLeftRightIcon,
@@ -142,12 +179,48 @@ const menuItems: MenuItem[] = [
         icon: TagIcon,
         iconSolid: TagIconSolid,
       },
+    ],
+  },
+  {
+    id: "emails",
+    label: "Email Management",
+    icon: EnvelopeIcon,
+    iconSolid: EnvelopeIconSolid,
+    children: [
       {
-        id: "reviews",
-        label: "Reviews",
-        href: "/admin/marketing/reviews",
-        icon: ChatBubbleLeftRightIcon,
-        iconSolid: ChatBubbleLeftRightIcon,
+        id: "email-dashboard",
+        label: "Dashboard",
+        href: "/admin/emails",
+        icon: ChartPieIcon,
+        iconSolid: ChartPieIconSolid,
+      },
+      {
+        id: "email-templates",
+        label: "Templates",
+        href: "/admin/emails/templates",
+        icon: DocumentTextIcon,
+        iconSolid: DocumentTextIcon,
+      },
+      {
+        id: "send-email",
+        label: "Send Email",
+        href: "/admin/emails/send",
+        icon: PaperAirplaneIcon,
+        iconSolid: PaperAirplaneIconSolid,
+      },
+      {
+        id: "email-analytics",
+        label: "Analytics",
+        href: "/admin/emails/analytics",
+        icon: ChartBarIcon,
+        iconSolid: ChartBarIconSolid,
+      },
+      {
+        id: "email-history",
+        label: "Email History",
+        href: "/admin/emails/history",
+        icon: ClockIcon,
+        iconSolid: ClockIconSolid,
       },
     ],
   },
@@ -227,7 +300,7 @@ export default function AdminSidebar({
 
     const loadSiteSettings = async () => {
       try {
-        if (!session?.accessToken) return; // Wait for session
+        if (!(session as any)?.accessToken) return; // Wait for session
 
         const data: {
           settings?: { logo_url?: string; default_avatar_url?: string };

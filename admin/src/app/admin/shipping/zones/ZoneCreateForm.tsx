@@ -10,7 +10,17 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { X, Plus, Trash2, MapPin, Globe, Save, Loader, Search } from "lucide-react";
+import {
+  X,
+  Plus,
+  Trash2,
+  MapPin,
+  Globe,
+  Save,
+  Loader,
+  Search,
+} from "lucide-react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Country {
   id: string;
@@ -53,6 +63,7 @@ export function ZoneCreateForm({
   onSuccess,
   editZone,
 }: ZoneCreateFormProps) {
+  const { apiCallJson } = useAuthenticatedFetch();
   const [formData, setFormData] = useState({
     name: editZone?.name || "",
     description: editZone?.description || "",
@@ -65,15 +76,15 @@ export function ZoneCreateForm({
   const [countries, setCountries] = useState<Country[]>([]);
   const [allStates, setAllStates] = useState<State[]>([]);
   const [allCities, setAllCities] = useState<City[]>([]);
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(true);
-  
+
   // Search states for dropdowns
-  const [countrySearch, setCountrySearch] = useState('');
-  const [stateSearch, setStateSearch] = useState('');
-  const [citySearch, setCitySearch] = useState('');
+  const [countrySearch, setCountrySearch] = useState("");
+  const [stateSearch, setStateSearch] = useState("");
+  const [citySearch, setCitySearch] = useState("");
 
   // Load all location data on mount
   useEffect(() => {
@@ -83,10 +94,9 @@ export function ZoneCreateForm({
   const loadAllLocations = async () => {
     try {
       setLoadingData(true);
-      const response = await fetch("/api/admin/locations/all");
-      if (!response.ok) throw new Error("Failed to load location data");
-
-      const data = await response.json();
+      const data = await apiCallJson("/api/admin/locations/all", {
+        cache: "no-store",
+      });
       setCountries(data.countries || []);
       setAllStates(data.states || []);
       setAllCities(data.cities || []);
@@ -100,22 +110,24 @@ export function ZoneCreateForm({
 
   // Filter functions for search
   const getFilteredCountries = () => {
-    return countries.filter(country =>
+    return countries.filter((country) =>
       country.name.toLowerCase().includes(countrySearch.toLowerCase())
     );
   };
 
   const getFilteredStates = (countryId: string) => {
-    return allStates.filter(state =>
-      state.country_id === countryId &&
-      state.name.toLowerCase().includes(stateSearch.toLowerCase())
+    return allStates.filter(
+      (state) =>
+        state.country_id === countryId &&
+        state.name.toLowerCase().includes(stateSearch.toLowerCase())
     );
   };
 
   const getFilteredCities = (stateId: string) => {
-    return allCities.filter(city =>
-      city.state_id === stateId &&
-      city.name.toLowerCase().includes(citySearch.toLowerCase())
+    return allCities.filter(
+      (city) =>
+        city.state_id === stateId &&
+        city.name.toLowerCase().includes(citySearch.toLowerCase())
     );
   };
 
@@ -148,8 +160,8 @@ export function ZoneCreateForm({
           i === index ? { ...loc, state_id: "", city_id: "" } : loc
         )
       );
-      setStateSearch(''); // Clear state search
-      setCitySearch(''); // Clear city search
+      setStateSearch(""); // Clear state search
+      setCitySearch(""); // Clear city search
     }
 
     if (field === "state_id") {
@@ -157,7 +169,7 @@ export function ZoneCreateForm({
       setLocations((prev) =>
         prev.map((loc, i) => (i === index ? { ...loc, city_id: "" } : loc))
       );
-      setCitySearch(''); // Clear city search
+      setCitySearch(""); // Clear city search
     }
   };
 
@@ -190,16 +202,11 @@ export function ZoneCreateForm({
 
       const method = editZone ? "PATCH" : "POST";
 
-      const response = await fetch(url, {
+      await apiCallJson(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save zone");
-      }
 
       onSuccess();
       onClose();
@@ -362,113 +369,126 @@ export function ZoneCreateForm({
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                             {/* Country Selection with Search */}
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                           Country
-                         </label>
-                         <div className="relative">
-                           <input
-                             type="text"
-                             placeholder="Search countries..."
-                             value={countrySearch}
-                             onChange={(e) => setCountrySearch(e.target.value)}
-                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-2"
-                             disabled={loadingData}
-                           />
-                           <Search className="absolute right-3 top-2 h-4 w-4 text-gray-400" />
-                         </div>
-                         <select
-                           value={location.country_id}
-                           onChange={(e) =>
-                             updateLocation(index, "country_id", e.target.value)
-                           }
-                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                           disabled={loadingData}
-                         >
-                           <option value="">Select Country</option>
-                           {getFilteredCountries().map((country) => (
-                             <option key={country.id} value={country.id}>
-                               {country.name}
-                             </option>
-                           ))}
-                         </select>
-                         {getFilteredCountries().length === 0 && countrySearch && (
-                           <p className="text-xs text-gray-500 mt-1">No countries found</p>
-                         )}
-                       </div>
+                      {/* Country Selection with Search */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Country
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Search countries..."
+                            value={countrySearch}
+                            onChange={(e) => setCountrySearch(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-2"
+                            disabled={loadingData}
+                          />
+                          <Search className="absolute right-3 top-2 h-4 w-4 text-gray-400" />
+                        </div>
+                        <select
+                          value={location.country_id}
+                          onChange={(e) =>
+                            updateLocation(index, "country_id", e.target.value)
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          disabled={loadingData}
+                        >
+                          <option value="">Select Country</option>
+                          {getFilteredCountries().map((country) => (
+                            <option key={country.id} value={country.id}>
+                              {country.name}
+                            </option>
+                          ))}
+                        </select>
+                        {getFilteredCountries().length === 0 &&
+                          countrySearch && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              No countries found
+                            </p>
+                          )}
+                      </div>
 
-                       {/* State Selection with Search */}
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                           State/Province
-                         </label>
-                         <div className="relative">
-                           <input
-                             type="text"
-                             placeholder="Search states..."
-                             value={stateSearch}
-                             onChange={(e) => setStateSearch(e.target.value)}
-                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-2"
-                             disabled={!location.country_id || loadingData}
-                           />
-                           <Search className="absolute right-3 top-2 h-4 w-4 text-gray-400" />
-                         </div>
-                         <select
-                           value={location.state_id}
-                           onChange={(e) =>
-                             updateLocation(index, "state_id", e.target.value)
-                           }
-                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                           disabled={!location.country_id || loadingData}
-                         >
-                           <option value="">Select State</option>
-                           {getFilteredStates(location.country_id).map((state) => (
-                             <option key={state.id} value={state.id}>
-                               {state.name}
-                             </option>
-                           ))}
-                         </select>
-                         {location.country_id && getFilteredStates(location.country_id).length === 0 && stateSearch && (
-                           <p className="text-xs text-gray-500 mt-1">No states found</p>
-                         )}
-                       </div>
+                      {/* State Selection with Search */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          State/Province
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Search states..."
+                            value={stateSearch}
+                            onChange={(e) => setStateSearch(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-2"
+                            disabled={!location.country_id || loadingData}
+                          />
+                          <Search className="absolute right-3 top-2 h-4 w-4 text-gray-400" />
+                        </div>
+                        <select
+                          value={location.state_id}
+                          onChange={(e) =>
+                            updateLocation(index, "state_id", e.target.value)
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          disabled={!location.country_id || loadingData}
+                        >
+                          <option value="">Select State</option>
+                          {getFilteredStates(location.country_id).map(
+                            (state) => (
+                              <option key={state.id} value={state.id}>
+                                {state.name}
+                              </option>
+                            )
+                          )}
+                        </select>
+                        {location.country_id &&
+                          getFilteredStates(location.country_id).length === 0 &&
+                          stateSearch && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              No states found
+                            </p>
+                          )}
+                      </div>
 
-                       {/* City Selection with Search */}
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                           City
-                         </label>
-                         <div className="relative">
-                           <input
-                             type="text"
-                             placeholder="Search cities..."
-                             value={citySearch}
-                             onChange={(e) => setCitySearch(e.target.value)}
-                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-2"
-                             disabled={!location.state_id || loadingData}
-                           />
-                           <Search className="absolute right-3 top-2 h-4 w-4 text-gray-400" />
-                         </div>
-                         <select
-                           value={location.city_id}
-                           onChange={(e) =>
-                             updateLocation(index, "city_id", e.target.value)
-                           }
-                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                           disabled={!location.state_id || loadingData}
-                         >
-                           <option value="">Select City</option>
-                           {getFilteredCities(location.state_id).map((city) => (
-                             <option key={city.id} value={city.id}>
-                               {city.name}
-                             </option>
-                           ))}
-                         </select>
-                         {location.state_id && getFilteredCities(location.state_id).length === 0 && citySearch && (
-                           <p className="text-xs text-gray-500 mt-1">No cities found</p>
-                         )}
-                       </div>
+                      {/* City Selection with Search */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          City
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Search cities..."
+                            value={citySearch}
+                            onChange={(e) => setCitySearch(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-2"
+                            disabled={!location.state_id || loadingData}
+                          />
+                          <Search className="absolute right-3 top-2 h-4 w-4 text-gray-400" />
+                        </div>
+                        <select
+                          value={location.city_id}
+                          onChange={(e) =>
+                            updateLocation(index, "city_id", e.target.value)
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          disabled={!location.state_id || loadingData}
+                        >
+                          <option value="">Select City</option>
+                          {getFilteredCities(location.state_id).map((city) => (
+                            <option key={city.id} value={city.id}>
+                              {city.name}
+                            </option>
+                          ))}
+                        </select>
+                        {location.state_id &&
+                          getFilteredCities(location.state_id).length === 0 &&
+                          citySearch && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              No cities found
+                            </p>
+                          )}
+                      </div>
                     </div>
 
                     {/* Postal Codes */}

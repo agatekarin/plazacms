@@ -19,6 +19,7 @@ import {
   CommandInput,
   CommandItem,
 } from "@/components/ui/command";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   Calculator,
   Package,
@@ -81,6 +82,7 @@ interface Country {
 export default function ShippingCalculatorPage() {
   const [countries, setCountries] = useState<Country[]>([]);
   const [result, setResult] = useState<CalculationResult | null>(null);
+  const { apiCallJson } = useAuthenticatedFetch();
 
   // Form state
   const [selectedCountry, setSelectedCountry] = useState("");
@@ -100,15 +102,14 @@ export default function ShippingCalculatorPage() {
     try {
       setLoadingCountries(true);
       // Load full countries list and overlay shipping coverage info
-      const [allRes, coveredRes] = await Promise.all([
-        fetch("/api/admin/locations/countries?limit=300"),
-        fetch("/api/admin/shipping/calculator"),
+      const [allData, coveredData] = await Promise.all([
+        apiCallJson("/api/admin/locations/countries?limit=300", {
+          cache: "no-store",
+        }).catch(() => ({ countries: [] })),
+        apiCallJson("/api/admin/shipping/calculator", {
+          cache: "no-store",
+        }).catch(() => ({ countries: [] })),
       ]);
-
-      const allData = allRes.ok ? await allRes.json() : { countries: [] };
-      const coveredData = coveredRes.ok
-        ? await coveredRes.json()
-        : { countries: [] };
 
       const coveredMap = new Map<
         string,
@@ -152,25 +153,15 @@ export default function ShippingCalculatorPage() {
     try {
       setCalculating(true);
       setResult(null);
-
-      const response = await fetch("/api/admin/shipping/calculator", {
+      const data = await apiCallJson("/api/admin/shipping/calculator", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           country_code: selectedCountry,
           cart_total: cartTotal,
           total_weight_g: totalWeight,
         }),
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to calculate shipping costs");
-      }
-
-      const data = await response.json();
       setResult(data);
     } catch (error) {
       console.error("Error calculating shipping:", error);

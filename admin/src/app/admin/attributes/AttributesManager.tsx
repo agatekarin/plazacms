@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

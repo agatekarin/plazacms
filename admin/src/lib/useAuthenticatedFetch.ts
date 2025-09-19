@@ -1,4 +1,4 @@
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface UseAuthenticatedFetchOptions {
@@ -7,9 +7,7 @@ interface UseAuthenticatedFetchOptions {
   onError?: (url: string, error: any) => void;
 }
 
-interface ApiCallOptions extends RequestInit {
-  // Simplified for admin panel - no retry needed
-}
+type ApiCallOptions = RequestInit;
 
 /**
  * Custom hook for making authenticated API calls to the Hono backend
@@ -20,6 +18,14 @@ export function useAuthenticatedFetch(
 ) {
   const { data: session } = useSession();
   const [isLoading, setIsLoading] = useState(false);
+
+  // Cache last known token to avoid race on initial hydration
+  const lastTokenRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if ((session as any)?.accessToken) {
+      lastTokenRef.current = (session as any).accessToken as string;
+    }
+  }, [session]);
 
   // Create stable references for interceptors to prevent infinite re-renders
   const onRequestRef = useRef(hookOptions.onRequest);
@@ -54,10 +60,25 @@ export function useAuthenticatedFetch(
         ...((options.headers as Record<string, string>) || {}),
       };
 
-      // Add Authorization header if session exists
-      if (session?.accessToken) {
-        headers.Authorization = `Bearer ${session.accessToken}`;
+      // Ensure we have a token even on first hydration
+      let token: string | undefined = (session as any)?.accessToken as
+        | string
+        | undefined;
+      if (!token) token = lastTokenRef.current;
+      if (!token) {
+        try {
+          const sRes = await fetch("/api/authjs/session", {
+            credentials: "include",
+            headers: { Accept: "application/json" },
+          });
+          const s = await sRes.json().catch(() => ({} as any));
+          if (s?.accessToken) {
+            token = s.accessToken as string;
+            lastTokenRef.current = token;
+          }
+        } catch {}
       }
+      if (token) headers.Authorization = `Bearer ${token}`;
 
       // Request interceptor
       memoizedHookOptions.onRequest?.(fullUrl, { ...options, headers });
@@ -113,7 +134,100 @@ export function useAuthenticatedFetch(
     apiCall,
     apiCallJson,
     session,
-    isAuthenticated: !!session?.accessToken,
+    isAuthenticated: Boolean(
+      (session as any)?.accessToken || lastTokenRef.current
+    ),
     isLoading,
+    // Build absolute API URL from relative path
+    buildUrl: (path: string) => {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+      return baseUrl ? `${baseUrl}${path}` : path;
+    },
+    // Resolve current auth token (cached if needed)
+    getAuthToken: async (): Promise<string | undefined> => {
+      let token: string | undefined = (session as any)?.accessToken as
+        | string
+        | undefined;
+      if (!token) token = lastTokenRef.current;
+      if (!token) {
+        try {
+          const sRes = await fetch("/api/authjs/session", {
+            credentials: "include",
+            headers: { Accept: "application/json" },
+          });
+          const s = await sRes.json().catch(() => ({} as any));
+          if (s?.accessToken) {
+            token = s.accessToken as string;
+            lastTokenRef.current = token;
+          }
+        } catch {}
+      }
+      return token;
+    },
+    // Upload with progress using XHR, with Authorization header handled here
+    uploadWithProgress: async (
+      path: string,
+      formData: FormData,
+      onProgress?: (progressPercent: number) => void
+    ): Promise<any> => {
+      const url =
+        process.env.NEXT_PUBLIC_API_BASE_URL || ""
+          ? `${process.env.NEXT_PUBLIC_API_BASE_URL}${path}`
+          : path;
+      const token = await (async () => {
+        let t: string | undefined = (session as any)?.accessToken as
+          | string
+          | undefined;
+        if (!t) t = lastTokenRef.current;
+        if (!t) {
+          try {
+            const sRes = await fetch("/api/authjs/session", {
+              credentials: "include",
+              headers: { Accept: "application/json" },
+            });
+            const s = await sRes.json().catch(() => ({} as any));
+            if (s?.accessToken) {
+              t = s.accessToken as string;
+              lastTokenRef.current = t;
+            }
+          } catch {}
+        }
+        return t;
+      })();
+
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        if (onProgress) {
+          xhr.upload.addEventListener("progress", (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              onProgress(percent);
+            }
+          });
+        }
+        xhr.addEventListener("load", () => {
+          const status = xhr.status;
+          try {
+            const json = JSON.parse(xhr.responseText || "{}");
+            if (status >= 200 && status < 300) return resolve(json);
+            const message = json?.error || json?.message || `HTTP ${status}`;
+            const err = new Error(message);
+            (err as any).status = status;
+            return reject(err);
+          } catch (e) {
+            if (status >= 200 && status < 300) return resolve({});
+            const err = new Error(`HTTP ${status}`);
+            (err as any).status = status;
+            return reject(err);
+          }
+        });
+        xhr.addEventListener("error", () => {
+          reject(new Error("Network error during upload"));
+        });
+        xhr.open("POST", url);
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.send(formData);
+      });
+    },
   };
 }

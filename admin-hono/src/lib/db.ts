@@ -7,5 +7,8 @@ export interface DatabaseContext {
 
 // Get database connection using Hyperdrive
 export function getDb(c: DatabaseContext) {
-  return postgres(c.env.HYPERDRIVE.connectionString);
+  // Use Hyperdrive's fetch binding to proxy database connections in Workers
+  return postgres(c.env.HYPERDRIVE.connectionString, {
+    fetch: (c as any).env.HYPERDRIVE.fetch,
+  } as any);
 }

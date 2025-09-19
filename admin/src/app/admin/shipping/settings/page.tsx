@@ -16,6 +16,7 @@ import {
   Save,
   Loader2,
 } from "lucide-react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingSettings {
   default_country: string;
@@ -34,6 +35,7 @@ interface ShippingSettings {
 }
 
 export default function ShippingSettingsPage() {
+  const { apiCallJson } = useAuthenticatedFetch();
   const [settings, setSettings] = useState<ShippingSettings>({
     default_country: "ID",
     default_currency: "IDR",
@@ -65,11 +67,10 @@ export default function ShippingSettingsPage() {
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/admin/settings/shipping", {
+      const data = await apiCallJson("/api/admin/settings/shipping", {
         cache: "no-store",
-      });
-      if (res.ok) {
-        const data = await res.json();
+      }).catch(() => ({} as any));
+      if (data?.settings) {
         if (data?.settings) {
           setSettings(data.settings);
         }
@@ -87,9 +88,12 @@ export default function ShippingSettingsPage() {
 
   const loadCountries = async () => {
     try {
-      const res = await fetch("/api/admin/locations/countries?limit=300");
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await apiCallJson(
+        "/api/admin/locations/countries?limit=300",
+        {
+          cache: "no-store",
+        }
+      );
       if (Array.isArray(data.countries)) {
         setCountries(
           data.countries.map((c: any) => ({
@@ -106,12 +110,11 @@ export default function ShippingSettingsPage() {
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      const res = await fetch("/api/admin/settings/shipping", {
+      await apiCallJson("/api/admin/settings/shipping", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
       });
-      if (!res.ok) throw new Error("Failed to save");
       setLastSaved(new Date());
       alert("Settings saved successfully!");
     } catch (error) {

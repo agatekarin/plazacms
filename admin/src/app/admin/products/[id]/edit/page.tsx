@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import ProductEditor, { Product } from "../../ProductEditor";
 import toast from "react-hot-toast";

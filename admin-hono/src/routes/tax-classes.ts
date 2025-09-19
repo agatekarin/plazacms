@@ -47,4 +47,86 @@ taxes.post("/", adminMiddleware as any, async (c) => {
   }
 });
 
+// GET /api/admin/tax-classes/:id - get one tax class
+taxes.get("/:id", adminMiddleware as any, async (c) => {
+  const sql = getDb(c as any);
+  const { id } = c.req.param();
+  const rows = await sql`
+    SELECT id, name, rate, is_active, created_at, updated_at
+    FROM public.tax_classes
+    WHERE id = ${id}
+    LIMIT 1
+  `;
+  if (!rows[0]) return c.json({ error: "Not found" }, 404);
+  return c.json({ item: rows[0] });
+});
+
+// PATCH /api/admin/tax-classes/:id - update fields
+taxes.patch("/:id", adminMiddleware as any, async (c) => {
+  const sql = getDb(c as any);
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({} as any));
+
+  const fields: string[] = [];
+  const values: any[] = [];
+  let i = 1;
+  const setField = (cond: boolean, field: string, val: any) => {
+    if (!cond) return;
+    fields.push(`${field} = $${i++}`);
+    values.push(val);
+  };
+
+  if (typeof body.name === "string" && body.name.trim()) {
+    setField(true, "name", body.name.trim());
+  }
+  if (typeof body.rate === "number" && body.rate >= 0 && body.rate <= 1) {
+    setField(true, "rate", body.rate);
+  }
+  if (typeof body.is_active === "boolean") {
+    setField(true, "is_active", body.is_active);
+  }
+
+  if (fields.length === 0) {
+    return c.json({ error: "No valid fields to update" }, 400);
+  }
+
+  fields.push(`updated_at = CURRENT_TIMESTAMP`);
+  const setSql = fields.join(", ");
+
+  try {
+    const updateSql = `
+      UPDATE public.tax_classes
+      SET ${setSql}
+      WHERE id = $${i}
+      RETURNING id, name, rate, is_active, created_at, updated_at
+    `;
+    const rows = await (sql as any).unsafe(updateSql, values.concat(id));
+    if (!rows[0]) return c.json({ error: "Not found" }, 404);
+    return c.json({ ok: true, item: rows[0] });
+  } catch (e: any) {
+    const msg = String(e?.message || e || "DB error");
+    if (msg.includes("tax_classes_name_key"))
+      return c.json({ error: "Name already exists" }, 409);
+    return c.json({ error: "Failed to update tax class", detail: msg }, 500);
+  }
+});
+
+// DELETE /api/admin/tax-classes/:id - remove one
+taxes.delete("/:id", adminMiddleware as any, async (c) => {
+  const sql = getDb(c as any);
+  const { id } = c.req.param();
+  try {
+    const rows = await sql`
+      DELETE FROM public.tax_classes
+      WHERE id = ${id}
+      RETURNING id
+    `;
+    if (!rows[0]) return c.json({ error: "Not found" }, 404);
+    return c.json({ ok: true });
+  } catch (e: any) {
+    const msg = String(e?.message || e || "DB error");
+    return c.json({ error: "Failed to delete tax class", detail: msg }, 500);
+  }
+});
+
 export default taxes;

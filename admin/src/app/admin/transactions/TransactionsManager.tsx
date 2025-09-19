@@ -21,6 +21,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Transaction {
   id: string;
@@ -78,6 +79,7 @@ export default function TransactionsManager({
     count: number;
     sum: number;
   }>({ count: 0, sum: 0 });
+  const { apiCallJson } = useAuthenticatedFetch();
 
   const fetchTransactions = async () => {
     try {
@@ -91,15 +93,9 @@ export default function TransactionsManager({
       if (statusFilter) params.append("status", statusFilter);
       if (gatewayFilter) params.append("gateway", gatewayFilter);
 
-      const response = await fetch(`/api/admin/transactions?${params}`, {
+      const data = await apiCallJson(`/api/admin/transactions?${params}`, {
         cache: "no-store",
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch transactions");
-      }
-
-      const data = await response.json();
       setTransactions(data.items || []);
       setTotal(data.total || 0);
       setError("");
@@ -118,11 +114,13 @@ export default function TransactionsManager({
         pageSize: "1",
         status: "succeeded",
       });
-      const res = await fetch(`/api/admin/transactions/refunds?${params}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await apiCallJson(
+        `/api/admin/transactions/refunds?${params}`,
+        {
+          cache: "no-store",
+        }
+      ).catch(() => null as any);
+      if (!data) return;
       setRefundStats({
         count: Number(data.total || 0),
         sum: Number(data.sum || 0),
@@ -164,8 +162,8 @@ export default function TransactionsManager({
     const reason = prompt("Enter refund reason (optional):") || "";
 
     try {
-      // Call store API to perform PayPal refund and create refund record
-      const response = await fetch("/api/admin/payments/paypal/refund", {
+      // Call backend to perform refund (e.g., PayPal) and create refund record
+      await apiCallJson("/api/admin/payments/paypal/refund", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -173,13 +171,9 @@ export default function TransactionsManager({
         body: JSON.stringify({
           order_id: transactions.find((t) => t.id === transactionId)?.order_id,
           amount: refundValue,
+          reason: reason || undefined,
         }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to create refund");
-      }
 
       alert("Refund initiated successfully");
       fetchTransactions(); // Refresh the list

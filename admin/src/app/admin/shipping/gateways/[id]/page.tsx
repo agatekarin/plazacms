@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   Table,
   TableBody,
@@ -89,6 +90,7 @@ export default function GatewayDetailPage({
   const [details, setDetails] = useState<GatewayDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   useEffect(() => {
     fetchGatewayDetails();
@@ -98,19 +100,10 @@ export default function GatewayDetailPage({
     try {
       setLoading(true);
       setError(null);
-
-      const response = await fetch(
-        `/api/admin/shipping/gateways/${resolvedParams.id}`
+      const data = await apiCallJson(
+        `/api/admin/shipping/gateways/${resolvedParams.id}`,
+        { cache: "no-store" }
       );
-      if (!response.ok) {
-        if (response.status === 404) {
-          setError("Gateway not found");
-          return;
-        }
-        throw new Error("Failed to fetch gateway details");
-      }
-
-      const data = await response.json();
       setDetails(data);
     } catch (error) {
       console.error("Error fetching gateway details:", error);
@@ -122,16 +115,13 @@ export default function GatewayDetailPage({
 
   const handleDeleteGateway = async () => {
     try {
-      const response = await fetch(
+      const res = await apiCall(
         `/api/admin/shipping/gateways/${resolvedParams.id}`,
-        {
-          method: "DELETE",
-        }
+        { method: "DELETE" }
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || "Failed to delete gateway");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({} as any));
+        alert((error as any)?.error || "Failed to delete gateway");
         return;
       }
 

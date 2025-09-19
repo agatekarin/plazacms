@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import TaxClassesManager from "../tax-classes/TaxClassesManager";
 
 export const dynamic = "force-dynamic";
@@ -15,28 +16,16 @@ export default function TaxSettingsPage() {
   const [items, setItems] = React.useState<TaxClassRow[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState<boolean>(true);
+  const { apiCallJson } = useAuthenticatedFetch();
 
   React.useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
         setLoading(true);
-        const res = await fetch("/api/admin/tax-classes", {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) {
-          if (res.status === 401) {
-            window.location.href = "/signin";
-            return;
-          }
-          const data = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(data?.error || "Failed to load tax classes");
-        }
-        const data = (await res.json()) as { items: TaxClassRow[] };
+        const data = (await apiCallJson("/api/admin/tax-classes")) as {
+          items: TaxClassRow[];
+        };
         if (!cancelled) setItems(data.items);
       } catch (e) {
         if (!cancelled)

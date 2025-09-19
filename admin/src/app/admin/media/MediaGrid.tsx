@@ -46,6 +46,8 @@ interface MediaGridProps {
   onEdit: (media: MediaItem) => void;
   onOpenBulkActions: () => void;
   loading?: boolean;
+  onUpload?: () => void;
+  onRefresh?: () => void;
 }
 
 // Format file size
@@ -350,6 +352,8 @@ export default function MediaGrid({
   onEdit,
   onOpenBulkActions,
   loading = false,
+  onUpload,
+  onRefresh,
 }: MediaGridProps) {
   const allSelected =
     media.length > 0 && media.every((item) => selectedMedia.has(item.id));
@@ -387,12 +391,18 @@ export default function MediaGrid({
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            <button
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={() => onUpload?.()}
+            >
               <Upload className="w-4 h-4" />
               Upload Files
             </button>
 
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            <button
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              onClick={() => onRefresh?.()}
+            >
               <RefreshCw className="w-4 h-4" />
               Refresh
             </button>

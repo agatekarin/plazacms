@@ -36,6 +36,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingMethod {
   id: string;
@@ -58,6 +59,7 @@ interface ShippingMethod {
     unit?: string;
   };
   restricted_items: string[];
+  restricted_products: string[];
   description: string;
   estimated_days_min: number;
   estimated_days_max: number;
@@ -85,6 +87,7 @@ export default function ShippingMethodDetailPage({
   const [method, setMethod] = useState<ShippingMethod | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   useEffect(() => {
     fetchMethod();
@@ -93,15 +96,10 @@ export default function ShippingMethodDetailPage({
   const fetchMethod = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `/api/admin/shipping/methods/${resolvedParams.id}`
+      const data = await apiCallJson(
+        `/api/admin/shipping/methods/${resolvedParams.id}`,
+        { cache: "no-store" }
       );
-
-      if (!response.ok) {
-        throw new Error("Method not found");
-      }
-
-      const data = await response.json();
       setMethod(data.method);
     } catch (error) {
       console.error("Error fetching method:", error);
@@ -115,16 +113,13 @@ export default function ShippingMethodDetailPage({
   const handleDelete = async () => {
     try {
       setDeleting(true);
-      const response = await fetch(
+      const res = await apiCall(
         `/api/admin/shipping/methods/${resolvedParams.id}`,
-        {
-          method: "DELETE",
-        }
+        { method: "DELETE" }
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete method");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({} as any));
+        throw new Error((error as any)?.error || "Failed to delete method");
       }
 
       router.push("/admin/shipping/methods");
@@ -502,20 +497,48 @@ export default function ShippingMethodDetailPage({
               </div>
             )}
 
-            {method.restricted_items && method.restricted_items.length > 0 && (
+            {(method.restricted_items && method.restricted_items.length > 0) ||
+            (method.restricted_products &&
+              method.restricted_products.length > 0) ? (
               <div>
                 <Label className="text-sm font-medium text-gray-500">
                   Restricted Items
                 </Label>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {method.restricted_items.map((item, index) => (
-                    <Badge key={index} variant="secondary" className="text-xs">
-                      {item}
-                    </Badge>
-                  ))}
+                <div className="space-y-2 mt-2">
+                  {method.restricted_items &&
+                    method.restricted_items.length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">
+                          Custom Items:
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {method.restricted_items.map((item, index) => (
+                            <Badge
+                              key={index}
+                              variant="secondary"
+                              className="text-xs"
+                            >
+                              {item}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  {method.restricted_products &&
+                    method.restricted_products.length > 0 && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">
+                          Products ({method.restricted_products.length}):
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          {method.restricted_products.length} specific
+                          product(s) restricted
+                        </div>
+                      </div>
+                    )}
                 </div>
               </div>
-            )}
+            ) : null}
           </CardContent>
         </Card>
 

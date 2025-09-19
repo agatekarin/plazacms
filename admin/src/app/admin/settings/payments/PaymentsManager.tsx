@@ -4,6 +4,7 @@ import React from "react";
 import { z } from "zod";
 import toast from "react-hot-toast";
 import MediaPicker, { MediaItem } from "@/components/MediaPicker";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   PlusCircleIcon,
   PencilSquareIcon,
@@ -40,6 +41,9 @@ export interface PaymentMethodRow {
   // Optional hydrated field when needed
   logo_url?: string | null;
 }
+
+// Simple in-memory cache to avoid refetching the same media details repeatedly across modal mounts
+const mediaDetailsCache = new Map<string, { file_url?: string | null }>();
 
 const gatewaySchema = z.object({
   name: z.string().min(1),
@@ -249,6 +253,7 @@ export default function PaymentsManager({
 }: {
   initialGateways: PaymentGatewayRow[];
 }) {
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
   const [gateways, setGateways] =
     React.useState<PaymentGatewayRow[]>(initialGateways);
   const [expandedGatewayId, setExpandedGatewayId] = React.useState<
@@ -279,22 +284,17 @@ export default function PaymentsManager({
   } | null>(null);
 
   async function refreshGateways() {
-    const res = await fetch("/api/admin/payments/gateways", {
-      cache: "no-store",
-    });
-    const d = await res.json();
-    setGateways(Array.isArray(d.items) ? d.items : []);
+    const d = await apiCallJson("/api/admin/payments/gateways");
+    setGateways(Array.isArray((d as any).items) ? (d as any).items : []);
   }
 
   async function loadMethods(gatewayId: string) {
-    const res = await fetch(
-      `/api/admin/payments/gateways/${gatewayId}/methods`,
-      { cache: "no-store" }
+    const d = await apiCallJson(
+      `/api/admin/payments/gateways/${gatewayId}/methods`
     );
-    const d = await res.json();
     setMethodsByGateway((prev) => ({
       ...prev,
-      [gatewayId]: Array.isArray(d.items) ? d.items : [],
+      [gatewayId]: Array.isArray((d as any).items) ? (d as any).items : [],
     }));
   }
 
@@ -345,13 +345,11 @@ export default function PaymentsManager({
     }
     setCreatingGateway(true);
     try {
-      const res = await fetch("/api/admin/payments/gateways", {
+      const d = await apiCallJson("/api/admin/payments/gateways", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(parsed.data),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to create gateway");
       toast.success("Gateway created");
       await refreshGateways();
     } catch (err) {
@@ -363,13 +361,15 @@ export default function PaymentsManager({
 
   async function toggleGateway(g: PaymentGatewayRow) {
     try {
-      const res = await fetch(`/api/admin/payments/gateways/${g.id}`, {
+      const res = await apiCall(`/api/admin/payments/gateways/${g.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_enabled: !g.is_enabled }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to update gateway");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to update gateway");
+      }
       toast.success(!g.is_enabled ? "Gateway enabled" : "Gateway disabled");
       await refreshGateways();
     } catch (err) {
@@ -379,13 +379,15 @@ export default function PaymentsManager({
 
   async function setGatewayEnabled(id: string, enabled: boolean) {
     try {
-      const res = await fetch(`/api/admin/payments/gateways/${id}`, {
+      const res = await apiCall(`/api/admin/payments/gateways/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_enabled: enabled }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to update gateway");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to update gateway");
+      }
       toast.success(enabled ? "Gateway enabled" : "Gateway disabled");
       await refreshGateways();
     } catch (err) {
@@ -396,11 +398,13 @@ export default function PaymentsManager({
   async function deleteGateway(id: string) {
     if (!confirm("Delete this gateway? This will remove its methods.")) return;
     try {
-      const res = await fetch(`/api/admin/payments/gateways/${id}`, {
+      const res = await apiCall(`/api/admin/payments/gateways/${id}`, {
         method: "DELETE",
       });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d?.error || "Failed to delete");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to delete");
+      }
       toast.success("Gateway deleted");
       await refreshGateways();
     } catch (err) {
@@ -430,13 +434,15 @@ export default function PaymentsManager({
     const mediaId = media?.[0]?.id;
     if (!mediaId) return;
     try {
-      const res = await fetch(`/api/admin/payments/gateways/${gatewayId}`, {
+      const res = await apiCall(`/api/admin/payments/gateways/${gatewayId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ logo_media_id: mediaId }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to set logo");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to set logo");
+      }
       toast.success("Logo updated");
       await refreshGateways();
     } catch (err) {
@@ -455,7 +461,7 @@ export default function PaymentsManager({
       return;
     }
     try {
-      const res = await fetch(
+      const d = await apiCallJson(
         `/api/admin/payments/gateways/${gatewayId}/methods`,
         {
           method: "POST",
@@ -463,8 +469,6 @@ export default function PaymentsManager({
           body: JSON.stringify(parsed.data),
         }
       );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to create method");
       toast.success("Method created");
       await loadMethods(gatewayId);
     } catch (err) {
@@ -474,7 +478,7 @@ export default function PaymentsManager({
 
   async function toggleMethod(m: PaymentMethodRow) {
     try {
-      const res = await fetch(
+      const res = await apiCall(
         `/api/admin/payments/gateways/${m.gateway_id}/methods/${m.id}`,
         {
           method: "PATCH",
@@ -482,8 +486,10 @@ export default function PaymentsManager({
           body: JSON.stringify({ is_enabled: !m.is_enabled }),
         }
       );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to update method");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to update method");
+      }
       toast.success(!m.is_enabled ? "Method enabled" : "Method disabled");
       await loadMethods(m.gateway_id);
     } catch (err) {
@@ -493,7 +499,7 @@ export default function PaymentsManager({
 
   async function setMethodEnabled(m: PaymentMethodRow, enabled: boolean) {
     try {
-      const res = await fetch(
+      const res = await apiCall(
         `/api/admin/payments/gateways/${m.gateway_id}/methods/${m.id}`,
         {
           method: "PATCH",
@@ -501,8 +507,10 @@ export default function PaymentsManager({
           body: JSON.stringify({ is_enabled: enabled }),
         }
       );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to update method");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to update method");
+      }
       toast.success(enabled ? "Method enabled" : "Method disabled");
       await loadMethods(m.gateway_id);
     } catch (err) {
@@ -513,12 +521,14 @@ export default function PaymentsManager({
   async function deleteMethod(m: PaymentMethodRow) {
     if (!confirm("Delete this method?")) return;
     try {
-      const res = await fetch(
+      const res = await apiCall(
         `/api/admin/payments/gateways/${m.gateway_id}/methods/${m.id}`,
         { method: "DELETE" }
       );
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d?.error || "Failed to delete method");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to delete method");
+      }
       toast.success("Method deleted");
       await loadMethods(m.gateway_id);
     } catch (err) {
@@ -583,7 +593,7 @@ export default function PaymentsManager({
         } as Record<string, unknown>;
       }
       try {
-        const res = await fetch(`/api/admin/payments/gateways/${id}`, {
+        const res = await apiCall(`/api/admin/payments/gateways/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -594,8 +604,10 @@ export default function PaymentsManager({
             settings: parsedSettings,
           }),
         });
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(d?.error || "Failed to save");
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d?.error || "Failed to save");
+        }
         toast.success("Gateway saved");
         setEditGatewayId(null);
         await refreshGateways();
@@ -705,7 +717,7 @@ export default function PaymentsManager({
                   variant="outline"
                   onClick={async () => {
                     try {
-                      const res = await fetch(
+                      const d = await apiCallJson(
                         "/api/admin/payments/env-status",
                         {
                           method: "POST",
@@ -715,9 +727,10 @@ export default function PaymentsManager({
                           }),
                         }
                       );
-                      const d = await res.json();
                       setEnvStatuses(
-                        Array.isArray(d.statuses) ? d.statuses : null
+                        Array.isArray((d as any).statuses)
+                          ? (d as any).statuses
+                          : null
                       );
                     } catch {}
                   }}
@@ -831,10 +844,14 @@ export default function PaymentsManager({
     const [qrisMediaId, setQrisMediaId] = React.useState<string | null>(null);
     const [qrisMediaUrl, setQrisMediaUrl] = React.useState<string | null>(null);
     const [qrisPickerOpen, setQrisPickerOpen] = React.useState<boolean>(false);
+    const lastFetchedQrIdRef = React.useRef<string | null>(null);
 
     // Prefill when method data arrives late (e.g., switching tabs loads methods async)
+    const initializedIdRef = React.useRef<string | null>(null);
     React.useEffect(() => {
       if (!m) return;
+      if (initializedIdRef.current === m.id) return;
+      initializedIdRef.current = m.id;
       setName(m.name || "");
       setSlug(m.slug || "");
       setDescription(m.description || "");
@@ -872,42 +889,56 @@ export default function PaymentsManager({
       const chosenId = qrId || fallbackId;
       setQrisMediaId(chosenId);
       if (chosenId) {
+        // Use cache if available to avoid duplicate network requests
+        const cached = mediaDetailsCache.get(chosenId);
+        if (cached) {
+          setQrisMediaUrl(cached.file_url ?? m.logo_url ?? null);
+          lastFetchedQrIdRef.current = chosenId;
+          return;
+        }
+        if (lastFetchedQrIdRef.current === chosenId) {
+          return;
+        }
+        lastFetchedQrIdRef.current = chosenId;
+        let cancelled = false;
         (async () => {
           try {
             console.log("Fetching QR media:", chosenId);
-            const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-            const url = base
-              ? `${base}/api/admin/media/${chosenId}`
-              : `/api/admin/media/${chosenId}`;
-            const res = await fetch(url, {
+            const res = await apiCall(`/api/admin/media/${chosenId}`, {
               cache: "no-store",
             });
             const d = await res.json();
             console.log("QR media response:", d);
             if (d?.media?.file_url) {
               console.log("Setting QR URL:", d.media.file_url);
-              setQrisMediaUrl(d.media.file_url as string);
+              mediaDetailsCache.set(chosenId, {
+                file_url: d.media.file_url as string,
+              });
+              if (!cancelled) setQrisMediaUrl(d.media.file_url as string);
             } else {
               console.log(
                 "No file_url in response, using existing logo_url as fallback"
               );
               // Fallback to existing logo_url if available
-              if (m.logo_url) {
-                setQrisMediaUrl(m.logo_url);
-              } else {
-                setQrisMediaUrl(null);
+              if (!cancelled) {
+                mediaDetailsCache.set(chosenId, {
+                  file_url: m.logo_url ?? null,
+                });
+                setQrisMediaUrl(m.logo_url ?? null);
               }
             }
           } catch (err) {
             console.error("Failed to fetch QR media:", err);
             // Fallback to existing logo_url if available
-            if (m.logo_url) {
-              setQrisMediaUrl(m.logo_url);
-            } else {
-              setQrisMediaUrl(null);
+            if (!cancelled) {
+              mediaDetailsCache.set(chosenId, { file_url: m.logo_url ?? null });
+              setQrisMediaUrl(m.logo_url ?? null);
             }
           }
         })();
+        return () => {
+          cancelled = true;
+        };
       } else {
         setQrisMediaUrl(null);
       }
@@ -968,7 +999,7 @@ export default function PaymentsManager({
         } as Record<string, unknown>;
       }
       try {
-        const res = await fetch(
+        const res = await apiCall(
           `/api/admin/payments/gateways/${gatewayId}/methods/${methodId}`,
           {
             method: "PATCH",
@@ -983,8 +1014,10 @@ export default function PaymentsManager({
             }),
           }
         );
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(d?.error || "Failed to save");
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d?.error || "Failed to save");
+        }
         toast.success("Method saved");
         setEditMethod(null);
         await loadMethods(gatewayId);
@@ -1384,7 +1417,7 @@ export default function PaymentsManager({
     )?.[0];
     if (!gwId) return;
     try {
-      const res = await fetch(
+      const res = await apiCall(
         `/api/admin/payments/gateways/${gwId}/methods/${methodId}`,
         {
           method: "PATCH",
@@ -1392,8 +1425,10 @@ export default function PaymentsManager({
           body: JSON.stringify({ logo_media_id: mediaId }),
         }
       );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to set logo");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to set logo");
+      }
       toast.success("Logo updated");
       await loadMethods(gwId);
     } catch (err) {
@@ -1695,25 +1730,25 @@ export default function PaymentsManager({
                   }
                   setCreatingMethodOpen(false);
                   const ok = await (async () => {
-                    const res = await fetch(
-                      `/api/admin/payments/gateways/${methodCreateGatewayId}/methods`,
-                      {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          name: "New Method",
-                          is_enabled: true,
-                          display_order: 0,
-                        }),
-                      }
-                    );
-                    const d = await res.json().catch(() => ({}));
-                    if (!res.ok) {
-                      toast.error(d?.error || "Failed to create method");
+                    try {
+                      await apiCallJson(
+                        `/api/admin/payments/gateways/${methodCreateGatewayId}/methods`,
+                        {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            name: "New Method",
+                            is_enabled: true,
+                            display_order: 0,
+                          }),
+                        }
+                      );
+                      toast.success("Method created");
+                      return true;
+                    } catch (e: any) {
+                      toast.error(e?.message || "Failed to create method");
                       return false;
                     }
-                    toast.success("Method created");
-                    return true;
                   })();
                   if (ok) await loadMethods(methodCreateGatewayId);
                 }}

@@ -24,6 +24,7 @@ import {
   Clock,
   ExternalLink,
 } from "lucide-react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface SyncStatus {
   latest_version: string;
@@ -49,6 +50,7 @@ interface ImportProgress {
 
 export function LocationSyncPanel() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const { apiCallJson } = useAuthenticatedFetch();
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(
     null
   );
@@ -66,8 +68,9 @@ export function LocationSyncPanel() {
 
   const checkSyncStatus = async () => {
     try {
-      const response = await fetch("/api/admin/locations/sync");
-      const data = await response.json();
+      const data = await apiCallJson("/api/admin/locations/sync", {
+        cache: "no-store",
+      });
       setSyncStatus(data);
     } catch (error) {
       console.error("Failed to check sync status:", error);
@@ -77,7 +80,7 @@ export function LocationSyncPanel() {
   const startImport = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/locations/sync", {
+      const data = await apiCallJson("/api/admin/locations/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -85,8 +88,6 @@ export function LocationSyncPanel() {
           tables: selectedTables,
         }),
       });
-
-      const data = await response.json();
 
       if (data.import_id) {
         // Start polling for progress
@@ -104,10 +105,10 @@ export function LocationSyncPanel() {
   const pollImportProgress = (importId: string) => {
     const poll = setInterval(async () => {
       try {
-        const response = await fetch(
-          `/api/admin/locations/sync/progress/${importId}`
+        const progress = await apiCallJson(
+          `/api/admin/locations/sync/progress/${importId}`,
+          { cache: "no-store" }
         );
-        const progress = await response.json();
 
         setImportProgress(progress);
 

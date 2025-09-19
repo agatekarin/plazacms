@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useRouter } from "next/navigation";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Card } from "@/components/ui/card";
@@ -24,6 +24,8 @@ interface Product {
   category_name?: string;
   featured_image_url?: string;
   featured_image_filename?: string;
+  review_count?: number;
+  average_rating?: number;
 }
 
 interface ProductsTableProps {
@@ -235,6 +237,7 @@ export default function ProductsTable({
                 <Th>Stock</Th>
                 <Th>Price</Th>
                 <Th>Category</Th>
+                <Th>Reviews</Th>
                 <Th>Created</Th>
                 <Th>Actions</Th>
               </tr>
@@ -249,7 +252,7 @@ export default function ProductsTable({
                 // Show empty state when no products
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     <div className="flex flex-col items-center">
@@ -331,6 +334,35 @@ export default function ProductsTable({
                           <span className="text-gray-400">Uncategorized</span>
                         )}
                       </span>
+                    </Td>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        {p.review_count && p.review_count > 0 ? (
+                          <>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <span
+                                  key={i}
+                                  className={`text-xs ${
+                                    i < Math.round(p.average_rating || 0)
+                                      ? "text-yellow-400"
+                                      : "text-gray-300"
+                                  }`}
+                                >
+                                  ★
+                                </span>
+                              ))}
+                            </div>
+                            <span className="text-xs text-gray-600">
+                              ({p.review_count})
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-400">
+                            No reviews
+                          </span>
+                        )}
+                      </div>
                     </Td>
                     <Td>
                       <div className="text-gray-600">

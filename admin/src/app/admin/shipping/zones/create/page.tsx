@@ -38,6 +38,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Country {
   id: number;
@@ -68,6 +69,7 @@ export default function CreateZonePage() {
   const [loadingCountries, setLoadingCountries] = useState(true);
   const [countrySearchOpen, setCountrySearchOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
+  const { apiCallJson } = useAuthenticatedFetch();
 
   const [formData, setFormData] = useState<ZoneForm>({
     code: "",
@@ -85,10 +87,10 @@ export default function CreateZonePage() {
   const fetchCountries = async () => {
     try {
       setLoadingCountries(true);
-      const response = await fetch("/api/admin/locations/all");
-      if (!response.ok) throw new Error("Failed to fetch countries");
-
-      const data = await response.json();
+      const data = await apiCallJson(
+        "/api/admin/locations/countries?limit=1000",
+        { cache: "no-store" }
+      );
       setCountries(data.countries || []);
     } catch (error) {
       console.error("Error fetching countries:", error);
@@ -116,20 +118,11 @@ export default function CreateZonePage() {
         countries: countriesData,
       };
 
-      const response = await fetch("/api/admin/shipping/zones", {
+      const result = await apiCallJson("/api/admin/shipping/zones", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create zone");
-      }
-
-      const result = await response.json();
       router.push(`/admin/shipping/zones/${result.zone.id}`);
     } catch (error) {
       console.error("Error creating zone:", error);

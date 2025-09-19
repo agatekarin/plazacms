@@ -24,6 +24,7 @@ export async function GET(request: NextRequest, context: { params: unknown }) {
         sm.max_weight_limit,
         sm.max_dimensions,
         sm.restricted_items,
+        sm.restricted_products,
         sm.description,
         sm.estimated_days_min,
         sm.estimated_days_max,
@@ -98,6 +99,7 @@ export async function PUT(request: NextRequest, context: { params: unknown }) {
       max_weight_limit,
       max_dimensions,
       restricted_items,
+      restricted_products,
       description,
       estimated_days_min,
       estimated_days_max,
@@ -181,10 +183,10 @@ export async function PUT(request: NextRequest, context: { params: unknown }) {
        SET zone_id = $1, gateway_id = $2, name = $3, method_type = $4, base_cost = $5,
            currency = $6, weight_unit = $7, weight_threshold = $8, cost_per_kg = $9,
            min_free_threshold = $10, max_free_weight = $11, max_weight_limit = $12,
-           max_dimensions = $13, restricted_items = $14, description = $15,
-           estimated_days_min = $16, estimated_days_max = $17, status = $18, sort_order = $19,
+           max_dimensions = $13, restricted_items = $14, restricted_products = $15, description = $16,
+           estimated_days_min = $17, estimated_days_max = $18, status = $19, sort_order = $20,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $20
+       WHERE id = $21
        RETURNING *`,
       [
         zone_id,
@@ -201,6 +203,7 @@ export async function PUT(request: NextRequest, context: { params: unknown }) {
         max_weight_limit || 30000,
         JSON.stringify(max_dimensions || {}),
         JSON.stringify(restricted_items || []),
+        JSON.stringify(restricted_products || []),
         description || "",
         estimated_days_min || 1,
         estimated_days_max || 7,

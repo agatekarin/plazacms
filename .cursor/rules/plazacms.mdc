@@ -60,6 +60,7 @@ alwaysApply: true
 
 7. **Linting / Code Quality**
 
+   - Priority: if IDE is Cursor AI then use built in lint error check, dont use terminal command, etc.
    - Run `pnpm run lint <full_path>` for every major file.
    - Fix any warnings/errors, especially `any` type usage in TypeScript.
 

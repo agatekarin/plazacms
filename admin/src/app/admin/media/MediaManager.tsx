@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import {
   FolderOpen,
@@ -528,7 +528,7 @@ export default function MediaManager() {
   // Load folders
   const loadFolders = async () => {
     try {
-      if (!session?.accessToken) return; // Wait for session
+      if (!(session as any)?.accessToken) return; // Wait for session
 
       const data = await apiCallJson(
         "/api/admin/media/folders?include_children=true",
@@ -548,7 +548,7 @@ export default function MediaManager() {
     setLoading(true);
     setError("");
     try {
-      if (!session?.accessToken) {
+      if (!(session as any)?.accessToken) {
         setLoading(false);
         return; // Wait for session
       }
@@ -956,6 +956,8 @@ export default function MediaManager() {
                   onEdit={(m) => setSelectedMediaDetails(m)}
                   onOpenBulkActions={() => setShowBulkOperationsModal(true)}
                   loading={loading}
+                  onUpload={() => setShowUploadModal(true)}
+                  onRefresh={() => loadMedia()}
                 />
 
                 {/* Modern Pagination */}

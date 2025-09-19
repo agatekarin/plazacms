@@ -74,7 +74,11 @@ export async function GET(req: Request) {
     LEFT JOIN public.payment_transactions pt ON pt.id = pr.transaction_id
     LEFT JOIN public.orders o ON o.id = pt.order_id
     LEFT JOIN public.users u ON u.id = o.user_id
-    ${whereSql}
+    ${
+      whereSql
+        ? whereSql + " AND pr.status = 'succeeded'"
+        : "WHERE pr.status = 'succeeded'"
+    }
   `;
 
   try {

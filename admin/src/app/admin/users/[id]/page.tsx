@@ -1,22 +1,80 @@
-import UserEditor, { AddressRow, UserRow } from "../UserEditor";
-import { headers } from "next/headers";
+"use client";
 
-async function getUser(id: string): Promise<{ item: UserRow | null; addresses: AddressRow[] }> {
-  if (id === "new") return { item: null, addresses: [] };
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
-  const base = `${proto}://${host}`;
-  const cookie = h.get("cookie");
-  const res = await fetch(`${base}/api/admin/users/${id}`, { cache: "no-store", headers: cookie ? { cookie } : undefined });
-  if (!res.ok) return { item: null, addresses: [] };
-  const d = await res.json();
-  return { item: d.item as UserRow, addresses: d.addresses as AddressRow[] };
+import UserEditor, { AddressRow, UserRow } from "../UserEditor";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
+import React, { useEffect, useState } from "react";
+
+function useUser(id: string) {
+  const { apiCallJson } = useAuthenticatedFetch();
+  const [item, setItem] = useState<UserRow | null>(null);
+  const [addresses, setAddresses] = useState<AddressRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (id === "new") {
+      setItem(null);
+      setAddresses([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const d = await apiCallJson(`/api/admin/users/${id}`);
+        if (!cancelled) {
+          setItem(d.item as UserRow);
+          setAddresses(d.addresses as AddressRow[]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, apiCallJson]);
+  return { item, addresses, loading };
 }
 
-export default async function UserEditorPage({ params }: { params: Promise<{ id: string }> }) {
-  const p = await params;
-  const { id } = p;
-  const data = await getUser(id);
-  return <UserEditor initialUser={data.item || undefined} initialAddresses={data.addresses || []} />;
+export default function UserEditorPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = React.use(params);
+  const data = useUser(id);
+  const isNew = id === "new";
+
+  // While fetching an existing user, render a full-page skeleton and hide the form
+  if (!isNew && data.loading) {
+    return (
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="bg-white border border-gray-200/60 rounded-xl shadow-sm p-6 animate-pulse">
+          <div className="h-6 w-40 bg-gray-200 rounded mb-4" />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="h-10 bg-gray-200 rounded" />
+            <div className="h-10 bg-gray-200 rounded" />
+            <div className="h-10 bg-gray-200 rounded" />
+            <div className="h-10 bg-gray-200 rounded" />
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-200/60 bg-white shadow-sm p-6 animate-pulse">
+          <div className="h-5 w-24 bg-gray-200 rounded mb-4" />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="h-10 bg-gray-200 rounded" />
+            <div className="h-10 bg-gray-200 rounded" />
+            <div className="h-10 bg-gray-200 rounded" />
+            <div className="h-10 bg-gray-200 rounded" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <UserEditor
+      initialUser={data.item || undefined}
+      initialAddresses={data.addresses || []}
+      loading={data.loading}
+    />
+  );
 }

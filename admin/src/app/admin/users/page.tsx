@@ -1,9 +1,13 @@
+"use client";
+
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { Plus, Search, User2, Edit3, Trash2 } from "lucide-react";
-import { headers } from "next/headers";
 import ConfirmDeleteForm from "./ConfirmDeleteForm";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 type UserListRow = {
   id: string;
@@ -14,24 +18,34 @@ type UserListRow = {
   created_at: string;
 };
 
-async function getUsers(q: string): Promise<{ items: UserListRow[] }> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
-  const base = `${proto}://${host}`;
-  const cookie = h.get("cookie");
-  const res = await fetch(`${base}/api/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, {
-    cache: "no-store",
-    headers: cookie ? { cookie } : undefined,
-  });
-  if (!res.ok) return { items: [] };
-  return res.json();
+function useUsers(q: string) {
+  const { apiCallJson } = useAuthenticatedFetch();
+  const [items, setItems] = useState<UserListRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await apiCallJson(
+          `/api/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`
+        );
+        if (!cancelled) setItems(data.items || []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [q, apiCallJson]);
+  return { items, loading };
 }
 
-export default async function UsersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const sp = await searchParams;
-  const q = sp?.q || "";
-  const { items } = await getUsers(q);
+export default function UsersPage() {
+  const sp = useSearchParams();
+  const q = sp.get("q") || "";
+  const { items, loading } = useUsers(q);
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="bg-white border border-gray-200/60 rounded-xl shadow-sm">
@@ -42,7 +56,9 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900">Users</h1>
-              <p className="text-sm text-gray-500">Manage accounts, roles, avatars, and addresses</p>
+              <p className="text-sm text-gray-500">
+                Manage accounts, roles, avatars, and addresses
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -82,45 +98,94 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
               </tr>
             </thead>
             <tbody>
-              {items?.map((u: UserListRow) => (
-                <tr key={u.id} className="border-t border-gray-100">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center">
-                        {u.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={u.image} alt={u.name || u.email} className="w-9 h-9 object-cover" />
-                        ) : (
-                          <User2 className="w-4 h-4 text-gray-400" />
-                        )}
+              {loading &&
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr
+                    key={i}
+                    className="border-t border-gray-100 animate-pulse"
+                  >
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-gray-200" />
+                        <div>
+                          <div className="h-4 w-32 bg-gray-200 rounded mb-1" />
+                          <div className="h-3 w-20 bg-gray-100 rounded" />
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-medium text-gray-900">{u.name || "(no name)"}</div>
-                        <div className="text-xs text-gray-500">{u.id.slice(0, 8)}</div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-4 w-48 bg-gray-200 rounded" />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-4 w-16 bg-gray-200 rounded" />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-4 w-24 bg-gray-200 rounded" />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-7 w-24 bg-gray-200 rounded" />
+                    </td>
+                  </tr>
+                ))}
+              {!loading &&
+                items?.map((u: UserListRow) => (
+                  <tr key={u.id} className="border-t border-gray-100">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center">
+                          {u.image ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={u.image}
+                              alt={u.name || u.email}
+                              className="w-9 h-9 object-cover"
+                            />
+                          ) : (
+                            <User2 className="w-4 h-4 text-gray-400" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {u.name || "(no name)"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {u.id.slice(0, 8)}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">{u.email}</td>
-                  <td className="py-3 px-4 capitalize">{u.role}</td>
-                  <td className="py-3 px-4">{new Date(u.created_at).toLocaleDateString()}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex gap-2">
-                      <Link href={`/admin/users/${u.id}`} className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-300 hover:bg-gray-50">
-                        <Edit3 className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline">Edit</span>
-                      </Link>
-                      <ConfirmDeleteForm
-                        action={`/api/admin/users/${u.id}`}
-                        disabled={u.role === "admin"}
-                        title={u.role === "admin" ? "Cannot delete admin" : "Delete"}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {(!items || items.length === 0) && (
+                    </td>
+                    <td className="py-3 px-4">{u.email}</td>
+                    <td className="py-3 px-4 capitalize">{u.role}</td>
+                    <td className="py-3 px-4">
+                      {new Date(u.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/admin/users/${u.id}`}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-md border border-gray-300 hover:bg-gray-50"
+                        >
+                          <Edit3 className="w-4 h-4 sm:mr-1" />
+                          <span className="hidden sm:inline">Edit</span>
+                        </Link>
+                        <ConfirmDeleteForm
+                          action={`/api/admin/users/${u.id}`}
+                          disabled={u.role === "admin"}
+                          title={
+                            u.role === "admin"
+                              ? "Cannot delete admin"
+                              : "Delete"
+                          }
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              {!loading && (!items || items.length === 0) && (
                 <tr>
-                  <td className="py-6 px-4 text-gray-500" colSpan={5}>No users found.</td>
+                  <td className="py-6 px-4 text-gray-500" colSpan={5}>
+                    No users found.
+                  </td>
                 </tr>
               )}
             </tbody>

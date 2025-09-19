@@ -39,6 +39,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Country {
   id: number;
@@ -69,6 +70,7 @@ export default function EditZonePage({
   const [countrySearch, setCountrySearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const { apiCallJson } = useAuthenticatedFetch();
   const [formData, setFormData] = useState<ZoneForm>({
     code: "",
     name: "",
@@ -86,17 +88,14 @@ export default function EditZonePage({
       setLoadingData(true);
 
       // Fetch zone data and countries in parallel
-      const [zoneResponse, countriesResponse] = await Promise.all([
-        fetch(`/api/admin/shipping/zones/${resolvedParams.id}`),
-        fetch("/api/admin/locations/all"),
+      const [zoneData, countriesData] = await Promise.all([
+        apiCallJson(`/api/admin/shipping/zones/${resolvedParams.id}`, {
+          cache: "no-store",
+        }),
+        apiCallJson("/api/admin/locations/countries?limit=1000", {
+          cache: "no-store",
+        }),
       ]);
-
-      if (!zoneResponse.ok) {
-        throw new Error("Zone not found");
-      }
-
-      const zoneData = await zoneResponse.json();
-      const countriesData = await countriesResponse.json();
 
       const zone = zoneData.zone;
       setFormData({
@@ -154,24 +153,11 @@ export default function EditZonePage({
         countries: countriesData,
       };
 
-      const response = await fetch(
-        `/api/admin/shipping/zones/${resolvedParams.id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(submitData),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update zone");
-      }
-
-      const data = await response.json();
-      console.log("Zone updated:", data);
+      await apiCallJson(`/api/admin/shipping/zones/${resolvedParams.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(submitData),
+      });
 
       // Redirect to zones list
       router.push("/admin/shipping/zones");

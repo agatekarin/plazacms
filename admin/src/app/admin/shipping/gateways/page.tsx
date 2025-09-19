@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface ShippingGateway {
   id: number;
@@ -73,6 +74,7 @@ export default function ShippingGatewaysPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   const fetchGateways = async () => {
     try {
@@ -84,11 +86,9 @@ export default function ShippingGatewaysPage() {
         type: typeFilter,
         status: statusFilter,
       });
-
-      const response = await fetch(`/api/admin/shipping/gateways?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch gateways");
-
-      const data = await response.json();
+      const data = await apiCallJson(`/api/admin/shipping/gateways?${params}`, {
+        cache: "no-store",
+      });
       setGateways(data.gateways);
     } catch (error) {
       console.error("Error fetching gateways:", error);
@@ -105,13 +105,12 @@ export default function ShippingGatewaysPage() {
     if (!confirm("Are you sure you want to delete this gateway?")) return;
 
     try {
-      const response = await fetch(`/api/admin/shipping/gateways/${id}`, {
+      const res = await apiCall(`/api/admin/shipping/gateways/${id}`, {
         method: "DELETE",
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || "Failed to delete gateway");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({} as any));
+        alert((error as any)?.error || "Failed to delete gateway");
         return;
       }
 

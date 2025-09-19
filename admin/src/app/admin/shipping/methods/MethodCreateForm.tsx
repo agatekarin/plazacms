@@ -21,6 +21,7 @@ import {
   Save,
   Loader,
 } from "lucide-react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 interface Carrier {
   id: string;
@@ -52,6 +53,7 @@ export function MethodCreateForm({
   onSuccess,
   editMethod,
 }: MethodCreateFormProps) {
+  const { apiCallJson } = useAuthenticatedFetch();
   const [formData, setFormData] = useState({
     name: editMethod?.name || "",
     description: editMethod?.description || "",
@@ -90,10 +92,9 @@ export function MethodCreateForm({
   const loadCarriers = async () => {
     try {
       setLoadingCarriers(true);
-      const response = await fetch("/api/admin/shipping/carriers");
-      if (!response.ok) throw new Error("Failed to load carriers");
-
-      const data = await response.json();
+      const data = await apiCallJson("/api/admin/shipping/carriers", {
+        cache: "no-store",
+      });
       setCarriers(data.carriers || []);
     } catch (err) {
       console.error("Failed to load carriers:", err);
@@ -191,16 +192,11 @@ export function MethodCreateForm({
 
       const method = editMethod ? "PATCH" : "POST";
 
-      const response = await fetch(url, {
+      await apiCallJson(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save method");
-      }
 
       onSuccess();
       onClose();

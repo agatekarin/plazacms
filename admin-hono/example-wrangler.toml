@@ -1,0 +1,102 @@
+name = "admin-hono"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+compatibility_flags = ["nodejs_compat"]
+
+# Development server configuration
+[dev]
+port = 1945
+
+[observability.logs]
+enabled = true
+
+
+
+# Environment variables
+[vars]
+# Replace with your admin email address
+ADMIN_EMAIL = "your-admin@example.com"
+
+# Generate a secure random string for authentication
+# You can use: openssl rand -hex 32
+AUTH_SECRET = "your-32-character-hex-string-here"
+
+# auth_url is use nextjs frontend url which is 3001
+AUTH_URL = "http://localhost:3001/api/authjs"
+
+# Your R2 public URL for serving images
+R2_PUBLIC_URL = "https://your-domain.com"
+
+# Optional: enable Cloudinary fetch optimization on backend responses
+CLOUDINARY_CLOUD_NAME = "your-cloudinary-cloud-name" # Get from Cloudinary dashboard
+
+# ====================================================================
+# EMAIL SYSTEM CONFIGURATION
+# ====================================================================
+
+# Store branding - customize for your store
+STORE_NAME = "Your Store Name"
+
+# FROM_EMAIL Configuration:
+# 🔥 DEVELOPMENT: Use Resend sandbox emails (no domain verification needed)
+FROM_EMAIL = "onboarding@resend.dev"
+# Alternative sandbox emails: delivered@resend.dev, notifications@resend.dev
+
+# 🚀 PRODUCTION: Use your verified domain (requires DNS setup at https://resend.com/domains)
+# FROM_EMAIL = "noreply@yourdomain.com"  # Uncomment & replace when domain is verified
+
+# Frontend URL (NextJS Admin runs on port 3001)
+FRONTEND_URL = "http://localhost:3001"
+
+# Secrets (set via wrangler secret put)
+# Generate a secure random string for JWT signing
+# You can use: openssl rand -hex 32
+JWT_SECRET = "your-32-character-hex-string-here"
+
+# Get your API key from Resend dashboard (https://resend.com/api-keys)
+# Set via: wrangler secret put RESEND_API_KEY
+RESEND_API_KEY = "re_your_resend_api_key_here"
+
+# For development phase
+DISABLE_RATE_LIMIT=1
+
+# Hyperdrive configuration
+# Create at: https://dash.cloudflare.com/?to=/:account/workers/hyperdrive
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "your-hyperdrive-id-here"
+localConnectionString = "postgres://username:password@localhost:5432/database_name"
+
+# R2 bucket binding for media uploads
+# Create at: https://dash.cloudflare.com/?to=/:account/r2
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "your-r2-bucket-name"
+# preview_bucket_name = "your-r2-bucket-name-dev"
+
+# Rate Limiting storage (Workers KV)
+# Create at: https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "your-kv-namespace-id-here"
+
+# ====================================================================
+# SETUP INSTRUCTIONS
+# ====================================================================
+#
+# 1. Copy this file to wrangler.toml
+# 2. Replace all placeholder values with your actual configuration
+# 3. Set up Cloudflare services:
+#    - Create Hyperdrive connection for your database
+#    - Create R2 bucket for file storage
+#    - Create KV namespace for rate limiting
+# 4. Get API keys:
+#    - Resend API key from https://resend.com/api-keys
+#    - Cloudinary cloud name from dashboard (optional)
+# 5. Generate secure secrets:
+#    - AUTH_SECRET: openssl rand -hex 32
+#    - JWT_SECRET: openssl rand -hex 32
+# 6. Update environment-specific URLs and emails
+# 7. For production, verify your domain in Resend and update FROM_EMAIL
+#
+# ====================================================================

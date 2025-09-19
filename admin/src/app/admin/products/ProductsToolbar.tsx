@@ -94,6 +94,10 @@ export default function ProductsToolbar({ total }: ProductsToolbarProps) {
     { value: "price_desc", label: "Price High to Low" },
     { value: "stock_asc", label: "Stock Low to High" },
     { value: "stock_desc", label: "Stock High to Low" },
+    { value: "reviews_desc", label: "Most Reviews" },
+    { value: "reviews_asc", label: "Least Reviews" },
+    { value: "rating_desc", label: "Highest Rating" },
+    { value: "rating_asc", label: "Lowest Rating" },
   ];
 
   const statusOptions = [

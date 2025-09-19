@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { useRouter } from "next/navigation";
 import {
   CheckIcon,
@@ -98,6 +99,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   // Form states
   const [status, setStatus] = useState("");
@@ -157,15 +159,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
   const fetchOrder = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/orders/${orderId}`, {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch order");
-      }
-
-      const data = await response.json();
+      const data = await apiCallJson(`/api/admin/orders/${orderId}`);
       const orderData = data.order;
 
       setOrder(orderData);
@@ -219,11 +213,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
         const vId = items[i].product_variant_id;
         if (!vId) continue;
         try {
-          const res = await fetch(`/api/admin/variants/${vId}`, {
-            cache: "no-store",
-          });
-          if (!res.ok) continue;
-          const data = await res.json();
+          const data = await apiCallJson(`/api/admin/variants/${vId}`);
           const it = data.item || data;
           const productId = String(it.product_id);
           // Track active product per index for UI
@@ -257,24 +247,17 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
   const fetchOptions = async () => {
     try {
       // Fetch payment gateways, then methods per gateway, and aggregate into payment methods
-      const gatewaysResponse = await fetch(
-        "/api/admin/payments/gateways?enabled=true",
-        { cache: "no-store" }
-      );
-      if (gatewaysResponse.ok) {
-        const gatewaysData: { items: { id: string; name: string }[] } =
-          await gatewaysResponse.json();
+      const gatewaysData: { items: { id: string; name: string }[] } =
+        await apiCallJson("/api/admin/payments/gateways?enabled=true");
+      if (gatewaysData) {
         const gateways = gatewaysData.items || [];
 
         const methodLists = await Promise.all(
           gateways.map(async (g) => {
             try {
-              const res = await fetch(
-                `/api/admin/payments/gateways/${g.id}/methods`,
-                { cache: "no-store" }
+              const data = await apiCallJson(
+                `/api/admin/payments/gateways/${g.id}/methods`
               );
-              if (!res.ok) return { items: [] as any[] };
-              const data = await res.json();
               return { gateway: g, items: (data.items || []) as any[] };
             } catch {
               return { gateway: g, items: [] as any[] };
@@ -297,12 +280,10 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
       }
 
       // Fetch shipping methods
-      const smResponse = await fetch(
-        "/api/admin/shipping/methods?status=active&limit=200",
-        { cache: "no-store" }
-      );
-      if (smResponse.ok) {
-        const smData = await smResponse.json();
+      {
+        const smData = await apiCallJson(
+          "/api/admin/shipping/methods?status=active&limit=200"
+        );
         const methods: ShippingMethodOption[] = (smData.methods || []).map(
           (m: any) => ({
             id: m.id,
@@ -315,14 +296,10 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
       }
 
       // Fetch countries
-      const countriesResponse = await fetch(
-        "/api/admin/locations/countries?limit=300",
-        { cache: "no-store" }
+      const cData = await apiCallJson(
+        "/api/admin/locations/countries?limit=300"
       );
-      if (countriesResponse.ok) {
-        const cData = await countriesResponse.json();
-        setCountries(cData.countries || []);
-      }
+      setCountries(cData.countries || []);
     } catch (err) {
       console.error("Failed to fetch options:", err);
     }
@@ -341,26 +318,20 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
       const exists = shippingMethods.some((m) => m.id === shippingMethodId);
       if (exists) return;
       try {
-        const res = await fetch(
-          `/api/admin/shipping/methods/${shippingMethodId}`,
-          {
-            cache: "no-store",
-          }
+        const data = await apiCallJson(
+          `/api/admin/shipping/methods/${shippingMethodId}`
         );
-        if (res.ok) {
-          const data = await res.json();
-          const m = data.method || data.item || data;
-          if (m?.id) {
-            setShippingMethods((prev) => [
-              ...prev,
-              {
-                id: String(m.id),
-                name: m.name,
-                zone_name: m.zone_name,
-                gateway_name: m.gateway_name,
-              },
-            ]);
-          }
+        const m = data.method || data.item || data;
+        if (m?.id) {
+          setShippingMethods((prev) => [
+            ...prev,
+            {
+              id: String(m.id),
+              name: m.name,
+              zone_name: m.zone_name,
+              gateway_name: m.gateway_name,
+            },
+          ]);
         }
       } catch {
         // ignore fetch failure; keep placeholder
@@ -398,16 +369,13 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
         items,
       };
 
-      const response = await fetch(`/api/admin/orders/${orderId}`, {
+      const response = await apiCall(`/api/admin/orders/${orderId}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updateData),
       });
-
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || "Failed to update order");
       }
 
@@ -466,15 +434,13 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     const controller = new AbortController();
     (async () => {
       try {
-        const url = new URL("/api/admin/products", window.location.origin);
-        if (productQuery) url.searchParams.set("q", productQuery);
-        url.searchParams.set("pageSize", "20");
-        const res = await fetch(url.toString(), {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!res.ok) return;
-        const data = await res.json();
+        const params = new URLSearchParams();
+        if (productQuery) params.set("q", productQuery);
+        params.set("pageSize", "20");
+        const data = await apiCallJson(
+          `/api/admin/products?${params.toString()}`,
+          { cache: "no-store", signal: controller.signal }
+        );
         const opts: ProductOption[] = (data.items || []).map((p: any) => ({
           value: String(p.id),
           label: p.name,
@@ -491,11 +457,10 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     if (!productId) return;
     if (variantOptionsByProduct[productId]) return;
     try {
-      const res = await fetch(`/api/admin/products/${productId}/variants`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await apiCallJson(
+        `/api/admin/products/${productId}/variants`,
+        { cache: "no-store" }
+      );
       const options: VariantOption[] = (data.items || []).map((v: any) => {
         const label = (v.attributes || [])
           .map((a: any) => `${a.value}`)
@@ -714,36 +679,33 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                                 value={item.product_variant_id}
                                 onChange={async (variantId) => {
                                   try {
-                                    const res = await fetch(
+                                    const data = await apiCallJson(
                                       `/api/admin/variants/${variantId}`,
                                       { cache: "no-store" }
                                     );
-                                    if (res.ok) {
-                                      const data = await res.json();
-                                      const it = data.item || data;
-                                      const price = Number(
-                                        it.sale_price ?? it.regular_price ?? 0
-                                      );
-                                      updateItem(
-                                        index,
-                                        "product_variant_id",
-                                        variantId
-                                      );
-                                      updateItem(
-                                        index,
-                                        "product_name",
-                                        it.product_name || ""
-                                      );
-                                      updateItem(index, "product_price", price);
-                                      recalculateTotal([
-                                        ...items.slice(0, index),
-                                        {
-                                          ...items[index],
-                                          product_price: price,
-                                        },
-                                        ...items.slice(index + 1),
-                                      ]);
-                                    }
+                                    const it = data.item || data;
+                                    const price = Number(
+                                      it.sale_price ?? it.regular_price ?? 0
+                                    );
+                                    updateItem(
+                                      index,
+                                      "product_variant_id",
+                                      variantId
+                                    );
+                                    updateItem(
+                                      index,
+                                      "product_name",
+                                      it.product_name || ""
+                                    );
+                                    updateItem(index, "product_price", price);
+                                    recalculateTotal([
+                                      ...items.slice(0, index),
+                                      {
+                                        ...items[index],
+                                        product_price: price,
+                                      },
+                                      ...items.slice(index + 1),
+                                    ]);
                                   } catch {}
                                 }}
                                 options={(

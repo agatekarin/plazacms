@@ -35,7 +35,7 @@ interface MediaItem {
 
 import React, { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import MediaPicker from "@/components/MediaPicker";
 import toast from "react-hot-toast";

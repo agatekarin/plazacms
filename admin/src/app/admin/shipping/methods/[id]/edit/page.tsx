@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Package, Save } from "lucide-react";
@@ -23,6 +23,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
+import { RestrictedItemsSelector } from "@/components/RestrictedItemsSelector";
 
 interface Zone {
   id: string;
@@ -60,6 +62,7 @@ interface FormData {
     unit?: string;
   };
   restricted_items: string[];
+  restricted_products: string[];
   description: string;
   estimated_days_min: number;
   estimated_days_max: number;
@@ -78,6 +81,7 @@ export default function EditShippingMethodPage({
   const [gateways, setGateways] = useState<Gateway[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const { apiCallJson } = useAuthenticatedFetch();
   const [formData, setFormData] = useState<FormData>({
     zone_id: "",
     gateway_id: "",
@@ -93,6 +97,7 @@ export default function EditShippingMethodPage({
     max_weight_limit: 30000,
     max_dimensions: { length: 0, width: 0, height: 0, unit: "cm" },
     restricted_items: [],
+    restricted_products: [],
     description: "",
     estimated_days_min: 1,
     estimated_days_max: 7,
@@ -100,28 +105,21 @@ export default function EditShippingMethodPage({
     status: "active",
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [resolvedParams.id]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoadingData(true);
 
-      const [methodResponse, zonesResponse, gatewaysResponse] =
-        await Promise.all([
-          fetch(`/api/admin/shipping/methods/${resolvedParams.id}`),
-          fetch("/api/admin/shipping/zones?limit=100"),
-          fetch("/api/admin/shipping/gateways?limit=100"),
-        ]);
-
-      if (!methodResponse.ok) {
-        throw new Error("Method not found");
-      }
-
-      const methodData = await methodResponse.json();
-      const zonesData = await zonesResponse.json();
-      const gatewaysData = await gatewaysResponse.json();
+      const [methodData, zonesData, gatewaysData] = await Promise.all([
+        apiCallJson(`/api/admin/shipping/methods/${resolvedParams.id}`, {
+          cache: "no-store",
+        }),
+        apiCallJson("/api/admin/shipping/zones?limit=100", {
+          cache: "no-store",
+        }),
+        apiCallJson("/api/admin/shipping/gateways?limit=100", {
+          cache: "no-store",
+        }),
+      ]);
 
       const method = methodData.method;
       setFormData({
@@ -144,6 +142,7 @@ export default function EditShippingMethodPage({
           unit: "cm",
         },
         restricted_items: method.restricted_items || [],
+        restricted_products: method.restricted_products || [],
         description: method.description || "",
         estimated_days_min: method.estimated_days_min || 1,
         estimated_days_max: method.estimated_days_max || 7,
@@ -160,7 +159,11 @@ export default function EditShippingMethodPage({
     } finally {
       setLoadingData(false);
     }
-  };
+  }, [apiCallJson, resolvedParams.id, router]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,24 +176,11 @@ export default function EditShippingMethodPage({
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `/api/admin/shipping/methods/${resolvedParams.id}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formData),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update method");
-      }
-
-      const data = await response.json();
-      console.log("Method updated:", data);
+      await apiCallJson(`/api/admin/shipping/methods/${resolvedParams.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
 
       router.push(`/admin/shipping/methods/${resolvedParams.id}`);
     } catch (error) {
@@ -212,22 +202,6 @@ export default function EditShippingMethodPage({
       | "inactive"
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const addRestrictedItem = (item: string) => {
-    if (item.trim() && !formData.restricted_items.includes(item.trim())) {
-      updateFormData("restricted_items", [
-        ...formData.restricted_items,
-        item.trim(),
-      ]);
-    }
-  };
-
-  const removeRestrictedItem = (index: number) => {
-    updateFormData(
-      "restricted_items",
-      formData.restricted_items.filter((_, i) => i !== index)
-    );
   };
 
   if (loadingData) {
@@ -614,39 +588,16 @@ export default function EditShippingMethodPage({
                 />
               </div>
 
-              <div>
-                <Label>Restricted Items</Label>
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Add restricted item..."
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          addRestrictedItem(
-                            (e.target as HTMLInputElement).value
-                          );
-                          (e.target as HTMLInputElement).value = "";
-                        }
-                      }}
-                    />
-                  </div>
-                  {formData.restricted_items.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {formData.restricted_items.map((item, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => removeRestrictedItem(index)}
-                          className="cursor-pointer"
-                        >
-                          <Badge variant="secondary">{item} ×</Badge>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <RestrictedItemsSelector
+                restrictedItems={formData.restricted_items}
+                restrictedProducts={formData.restricted_products}
+                onItemsChange={(items) =>
+                  updateFormData("restricted_items", items)
+                }
+                onProductsChange={(products) =>
+                  updateFormData("restricted_products", products)
+                }
+              />
             </CardContent>
           </Card>
         </div>

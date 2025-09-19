@@ -13,13 +13,15 @@ interface Product {
   category_name?: string;
   featured_image_url?: string; // Added this for usage in ProductsTable.tsx
   featured_image_filename?: string; // Added this for usage in ProductsTable.tsx
+  review_count?: number;
+  average_rating?: number;
 }
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
-import { Pencil, Trash2, Layers } from "lucide-react";
+import { Pencil, Trash2, Layers, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
 
@@ -42,6 +44,10 @@ export default function ProductActions({ product }: { product: Product }) {
 
   function onVariants() {
     router.push(`/admin/products/${product.id}/edit?tab=variations`);
+  }
+
+  function onReviews() {
+    router.push(`/admin/reviews/product/${product.id}`);
   }
 
   function onDelete() {
@@ -80,6 +86,16 @@ export default function ProductActions({ product }: { product: Product }) {
         aria-label="Manage variants"
       >
         <Layers className="h-4 w-4" />
+      </Button>
+
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onReviews}
+        className="p-2"
+        aria-label="View reviews"
+      >
+        <MessageSquare className="h-4 w-4" />
       </Button>
 
       <Button

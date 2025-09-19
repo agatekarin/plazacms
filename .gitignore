@@ -37,3 +37,6 @@ yarn-error.log*
 # Hidden files and directories
 .*
 *.donk
+
+# Cloudflare Workers configuration (contains sensitive data)
+admin-hono/wrangler.toml

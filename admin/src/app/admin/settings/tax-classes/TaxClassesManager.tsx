@@ -7,6 +7,7 @@ import {
   PowerIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
 export interface TaxClassRow {
   id: string;
@@ -46,19 +47,30 @@ function Button({
       ? "bg-red-600 text-white hover:bg-red-700"
       : "border border-gray-300 text-gray-700 bg-white hover:bg-gray-50";
   return (
-    <button aria-label={ariaLabel} type={type} className={`${base} ${styles}`} onClick={onClick} disabled={disabled}>
+    <button
+      aria-label={ariaLabel}
+      type={type}
+      className={`${base} ${styles}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
       {children}
     </button>
   );
 }
 
 function Input(
-  props: React.InputHTMLAttributes<HTMLInputElement> & { label?: string; help?: string }
+  props: React.InputHTMLAttributes<HTMLInputElement> & {
+    label?: string;
+    help?: string;
+  }
 ) {
   const { label, help, ...rest } = props;
   return (
     <div className="space-y-1">
-      {label && <label className="text-sm font-medium text-gray-900">{label}</label>}
+      {label && (
+        <label className="text-sm font-medium text-gray-900">{label}</label>
+      )}
       <input
         {...rest}
         className={[
@@ -75,10 +87,20 @@ function Input(
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl border border-gray-200/60 bg-white shadow-sm">{children}</div>;
+  return (
+    <div className="rounded-xl border border-gray-200/60 bg-white shadow-sm">
+      {children}
+    </div>
+  );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="p-6">
       <h3 className="text-base font-semibold text-gray-900 mb-4">{title}</h3>
@@ -99,17 +121,21 @@ function Badge({ active }: { active: boolean }) {
   );
 }
 
-export default function TaxClassesManager({ initialItems }: { initialItems: TaxClassRow[] }) {
+export default function TaxClassesManager({
+  initialItems,
+}: {
+  initialItems: TaxClassRow[];
+}) {
   const [items, setItems] = React.useState<TaxClassRow[]>(initialItems);
   const [loading, setLoading] = React.useState(false);
   const [name, setName] = React.useState("");
   const [ratePct, setRatePct] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const { apiCallJson, apiCall } = useAuthenticatedFetch();
 
   async function refresh() {
-    const res = await fetch("/api/admin/tax-classes", { cache: "no-store" });
-    const d = await res.json();
-    setItems(Array.isArray(d.items) ? d.items : []);
+    const d = await apiCallJson("/api/admin/tax-classes");
+    setItems(Array.isArray((d as any).items) ? (d as any).items : []);
   }
 
   async function create(e: React.FormEvent) {
@@ -123,13 +149,11 @@ export default function TaxClassesManager({ initialItems }: { initialItems: TaxC
     const rate = Math.round(pct * 10000) / 10000 / 100; // clamp to 4 decimals then convert to decimal
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/tax-classes", {
+      const d = await apiCallJson("/api/admin/tax-classes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), rate, is_active: true }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to create");
       setName("");
       setRatePct("");
       await refresh();
@@ -143,13 +167,15 @@ export default function TaxClassesManager({ initialItems }: { initialItems: TaxC
   async function toggle(id: string, nextActive: boolean) {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/tax-classes/${id}`, {
+      const res = await apiCall(`/api/admin/tax-classes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_active: nextActive }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to update");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to update");
+      }
       await refresh();
     } catch (err) {
       alert((err as Error).message);
@@ -173,13 +199,15 @@ export default function TaxClassesManager({ initialItems }: { initialItems: TaxC
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/tax-classes/${id}`, {
+      const res = await apiCall(`/api/admin/tax-classes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName, rate }),
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || "Failed to update");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to update");
+      }
       await refresh();
     } catch (err) {
       alert((err as Error).message);
@@ -192,9 +220,13 @@ export default function TaxClassesManager({ initialItems }: { initialItems: TaxC
     if (!confirm("Delete this tax class?")) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/tax-classes/${id}`, { method: "DELETE" });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d?.error || "Failed to delete");
+      const res = await apiCall(`/api/admin/tax-classes/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Failed to delete");
+      }
       await refresh();
     } catch (err) {
       alert((err as Error).message);

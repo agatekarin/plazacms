@@ -4,6 +4,38 @@ import { getDb } from "../lib/db";
 
 const mediaUpload = new Hono<{ Bindings: Env; Variables: { user: any } }>();
 
+function sanitizeFilename(filename: string): string {
+  const extension = filename.split(".").pop() || "";
+  const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+  const cleanName = nameWithoutExt
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .substring(0, 50);
+  return `${cleanName}.${extension}`;
+}
+
+function generateFilePath(
+  originalFilename: string,
+  folderPath?: string,
+  mediaType: string = "other"
+): string {
+  const year = new Date().getFullYear();
+  const cleanFilename = sanitizeFilename(originalFilename);
+  if (folderPath) {
+    const cleanFolderPath = folderPath
+      .replace(/^\/+|\/+$/g, "")
+      .replace(/\/+?/g, "/")
+      .toLowerCase()
+      .replace(/[^a-z0-9\/]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(new RegExp(`/\${year}$`), "");
+    return `uploads/${cleanFolderPath}/${year}/${cleanFilename}`;
+  }
+  return `uploads/${mediaType}/${year}/${cleanFilename}`;
+}
+
 // POST /api/admin/media/upload - Upload media files
 mediaUpload.post("/", adminMiddleware as any, async (c) => {
   try {
@@ -71,52 +103,54 @@ mediaUpload.post("/", adminMiddleware as any, async (c) => {
       folderPath = folderCheck[0].path;
     }
 
-    // Generate unique filename
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substring(2, 15);
-    const ext = file.name.split(".").pop() || "";
-    const filename = `${timestamp}_${randomStr}.${ext}`;
+    // Validate requested media_type against allowed values
+    const allowedMediaTypes = new Set([
+      "product_image",
+      "product_variant_image",
+      "user_profile",
+      "review_image",
+      "site_asset",
+      "other",
+    ]);
+    const finalMediaType = allowedMediaTypes.has(mediaType)
+      ? mediaType
+      : "other";
 
-    // Create file path
-    const basePath = folderPath ? `${folderPath}/` : "";
-    const filePath = `${basePath}${filename}`;
+    // Build object key using the media manager's folder structure
+    const filePath = generateFilePath(file.name, folderPath, finalMediaType);
 
-    // For now, we'll use a placeholder URL since R2 setup might be complex
-    // In production, this should upload to R2/S3 and get the actual URL
-    const fileUrl = `https://media.plazacms.com/${filePath}`;
-
-    // TODO: Implement actual file upload to R2/S3
-    // const uploadResult = await uploadFileToR2(file, filePath);
-    // const fileUrl = uploadResult.url;
-
-    // Get media type category
-    const getMediaType = (mimeType: string): string => {
-      if (mimeType.startsWith("image/")) return "image";
-      if (mimeType.startsWith("video/")) return "video";
-      if (mimeType.startsWith("audio/")) return "audio";
-      if (mimeType === "application/pdf") return "document";
-      return "other";
-    };
+    // Upload to R2 bucket binding
+    if (!(c as any).env?.R2) {
+      return c.json({ error: "R2 binding is not configured" }, 500);
+    }
+    await ((c as any).env.R2 as R2Bucket).put(filePath, file.stream(), {
+      httpMetadata: { contentType: file.type },
+      customMetadata: {
+        originalName: file.name,
+        uploadedBy: String(user.id || ""),
+        mediaType: finalMediaType,
+      },
+    });
+    const fileUrl = `${(c as any).env.R2_PUBLIC_URL || ""}/${filePath}`;
 
     // Save to database
     const result = await sql`
       INSERT INTO media (
-        filename, original_name, file_url, file_type, size, 
+        filename, file_url, file_type, size,
         media_type, alt_text, folder_id, entity_id, uploaded_by
       ) VALUES (
-        ${filename},
         ${file.name},
         ${fileUrl},
-        ${getMediaType(file.type)},
+        ${file.type},
         ${file.size},
-        ${mediaType},
+        ${finalMediaType},
         ${altText || null},
         ${folderId || null},
         ${entityId || null},
         ${user.id}
       )
       RETURNING 
-        id, filename, original_name, file_url, file_type, size, 
+        id, filename, file_url, file_type, size,
         media_type, alt_text, folder_id, entity_id, created_at
     `;
 

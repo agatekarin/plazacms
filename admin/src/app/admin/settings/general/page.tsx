@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@hono/auth-js/react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
-import { redirect } from "next/navigation";
 import GeneralSettingsManager from "./GeneralSettingsManager";
 import { CogIcon } from "@heroicons/react/24/outline";
 
@@ -20,13 +19,13 @@ export default function GeneralSettingsPage() {
     },
   });
 
-  // Redirect if not authenticated or not admin
+  // Guard: if not authenticated or not admin, send to built-in auth
   useEffect(() => {
     if (status === "loading") return;
 
     const role = (session?.user as any)?.role;
     if (!session?.user || role !== "admin") {
-      redirect("/signin");
+      window.location.href = "/api/authjs/signin";
       return;
     }
 
