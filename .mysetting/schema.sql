@@ -94,6 +94,34 @@ update
     public.countries for each row execute function set_updated_at();
 
 
+-- public.email_settings definition
+
+-- Drop table
+
+-- DROP TABLE public.email_settings;
+
+CREATE TABLE public.email_settings (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	from_name varchar(255) DEFAULT 'PlazaCMS'::character varying NOT NULL,
+	from_email varchar(255) DEFAULT 'onboarding@resend.dev'::character varying NOT NULL,
+	reply_to varchar(255) NULL,
+	resend_api_key text NULL,
+	smtp_host varchar(255) NULL,
+	smtp_port int4 DEFAULT 587 NULL,
+	smtp_username varchar(255) NULL,
+	smtp_password varchar(255) NULL,
+	smtp_encryption varchar(10) DEFAULT 'tls'::character varying NULL,
+	provider varchar(20) DEFAULT 'resend'::character varying NOT NULL,
+	is_active bool DEFAULT true NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	webhook_url varchar(500) NULL,
+	webhook_secret varchar(255) NULL,
+	webhook_events _text NULL,
+	CONSTRAINT email_settings_pkey PRIMARY KEY (id)
+);
+
+
 -- public.email_templates definition
 
 -- Drop table
