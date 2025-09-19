@@ -59,25 +59,18 @@ CREATE TABLE public.countries (
 	"name" varchar(100) NOT NULL,
 	iso3 bpchar(3) NOT NULL,
 	iso2 bpchar(2) NOT NULL,
-	numeric_code varchar(3) NULL,
 	phone_code varchar(255) NULL,
 	capital varchar(255) NULL,
 	currency varchar(255) NULL,
 	currency_name varchar(255) NULL,
 	currency_symbol varchar(255) NULL,
-	tld varchar(255) NULL,
-	native varchar(255) NULL,
 	region varchar(255) NULL,
 	subregion varchar(255) NULL,
-	timezones text NULL,
-	translations text NULL,
 	latitude numeric(10, 8) NULL,
 	longitude numeric(11, 8) NULL,
 	emoji varchar(191) NULL,
-	emojiu varchar(191) NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	flag varchar(6) NULL,
 	CONSTRAINT countries_iso2_key UNIQUE (iso2),
 	CONSTRAINT countries_iso3_key UNIQUE (iso3),
 	CONSTRAINT countries_pkey PRIMARY KEY (id)
@@ -85,6 +78,7 @@ CREATE TABLE public.countries (
 CREATE INDEX idx_countries_iso2 ON public.countries USING btree (iso2);
 CREATE INDEX idx_countries_iso3 ON public.countries USING btree (iso3);
 CREATE INDEX idx_countries_name ON public.countries USING btree (name);
+CREATE INDEX idx_countries_region ON public.countries USING btree (region);
 
 -- Table Triggers
 
@@ -173,6 +167,7 @@ CREATE TABLE public.location_data_sync (
 	sync_status text DEFAULT 'success'::text NULL,
 	error_details text NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	table_type text DEFAULT 'combined'::text NULL,
 	CONSTRAINT location_data_sync_pkey PRIMARY KEY (id),
 	CONSTRAINT location_data_sync_sync_status_check CHECK ((sync_status = ANY (ARRAY['success'::text, 'failed'::text, 'partial'::text])))
 );
@@ -183,6 +178,28 @@ create trigger trg_set_updated_at_location_data_sync before
 update
     on
     public.location_data_sync for each row execute function set_updated_at();
+
+
+-- public.location_sync_progress definition
+
+-- Drop table
+
+-- DROP TABLE public.location_sync_progress;
+
+CREATE TABLE public.location_sync_progress (
+	id uuid NOT NULL,
+	table_type text DEFAULT 'combined'::text NULL,
+	status text NOT NULL,
+	progress int4 DEFAULT 0 NOT NULL,
+	message text NULL,
+	records_imported int4 NULL,
+	records_new int4 DEFAULT 0 NULL,
+	records_updated int4 DEFAULT 0 NULL,
+	started_at timestamptz DEFAULT now() NOT NULL,
+	completed_at timestamptz NULL,
+	"error" text NULL,
+	CONSTRAINT location_sync_progress_pkey PRIMARY KEY (id)
+);
 
 
 -- public.product_attributes definition
@@ -701,6 +718,7 @@ CREATE TABLE public.states (
 CREATE INDEX idx_states_country ON public.states USING btree (country_id);
 CREATE INDEX idx_states_country_code ON public.states USING btree (country_code);
 CREATE INDEX idx_states_country_id ON public.states USING btree (country_id);
+CREATE INDEX idx_states_iso2 ON public.states USING btree (iso2);
 CREATE INDEX idx_states_name ON public.states USING btree (name);
 
 -- Table Triggers
@@ -775,14 +793,11 @@ CREATE TABLE public.cities (
 	id serial4 NOT NULL,
 	"name" varchar(255) NOT NULL,
 	state_id int4 NOT NULL,
-	state_code varchar(255) NOT NULL,
 	country_id int4 NOT NULL,
-	country_code bpchar(2) NOT NULL,
 	latitude numeric(10, 8) NULL,
 	longitude numeric(11, 8) NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
-	wikidataid varchar(255) NULL,
 	CONSTRAINT cities_pkey PRIMARY KEY (id),
 	CONSTRAINT cities_country_id_fkey FOREIGN KEY (country_id) REFERENCES public.countries(id),
 	CONSTRAINT cities_state_id_fkey FOREIGN KEY (state_id) REFERENCES public.states(id)

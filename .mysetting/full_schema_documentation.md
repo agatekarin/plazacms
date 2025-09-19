@@ -458,6 +458,175 @@ Dokumen ini menyediakan gambaran lengkap tentang semua tabel dalam skema databas
 
 ---
 
+## 🌍 Sistem Manajemen Lokasi ✅ **FULLY IMPLEMENTED**
+
+### `countries`
+
+- **Tujuan:** Menyimpan data negara seluruh dunia untuk keperluan shipping zones, address management, dan location-based features.
+- **Kolom Penting:**
+  - `id` (INTEGER): Primary Key, ID negara berdasarkan standar internasional.
+  - `name` (VARCHAR): Nama lengkap negara.
+  - `iso2` (CHAR): Kode ISO 2 huruf negara (misal: 'US', 'ID'), unique.
+  - `iso3` (CHAR): Kode ISO 3 huruf negara (misal: 'USA', 'IDN'), unique.
+  - `phone_code` (VARCHAR): Kode telepon negara (misal: '1', '62').
+  - `capital` (VARCHAR): Nama ibukota negara.
+  - `currency` (VARCHAR): Kode mata uang utama.
+  - `currency_name` (VARCHAR): Nama lengkap mata uang.
+  - `currency_symbol` (VARCHAR): Simbol mata uang.
+  - `region` (VARCHAR): Region geografis (misal: 'Asia', 'Europe').
+  - `subregion` (VARCHAR): Sub-region (misal: 'Southeast Asia', 'Western Europe').
+  - `latitude` (NUMERIC): Koordinat lintang negara.
+  - `longitude` (NUMERIC): Koordinat bujur negara.
+  - `emoji` (VARCHAR): Flag emoji negara.
+  - `created_at` (TIMESTAMPTZ): Waktu pembuatan record.
+  - `updated_at` (TIMESTAMPTZ): Waktu terakhir update.
+- **Indexes:**
+  - `idx_countries_iso2` untuk pencarian berdasarkan kode ISO2
+  - `idx_countries_iso3` untuk pencarian berdasarkan kode ISO3
+  - `idx_countries_name` untuk pencarian berdasarkan nama negara
+  - `idx_countries_region` untuk filtering berdasarkan region
+- **Hubungan:** Direferensikan oleh `states`, `cities`, `shipping_zone_countries`, address fields di `users`, `orders`.
+- **Data:** 250 negara dengan data geografis lengkap.
+
+### `states`
+
+- **Tujuan:** Menyimpan data provinsi/state/region dalam negara untuk keperluan alamat detail dan shipping calculations.
+- **Kolom Penting:**
+  - `id` (INTEGER): Primary Key, ID state berdasarkan standar internasional.
+  - `name` (VARCHAR): Nama lengkap provinsi/state.
+  - `country_id` (INTEGER): Foreign Key ke `countries.id`.
+  - `country_code` (VARCHAR): Kode ISO2 negara untuk reference.
+  - `iso2` (VARCHAR): Kode ISO2 state jika tersedia.
+  - `fips_code` (VARCHAR): Kode FIPS untuk US states.
+  - `type` (VARCHAR): Tipe administrative division (misal: 'state', 'province').
+  - `latitude` (NUMERIC): Koordinat lintang state.
+  - `longitude` (NUMERIC): Koordinat bujur state.
+  - `created_at` (TIMESTAMPTZ): Waktu pembuatan record.
+  - `updated_at` (TIMESTAMPTZ): Waktu terakhir update.
+- **Indexes:**
+  - Index pada `country_id` untuk filtering berdasarkan negara
+  - Index pada `country_code` untuk lookup performance
+  - Index pada `name` untuk pencarian state
+- **Hubungan:** Mereferensikan `countries`, direferensikan oleh `cities`, address fields.
+- **Data:** 5,099 states/provinces dari seluruh dunia.
+
+### `cities`
+
+- **Tujuan:** Menyimpan data kota-kota untuk keperluan alamat detail, shipping calculations, dan location-based services.
+- **Kolom Penting:**
+  - `id` (INTEGER): Primary Key, ID kota berdasarkan database internasional.
+  - `name` (VARCHAR): Nama kota.
+  - `state_id` (INTEGER): Foreign Key ke `states.id`.
+  - `country_id` (INTEGER): Foreign Key ke `countries.id`.
+  - `latitude` (NUMERIC): Koordinat lintang kota.
+  - `longitude` (NUMERIC): Koordinat bujur kota.
+  - `created_at` (TIMESTAMPTZ): Waktu pembuatan record.
+  - `updated_at` (TIMESTAMPTZ): Waktu terakhir update.
+- **Indexes:**
+  - Index pada `state_id` untuk filtering berdasarkan state
+  - Index pada `country_id` untuk filtering berdasarkan negara
+  - Index pada `name` untuk pencarian kota
+- **Hubungan:** Mereferensikan `states` dan `countries`.
+- **Data:** 151,165 kota dari seluruh dunia dengan koordinat geografis.
+
+### `location_sync_progress`
+
+- **Tujuan:** Tracking progress untuk proses import data lokasi dengan real-time monitoring.
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key, ID unik untuk setiap proses import.
+  - `table_type` (TEXT): Jenis tabel yang di-import ('countries', 'states', 'cities', 'combined').
+  - `status` (TEXT): Status import ('pending', 'importing', 'completed', 'failed').
+  - `progress` (INTEGER): Persentase progress (0-100).
+  - `message` (TEXT): Pesan status atau error.
+  - `records_imported` (INTEGER): Jumlah record yang berhasil di-import.
+  - `records_new` (INTEGER): Jumlah record baru yang ditambahkan.
+  - `records_updated` (INTEGER): Jumlah record yang di-update.
+  - `started_at` (TIMESTAMPTZ): Waktu mulai proses import.
+  - `completed_at` (TIMESTAMPTZ): Waktu selesai proses import.
+  - `error` (TEXT): Detail error jika import gagal.
+- **Fitur:**
+  - Real-time progress tracking dengan WebSocket support
+  - Chunked processing monitoring (25 rows per batch)
+  - Comprehensive statistics untuk import analysis
+- **Hubungan:** Standalone table untuk monitoring.
+
+### `location_data_sync`
+
+- **Tujuan:** Audit trail untuk proses sinkronisasi data lokasi dari sumber eksternal (GitHub CSV).
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `table_type` (TEXT): Jenis tabel yang di-sync.
+  - `data_version` (TEXT): Versi data atau commit hash dari sumber.
+  - `sync_date` (TIMESTAMPTZ): Waktu sinkronisasi.
+  - `records_imported` (INTEGER): Total record yang berhasil di-import.
+  - `sync_status` (TEXT): Status sync ('success', 'failed', 'partial').
+  - `error_details` (TEXT): Detail error jika ada.
+  - `updated_at` (TIMESTAMPTZ): Waktu terakhir update.
+- **Fitur:**
+  - Version tracking untuk data consistency
+  - Audit trail untuk compliance dan debugging
+  - Error logging untuk troubleshooting
+- **Hubungan:** Standalone audit table.
+
+### **🚀 Location Import System Features**
+
+#### **Individual Table Imports**
+
+- Separate import buttons untuk Countries, States, Cities
+- No checkbox-based selection, direct table-specific imports
+- Professional UI cards dengan progress indicators
+
+#### **Chunked Processing**
+
+- 25 rows per batch untuk rate limit compliance
+- Delay between chunks untuk Cloudflare Workers/Neon optimization
+- Background processing dengan Hono executionCtx.waitUntil
+
+#### **Upsert Logic**
+
+- `ON CONFLICT (id) DO UPDATE SET` untuk incremental updates
+- No data loss - existing records preserved, missing records restored
+- New vs updated record tracking dengan comprehensive statistics
+
+#### **Database Schema Optimization**
+
+- Removed unnecessary columns (numeric_code, tld, native, timezones, etc.)
+- Optimized indexes untuk performance
+- Essential columns only untuk storage efficiency
+
+#### **Migration System**
+
+- Node.js migration runner dengan SQL script automation
+- Schema verification dengan column count validation
+- Manual fallback untuk complex migrations
+
+#### **API Endpoints**
+
+```
+POST /api/admin/locations/sync/countries  - Import countries
+POST /api/admin/locations/sync/states     - Import states
+POST /api/admin/locations/sync/cities     - Import cities
+GET  /api/admin/locations/sync/progress/:id - Get progress status
+```
+
+#### **Performance Statistics**
+
+- **Countries:** 250 records, ~2 seconds processing time
+- **States:** 5,099 records, rapid processing
+- **Cities:** 151,165 records, ~11 minutes processing time
+- **Total:** 156,514 location records dengan 100% success rate
+
+#### **Components Implemented**
+
+- `LocationSyncPanel` → Professional location import interface dengan individual cards
+- `CountrySelector` → Advanced country selection dengan search functionality
+- `StateSelector` → State selection dengan country filtering dan search
+- Location import endpoints di Hono backend dengan chunked processing
+- Migration system dengan automated schema optimization
+- Real-time progress tracking dengan comprehensive error handling
+
+---
+
 ## 🚚 Konfigurasi Pengiriman ✅ **FULLY IMPLEMENTED**
 
 ### `shipping_zones` ✅

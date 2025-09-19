@@ -435,7 +435,10 @@ async function runTableImport(
     }
 
     const csvText = await response.text();
-    const rows = parseCsv(csvText);
+    const allRows = parseCsv(csvText);
+
+    // Filter to only essential columns to match optimized schema
+    const rows = filterEssentialColumns(allRows, table);
 
     await updateProgress(
       "importing",
@@ -653,6 +656,60 @@ function parseCsvLine(line: string): string[] {
   return result.map((v) => v.replace(/^"|"$/g, ""));
 }
 
+// Filter CSV data to include only essential columns for optimized schema
+function filterEssentialColumns(data: any[], table: string): any[] {
+  return data.map((row) => {
+    switch (table) {
+      case "countries":
+        // Essential: 14 columns (id, name, iso2, iso3, phone_code, capital, currency, currency_name, currency_symbol, region, subregion, latitude, longitude, emoji)
+        return {
+          id: row.id,
+          name: row.name,
+          iso2: row.iso2,
+          iso3: row.iso3,
+          phonecode: row.phonecode, // Will be mapped to phone_code in import
+          capital: row.capital,
+          currency: row.currency,
+          currency_name: row.currency_name,
+          currency_symbol: row.currency_symbol,
+          region: row.region,
+          subregion: row.subregion,
+          latitude: row.latitude,
+          longitude: row.longitude,
+          emoji: row.emoji,
+        };
+
+      case "states":
+        // Essential: 9 columns (id, name, country_id, country_code, iso2, fips_code, type, latitude, longitude)
+        return {
+          id: row.id,
+          name: row.name,
+          country_id: row.country_id,
+          country_code: row.country_code,
+          iso2: row.iso2,
+          fips_code: row.fips_code,
+          type: row.type,
+          latitude: row.latitude,
+          longitude: row.longitude,
+        };
+
+      case "cities":
+        // Essential: 6 columns (id, name, state_id, country_id, latitude, longitude)
+        return {
+          id: row.id,
+          name: row.name,
+          state_id: row.state_id,
+          country_id: row.country_id,
+          latitude: row.latitude,
+          longitude: row.longitude,
+        };
+
+      default:
+        return row;
+    }
+  });
+}
+
 // Helper function for chunked table imports with upsert statistics
 async function importTableChunk(sql: any, table: string, rows: any[]) {
   switch (table) {
@@ -671,110 +728,113 @@ async function importCountriesChunk(sql: any, countries: any[]) {
   if (!countries.length) return { imported: 0, new: 0, updated: 0 };
 
   const values = countries.map((c: any) => {
+    // Handle different phone code field names
     const phone = c.phone_code ?? c.phonecode ?? c.phoneCode ?? "";
-    const emojiu = c.emojiu ?? c.emojiU ?? "";
-    return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${String(
-      c.iso3 || ""
-    )}, ${String(c.iso2 || "")}, ${String(c.numeric_code || "")}, ${String(
-      phone || ""
-    )}, ${String(c.capital || "")}, ${String(c.currency || "")}, ${String(
-      c.currency_name || ""
-    )}, ${String(c.currency_symbol || "")}, ${String(c.tld || "")}, ${String(
-      c.native || ""
-    )}, ${String(c.region || "")}, ${String(c.subregion || "")}, ${String(
-      c.timezones || ""
-    )}, ${c.latitude ? Number(c.latitude) : null}, ${
-      c.longitude ? Number(c.longitude) : null
-    }, ${String(c.emoji || "")}, ${String(emojiu || "")} )`;
+
+    return [
+      Number(c.id || 0),
+      String(c.name || ""),
+      String(c.iso2 || ""),
+      String(c.iso3 || ""),
+      String(phone || ""),
+      String(c.capital || ""),
+      String(c.currency || ""),
+      String(c.currency_name || ""),
+      String(c.currency_symbol || ""),
+      String(c.region || ""),
+      String(c.subregion || ""),
+      c.latitude ? Number(c.latitude) : null,
+      c.longitude ? Number(c.longitude) : null,
+      String(c.emoji || ""),
+    ];
   });
 
-  const result = await sql`
+  try {
+    const result = await sql`
     INSERT INTO public.countries (
-      id, name, iso3, iso2, numeric_code, phone_code, capital, currency,
-      currency_name, currency_symbol, tld, native, region, subregion, timezones,
-      latitude, longitude, emoji, emojiu
+      id, name, iso2, iso3, phone_code, capital, currency,
+      currency_name, currency_symbol, region, subregion,
+      latitude, longitude, emoji
     )
     VALUES ${sql(values)}
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
-      iso3 = EXCLUDED.iso3,
       iso2 = EXCLUDED.iso2,
-      numeric_code = EXCLUDED.numeric_code,
+      iso3 = EXCLUDED.iso3,
       phone_code = EXCLUDED.phone_code,
       capital = EXCLUDED.capital,
       currency = EXCLUDED.currency,
       currency_name = EXCLUDED.currency_name,
       currency_symbol = EXCLUDED.currency_symbol,
-      tld = EXCLUDED.tld,
-      native = EXCLUDED.native,
       region = EXCLUDED.region,
       subregion = EXCLUDED.subregion,
-      timezones = EXCLUDED.timezones,
       latitude = EXCLUDED.latitude,
       longitude = EXCLUDED.longitude,
       emoji = EXCLUDED.emoji,
-      emojiu = EXCLUDED.emojiu,
       updated_at = CURRENT_TIMESTAMP
-    RETURNING xmax
+    RETURNING (CASE WHEN xmax = 0 THEN 'new' ELSE 'updated' END) as operation_type
   `;
 
-  // Count new vs updated records based on xmax (PostgreSQL internal)
-  let newRecords = 0;
-  let updatedRecords = 0;
+    // Count new vs updated records based on operation type
+    let newRecords = 0;
+    let updatedRecords = 0;
 
-  for (const row of result) {
-    if (row.xmax === 0) {
-      newRecords++; // New record
-    } else {
-      updatedRecords++; // Updated record
+    for (const row of result) {
+      if (row.operation_type === "new") {
+        newRecords++;
+      } else {
+        updatedRecords++;
+      }
     }
-  }
 
-  return {
-    imported: result.length,
-    new: newRecords,
-    updated: updatedRecords,
-  };
+    return {
+      imported: result.length,
+      new: newRecords,
+      updated: updatedRecords,
+    };
+  } catch (error) {
+    throw error;
+  }
 }
 
 async function importStatesChunk(sql: any, states: any[]) {
   if (!states.length) return { imported: 0, new: 0, updated: 0 };
 
-  const values = states.map(
-    (s: any) =>
-      sql`(${Number(s.id || 0)}, ${String(s.name || "")}, ${Number(
-        s.country_id || 0
-      )}, ${String(s.country_code || "")}, ${String(
-        s.fips_code || ""
-      )}, ${String(s.iso2 || "")}, ${String(s.type || "")}, ${
-        s.latitude ? Number(s.latitude) : null
-      }, ${s.longitude ? Number(s.longitude) : null}, ${String(
-        s.state_code || ""
-      )})`
-  );
+  const values = states.map((s: any) => {
+    return [
+      Number(s.id || 0),
+      String(s.name || ""),
+      Number(s.country_id || 0),
+      String(s.country_code || ""),
+      String(s.iso2 || ""),
+      String(s.fips_code || ""),
+      String(s.type || ""),
+      s.latitude ? Number(s.latitude) : null,
+      s.longitude ? Number(s.longitude) : null,
+    ];
+  });
 
   const result = await sql`
-    INSERT INTO public.states (id, name, country_id, country_code, fips_code, iso2, type, latitude, longitude, state_code)
+    INSERT INTO public.states (id, name, country_id, country_code, iso2, fips_code, type, latitude, longitude)
     VALUES ${sql(values)}
     ON CONFLICT (id) DO UPDATE SET 
       name = EXCLUDED.name,
       country_id = EXCLUDED.country_id,
       country_code = EXCLUDED.country_code,
-      fips_code = EXCLUDED.fips_code,
       iso2 = EXCLUDED.iso2,
+      fips_code = EXCLUDED.fips_code,
       type = EXCLUDED.type,
       latitude = EXCLUDED.latitude,
       longitude = EXCLUDED.longitude,
-      state_code = EXCLUDED.state_code,
       updated_at = CURRENT_TIMESTAMP
-    RETURNING xmax
+    RETURNING (CASE WHEN xmax = 0 THEN 'new' ELSE 'updated' END) as operation_type
   `;
 
   let newRecords = 0;
   let updatedRecords = 0;
 
   for (const row of result) {
-    if (row.xmax === 0) {
+    if (row.operation_type === "new") {
       newRecords++;
     } else {
       updatedRecords++;
@@ -792,37 +852,34 @@ async function importCitiesChunk(sql: any, cities: any[]) {
   if (!cities.length) return { imported: 0, new: 0, updated: 0 };
 
   const values = cities.map((c: any) => {
-    const wiki = c.wikiDataId ?? c.wikidataid ?? c.wiki_data_id ?? "";
-    return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${Number(
-      c.state_id || 0
-    )}, ${String(c.state_code || "")}, ${Number(c.country_id || 0)}, ${String(
-      c.country_code || ""
-    )}, ${c.latitude ? Number(c.latitude) : null}, ${
-      c.longitude ? Number(c.longitude) : null
-    }, ${String(wiki || "")})`;
+    return [
+      Number(c.id || 0),
+      String(c.name || ""),
+      Number(c.state_id || 0),
+      Number(c.country_id || 0),
+      c.latitude ? Number(c.latitude) : null,
+      c.longitude ? Number(c.longitude) : null,
+    ];
   });
 
   const result = await sql`
-    INSERT INTO public.cities (id, name, state_id, state_code, country_id, country_code, latitude, longitude, wikidataid)
+    INSERT INTO public.cities (id, name, state_id, country_id, latitude, longitude)
     VALUES ${sql(values)}
     ON CONFLICT (id) DO UPDATE SET 
       name = EXCLUDED.name,
       state_id = EXCLUDED.state_id,
-      state_code = EXCLUDED.state_code,
       country_id = EXCLUDED.country_id,
-      country_code = EXCLUDED.country_code,
       latitude = EXCLUDED.latitude,
       longitude = EXCLUDED.longitude,
-      wikidataid = EXCLUDED.wikidataid,
       updated_at = CURRENT_TIMESTAMP
-    RETURNING xmax
+    RETURNING (CASE WHEN xmax = 0 THEN 'new' ELSE 'updated' END) as operation_type
   `;
 
   let newRecords = 0;
   let updatedRecords = 0;
 
   for (const row of result) {
-    if (row.xmax === 0) {
+    if (row.operation_type === "new") {
       newRecords++;
     } else {
       updatedRecords++;
