@@ -152,9 +152,7 @@ export default function EmailDashboardPage() {
           </Card>
 
           {/* Recent Activity */}
-          <Suspense fallback={<RecentEmailsLoading />}>
-            <RecentEmails />
-          </Suspense>
+          <RecentEmails />
         </div>
 
         {/* Email Templates Preview */}
@@ -171,13 +169,7 @@ export default function EmailDashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Suspense
-              fallback={
-                <div className="animate-pulse h-32 bg-gray-100 rounded"></div>
-              }
-            >
-              <EmailTemplatesPreview />
-            </Suspense>
+            <EmailTemplatesPreview />
           </CardContent>
         </Card>
       </div>
@@ -186,20 +178,48 @@ export default function EmailDashboardPage() {
 }
 
 // Email Statistics Component
-async function EmailStats() {
-  // In real app, fetch from API
-  const mockStats = {
-    totalSent: 1247,
-    delivered: 1198,
-    opened: 856,
-    clicked: 134,
-  };
+function EmailStats() {
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const deliveryRate = Math.round(
-    (mockStats.delivered / mockStats.totalSent) * 100
-  );
-  const openRate = Math.round((mockStats.opened / mockStats.delivered) * 100);
-  const clickRate = Math.round((mockStats.clicked / mockStats.opened) * 100);
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error("EmailStats API Error:", error);
+    },
+  });
+
+  useEffect(() => {
+    const loadAnalytics = async () => {
+      try {
+        const data = await apiCallJson("/api/admin/emails/analytics?days=30");
+        setAnalytics(data);
+      } catch (error) {
+        console.error("Failed to fetch email analytics:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAnalytics();
+  }, [apiCallJson]);
+
+  if (loading) {
+    return <EmailStatsLoading />;
+  }
+
+  if (!analytics?.overview) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-sm text-gray-500">No email data available</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const { overview } = analytics;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -211,11 +231,11 @@ async function EmailStats() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
-            {mockStats.totalSent.toLocaleString()}
+            {(overview.totalSent || 0).toLocaleString()}
           </div>
           <p className="text-xs text-green-600 flex items-center mt-1">
             <TrendingUp className="h-3 w-3 mr-1" />
-            +12% from last month
+            Real-time data
           </p>
         </CardContent>
       </Card>
@@ -227,9 +247,11 @@ async function EmailStats() {
           <CheckCircle className="h-4 w-4 text-green-500" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{deliveryRate}%</div>
+          <div className="text-2xl font-bold">
+            {overview.deliveryRate || 0}%
+          </div>
           <p className="text-xs text-gray-600 mt-1">
-            {mockStats.delivered.toLocaleString()} delivered
+            {(overview.delivered || 0).toLocaleString()} delivered
           </p>
         </CardContent>
       </Card>
@@ -241,9 +263,9 @@ async function EmailStats() {
           <Mail className="h-4 w-4 text-yellow-500" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{openRate}%</div>
+          <div className="text-2xl font-bold">{overview.openRate || 0}%</div>
           <p className="text-xs text-gray-600 mt-1">
-            {mockStats.opened.toLocaleString()} opened
+            {(overview.opened || 0).toLocaleString()} opened
           </p>
         </CardContent>
       </Card>
@@ -255,9 +277,9 @@ async function EmailStats() {
           <Users className="h-4 w-4 text-purple-500" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{clickRate}%</div>
+          <div className="text-2xl font-bold">{overview.clickRate || 0}%</div>
           <p className="text-xs text-gray-600 mt-1">
-            {mockStats.clicked.toLocaleString()} clicks
+            {(overview.clicked || 0).toLocaleString()} clicks
           </p>
         </CardContent>
       </Card>
@@ -266,38 +288,36 @@ async function EmailStats() {
 }
 
 // Recent Emails Component
-async function RecentEmails() {
-  // Mock data - in real app, fetch from API
-  const recentEmails = [
-    {
-      id: 1,
-      subject: "Welcome to PlazaCMS!",
-      recipient: "john@example.com",
-      status: "sent",
-      sentAt: "2024-01-15 10:30",
+function RecentEmails() {
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error("RecentEmails API Error:", error);
     },
-    {
-      id: 2,
-      subject: "Order Confirmation #12345",
-      recipient: "jane@example.com",
-      status: "delivered",
-      sentAt: "2024-01-15 09:15",
-    },
-    {
-      id: 3,
-      subject: "Review Request",
-      recipient: "mike@example.com",
-      status: "opened",
-      sentAt: "2024-01-15 08:45",
-    },
-    {
-      id: 4,
-      subject: "Password Reset",
-      recipient: "sara@example.com",
-      status: "failed",
-      sentAt: "2024-01-15 08:00",
-    },
-  ];
+  });
+
+  useEffect(() => {
+    const loadNotifications = async () => {
+      try {
+        const data = await apiCallJson(
+          "/api/admin/emails/notifications?limit=5"
+        );
+        setNotifications(data.notifications || []);
+      } catch (error) {
+        console.error("Failed to fetch email notifications:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadNotifications();
+  }, [apiCallJson]);
+
+  if (loading) {
+    return <RecentEmailsLoading />;
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -339,20 +359,31 @@ async function RecentEmails() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {recentEmails.map((email) => (
-          <div
-            key={email.id}
-            className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
-          >
-            <div className="space-y-1">
-              <p className="font-medium text-sm">{email.subject}</p>
-              <p className="text-xs text-gray-500">
-                To: {email.recipient} • {email.sentAt}
-              </p>
-            </div>
-            {getStatusBadge(email.status)}
+        {notifications.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No recent email activity</p>
           </div>
-        ))}
+        ) : (
+          notifications.map((notification) => (
+            <div
+              key={notification.id}
+              className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+            >
+              <div className="space-y-1">
+                <p className="font-medium text-sm">{notification.subject}</p>
+                <p className="text-xs text-gray-500">
+                  To: {notification.recipient_email} •{" "}
+                  {new Date(notification.created_at).toLocaleDateString()}{" "}
+                  {new Date(notification.created_at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+              {getStatusBadge(notification.status)}
+            </div>
+          ))
+        )}
 
         <Button variant="ghost" className="w-full" asChild>
           <Link href="/admin/emails/history">View All Activity</Link>
@@ -363,38 +394,46 @@ async function RecentEmails() {
 }
 
 // Email Templates Preview
-async function EmailTemplatesPreview() {
-  // Mock data - in real app, fetch from API
-  const templates = [
-    {
-      id: 1,
-      name: "Welcome Email",
-      type: "welcome",
-      category: "transactional",
-      isActive: true,
+function EmailTemplatesPreview() {
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const { apiCallJson } = useAuthenticatedFetch({
+    onError: (url, error) => {
+      console.error("EmailTemplatesPreview API Error:", error);
     },
-    {
-      id: 2,
-      name: "Order Confirmation",
-      type: "order_confirmation",
-      category: "transactional",
-      isActive: true,
-    },
-    {
-      id: 3,
-      name: "Review Request",
-      type: "review_request",
-      category: "transactional",
-      isActive: true,
-    },
-    {
-      id: 4,
-      name: "Newsletter Template",
-      type: "newsletter",
-      category: "marketing",
-      isActive: false,
-    },
-  ];
+  });
+
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        const data = await apiCallJson("/api/admin/emails/templates");
+        setTemplates((data.templates || []).slice(0, 4)); // Show only 4 for preview
+      } catch (error) {
+        console.error("Failed to fetch email templates:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTemplates();
+  }, [apiCallJson]);
+
+  if (loading) {
+    return (
+      <div className="animate-pulse space-y-3">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div>
+              <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
+              <div className="h-3 bg-gray-200 rounded w-24"></div>
+            </div>
+            <div className="h-6 bg-gray-200 rounded w-20"></div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   const getCategoryColor = (category: string) => {
     switch (category) {
@@ -409,6 +448,14 @@ async function EmailTemplatesPreview() {
     }
   };
 
+  if (templates.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-500">
+        <p>No email templates found</p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {templates.map((template) => (
@@ -422,7 +469,7 @@ async function EmailTemplatesPreview() {
               <Badge className={getCategoryColor(template.category)}>
                 {template.category}
               </Badge>
-              {template.isActive ? (
+              {template.is_active ? (
                 <CheckCircle className="h-4 w-4 text-green-500" />
               ) : (
                 <AlertTriangle className="h-4 w-4 text-yellow-500" />
