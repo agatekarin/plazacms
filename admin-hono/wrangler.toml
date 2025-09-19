@@ -22,10 +22,22 @@ R2_PUBLIC_URL = "https://img.plazaku.my.id"
 # Optional: enable Cloudinary fetch optimization on backend responses
 CLOUDINARY_CLOUD_NAME = "dg4otwgak" # e.g. "your-cloud-name"
 
-# Email System Configuration
+# ====================================================================
+# EMAIL SYSTEM CONFIGURATION
+# ====================================================================
+
+# Store branding
 STORE_NAME = "PlazaCMS Demo"
-FROM_EMAIL = "noreply@plazacms.com"
-# nextjs frontend is 3001
+
+# FROM_EMAIL Configuration:
+# 🔥 DEVELOPMENT: Use Resend sandbox emails (no domain verification needed)
+FROM_EMAIL = "onboarding@resend.dev"
+# Alternative sandbox emails: delivered@resend.dev, notifications@resend.dev
+
+# 🚀 PRODUCTION: Use your verified domain (requires DNS setup at https://resend.com/domains)
+# FROM_EMAIL = "noreply@yourdomain.com"  # Uncomment & replace when domain is verified
+
+# Frontend URL (NextJS Admin runs on port 3001)
 FRONTEND_URL = "http://localhost:3001"
 
 # Secrets (set via wrangler secret put)
