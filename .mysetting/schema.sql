@@ -94,6 +94,43 @@ update
     public.countries for each row execute function set_updated_at();
 
 
+-- public.email_templates definition
+
+-- Drop table
+
+-- DROP TABLE public.email_templates;
+
+CREATE TABLE public.email_templates (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	"name" varchar(255) NOT NULL,
+	subject varchar(500) NOT NULL,
+	"content" text NOT NULL,
+	"type" varchar(50) NOT NULL,
+	is_active bool DEFAULT true NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	category text DEFAULT 'transactional'::text NULL,
+	html_content text NULL,
+	text_content text NULL,
+	preview_text text NULL,
+	from_name text DEFAULT 'PlazaCMS'::text NULL,
+	from_email text DEFAULT 'noreply@plazacms.com'::text NULL,
+	reply_to text NULL,
+	tags jsonb DEFAULT '[]'::jsonb NULL,
+	"version" int4 DEFAULT 1 NULL,
+	is_default bool DEFAULT false NULL,
+	template_data jsonb DEFAULT '{}'::jsonb NULL,
+	CONSTRAINT email_templates_category_check CHECK ((category = ANY (ARRAY['transactional'::text, 'marketing'::text, 'system'::text, 'custom'::text]))),
+	CONSTRAINT email_templates_pkey PRIMARY KEY (id),
+	CONSTRAINT email_templates_type_check CHECK (((type)::text = ANY ((ARRAY['review_request'::character varying, 'review_reminder'::character varying, 'review_approved'::character varying, 'review_rejected'::character varying, 'order_confirmation'::character varying, 'order_shipped'::character varying, 'order_delivered'::character varying, 'order_refund'::character varying, 'welcome'::character varying, 'password_reset'::character varying, 'email_verification'::character varying, 'newsletter'::character varying, 'promotional'::character varying, 'abandoned_cart'::character varying, 'low_stock_alert'::character varying, 'payment_failed'::character varying, 'system_notification'::character varying, 'custom'::character varying])::text[])))
+);
+CREATE INDEX idx_email_templates_active ON public.email_templates USING btree (is_active);
+CREATE INDEX idx_email_templates_category ON public.email_templates USING btree (category);
+CREATE INDEX idx_email_templates_default ON public.email_templates USING btree (is_default) WHERE (is_default = true);
+CREATE INDEX idx_email_templates_tags ON public.email_templates USING gin (tags);
+CREATE INDEX idx_email_templates_type ON public.email_templates USING btree (type);
+
+
 -- public.location_data_sync definition
 
 -- Drop table
@@ -367,6 +404,97 @@ create trigger trg_set_updated_at_carts before
 update
     on
     public.carts for each row execute function set_updated_at();
+
+
+-- public.email_campaigns definition
+
+-- Drop table
+
+-- DROP TABLE public.email_campaigns;
+
+CREATE TABLE public.email_campaigns (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	"name" text NOT NULL,
+	subject text NOT NULL,
+	template_id uuid NULL,
+	audience_segment jsonb DEFAULT '{}'::jsonb NULL,
+	status text DEFAULT 'draft'::text NULL,
+	campaign_type text DEFAULT 'newsletter'::text NULL,
+	send_at timestamptz NULL,
+	started_at timestamptz NULL,
+	completed_at timestamptz NULL,
+	recipient_count int4 DEFAULT 0 NULL,
+	sent_count int4 DEFAULT 0 NULL,
+	delivered_count int4 DEFAULT 0 NULL,
+	opened_count int4 DEFAULT 0 NULL,
+	clicked_count int4 DEFAULT 0 NULL,
+	unsubscribed_count int4 DEFAULT 0 NULL,
+	bounced_count int4 DEFAULT 0 NULL,
+	complained_count int4 DEFAULT 0 NULL,
+	from_name text DEFAULT 'PlazaCMS'::text NULL,
+	from_email text DEFAULT 'noreply@plazacms.com'::text NULL,
+	reply_to text NULL,
+	tracking_enabled bool DEFAULT true NULL,
+	created_by uuid NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT email_campaigns_pkey PRIMARY KEY (id),
+	CONSTRAINT email_campaigns_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'scheduled'::text, 'sending'::text, 'sent'::text, 'paused'::text, 'cancelled'::text]))),
+	CONSTRAINT email_campaigns_type_check CHECK ((campaign_type = ANY (ARRAY['newsletter'::text, 'promotional'::text, 'automation'::text, 'transactional'::text, 'custom'::text]))),
+	CONSTRAINT email_campaigns_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id),
+	CONSTRAINT email_campaigns_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.email_templates(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_email_campaigns_created_by ON public.email_campaigns USING btree (created_by);
+CREATE INDEX idx_email_campaigns_send_at ON public.email_campaigns USING btree (send_at);
+CREATE INDEX idx_email_campaigns_status ON public.email_campaigns USING btree (status);
+CREATE INDEX idx_email_campaigns_template_id ON public.email_campaigns USING btree (template_id);
+CREATE INDEX idx_email_campaigns_type ON public.email_campaigns USING btree (campaign_type);
+
+-- Table Triggers
+
+create trigger update_email_campaigns_updated_at before
+update
+    on
+    public.email_campaigns for each row execute function update_updated_at_column();
+
+
+-- public.email_subscribers definition
+
+-- Drop table
+
+-- DROP TABLE public.email_subscribers;
+
+CREATE TABLE public.email_subscribers (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	email text NOT NULL,
+	status text DEFAULT 'active'::text NULL,
+	"source" text DEFAULT 'website'::text NULL,
+	tags jsonb DEFAULT '[]'::jsonb NULL,
+	custom_fields jsonb DEFAULT '{}'::jsonb NULL,
+	user_id uuid NULL,
+	subscribed_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	unsubscribed_at timestamptz NULL,
+	last_activity timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT email_subscribers_email_key UNIQUE (email),
+	CONSTRAINT email_subscribers_pkey PRIMARY KEY (id),
+	CONSTRAINT email_subscribers_source_check CHECK ((source = ANY (ARRAY['website'::text, 'import'::text, 'api'::text, 'store_signup'::text, 'admin'::text]))),
+	CONSTRAINT email_subscribers_status_check CHECK ((status = ANY (ARRAY['active'::text, 'unsubscribed'::text, 'bounced'::text, 'pending'::text]))),
+	CONSTRAINT email_subscribers_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_email_subscribers_email ON public.email_subscribers USING btree (email);
+CREATE INDEX idx_email_subscribers_last_activity ON public.email_subscribers USING btree (last_activity);
+CREATE INDEX idx_email_subscribers_status ON public.email_subscribers USING btree (status);
+CREATE INDEX idx_email_subscribers_tags ON public.email_subscribers USING gin (tags);
+CREATE INDEX idx_email_subscribers_user_id ON public.email_subscribers USING btree (user_id);
+
+-- Table Triggers
+
+create trigger update_email_subscribers_updated_at before
+update
+    on
+    public.email_subscribers for each row execute function update_updated_at_column();
 
 
 -- public.media_folders definition
@@ -1228,6 +1356,52 @@ update
     public.reviews for each row execute function set_updated_at();
 
 
+-- public.email_notifications definition
+
+-- Drop table
+
+-- DROP TABLE public.email_notifications;
+
+CREATE TABLE public.email_notifications (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	"type" varchar(50) NOT NULL,
+	recipient_email varchar(255) NOT NULL,
+	subject varchar(500) NOT NULL,
+	"content" text NOT NULL,
+	order_id uuid NULL,
+	order_item_id uuid NULL,
+	status varchar(20) DEFAULT 'sent'::character varying NULL,
+	sent_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	error_message text NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	campaign_id uuid NULL,
+	template_id uuid NULL,
+	resend_message_id text NULL,
+	resend_event_id text NULL,
+	tracking_data jsonb DEFAULT '{}'::jsonb NULL,
+	retry_count int4 DEFAULT 0 NULL,
+	last_retry_at timestamptz NULL,
+	priority text DEFAULT 'normal'::text NULL,
+	CONSTRAINT email_notifications_pkey PRIMARY KEY (id),
+	CONSTRAINT email_notifications_priority_check CHECK ((priority = ANY (ARRAY['high'::text, 'normal'::text, 'low'::text]))),
+	CONSTRAINT email_notifications_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'bounced'::character varying])::text[]))),
+	CONSTRAINT email_notifications_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.email_campaigns(id) ON DELETE SET NULL,
+	CONSTRAINT email_notifications_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE SET NULL,
+	CONSTRAINT email_notifications_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES public.order_items(id) ON DELETE SET NULL,
+	CONSTRAINT email_notifications_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.email_templates(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_email_notifications_campaign_id ON public.email_notifications USING btree (campaign_id);
+CREATE INDEX idx_email_notifications_order_id ON public.email_notifications USING btree (order_id);
+CREATE INDEX idx_email_notifications_order_item_id ON public.email_notifications USING btree (order_item_id);
+CREATE INDEX idx_email_notifications_priority ON public.email_notifications USING btree (priority);
+CREATE INDEX idx_email_notifications_recipient ON public.email_notifications USING btree (recipient_email);
+CREATE INDEX idx_email_notifications_resend_id ON public.email_notifications USING btree (resend_message_id);
+CREATE INDEX idx_email_notifications_retry ON public.email_notifications USING btree (retry_count, status) WHERE ((status)::text = 'failed'::text);
+CREATE INDEX idx_email_notifications_sent_at ON public.email_notifications USING btree (sent_at);
+CREATE INDEX idx_email_notifications_template_id ON public.email_notifications USING btree (template_id);
+CREATE INDEX idx_email_notifications_type ON public.email_notifications USING btree (type);
+
+
 -- public.review_helpful_votes definition
 
 -- Drop table
@@ -1279,6 +1453,40 @@ CREATE TABLE public.review_images (
 CREATE INDEX idx_review_images_display_order ON public.review_images USING btree (review_id, display_order);
 CREATE INDEX idx_review_images_media_id ON public.review_images USING btree (media_id);
 CREATE INDEX idx_review_images_review_id ON public.review_images USING btree (review_id);
+
+
+-- public.email_events definition
+
+-- Drop table
+
+-- DROP TABLE public.email_events;
+
+CREATE TABLE public.email_events (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	notification_id uuid NULL,
+	campaign_id uuid NULL,
+	event_type text NOT NULL,
+	recipient_email text NOT NULL,
+	user_agent text NULL,
+	ip_address text NULL,
+	link_url text NULL,
+	bounce_reason text NULL,
+	complaint_feedback text NULL,
+	resend_event_id text NULL,
+	resend_message_id text NULL,
+	metadata jsonb DEFAULT '{}'::jsonb NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT email_events_pkey PRIMARY KEY (id),
+	CONSTRAINT email_events_type_check CHECK ((event_type = ANY (ARRAY['sent'::text, 'delivered'::text, 'opened'::text, 'clicked'::text, 'bounced'::text, 'complained'::text, 'unsubscribed'::text, 'failed'::text]))),
+	CONSTRAINT email_events_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.email_campaigns(id) ON DELETE CASCADE,
+	CONSTRAINT email_events_notification_id_fkey FOREIGN KEY (notification_id) REFERENCES public.email_notifications(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_email_events_campaign ON public.email_events USING btree (campaign_id);
+CREATE INDEX idx_email_events_created_at ON public.email_events USING btree (created_at);
+CREATE INDEX idx_email_events_notification ON public.email_events USING btree (notification_id);
+CREATE INDEX idx_email_events_recipient ON public.email_events USING btree (recipient_email);
+CREATE INDEX idx_email_events_resend_id ON public.email_events USING btree (resend_message_id);
+CREATE INDEX idx_email_events_type ON public.email_events USING btree (event_type);
 
 
 -- public.review_details source
@@ -1610,18 +1818,18 @@ CREATE OR REPLACE FUNCTION public.pgp_key_id(bytea)
 AS '$libdir/pgcrypto', $function$pgp_key_id_w$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -1646,15 +1854,6 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
-;
-
 -- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text)
@@ -1664,13 +1863,13 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text
 AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
  RETURNS bytea
  LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
 ;
 
 -- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
@@ -1682,13 +1881,13 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
 ;
 
 -- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
@@ -1700,18 +1899,27 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -1736,18 +1944,18 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt(text, text);
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
@@ -1831,6 +2039,19 @@ BEGIN
   WHERE id = COALESCE(NEW.review_id, OLD.review_id);
   
   RETURN COALESCE(NEW, OLD);
+END;
+$function$
+;
+
+-- DROP FUNCTION public.update_updated_at_column();
+
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
 END;
 $function$
 ;

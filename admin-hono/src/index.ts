@@ -47,6 +47,7 @@ import reviewImagesRoutes from "./routes/review-images";
 import reviewImportExportRoutes from "./routes/review-import-export";
 import customerReviewsRoutes from "./routes/customer-reviews";
 import reviewEmailNotificationsRoutes from "./routes/review-email-notifications";
+import { emails as emailsRoutes } from "./routes/emails";
 
 // Create main app
 const app = new Hono<{
@@ -359,6 +360,9 @@ app.route("/api/admin/reviews", reviewImagesRoutes);
 app.route("/api/admin/reviews", reviewImportExportRoutes);
 app.route("/api/admin/reviews", reviewEmailNotificationsRoutes);
 app.route("/api/customer/reviews", customerReviewsRoutes);
+// Email management routes
+app.route("/api/admin/emails", emailsRoutes);
+app.route("/api/emails", emailsRoutes); // For webhooks (no auth required)
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler

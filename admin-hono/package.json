@@ -18,6 +18,7 @@
     "hono": "^4.9.7",
     "hono-rate-limiter": "^0.4.2",
     "postgres": "^3.4.7",
+    "resend": "^6.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

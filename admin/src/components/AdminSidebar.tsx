@@ -25,6 +25,10 @@ import {
   UserIcon,
   GlobeAltIcon,
   MapIcon,
+  EnvelopeIcon,
+  PaperAirplaneIcon,
+  ChartPieIcon,
+  ClockIcon,
 } from "@heroicons/react/24/outline";
 
 import {
@@ -36,6 +40,10 @@ import {
   UsersIcon as UsersIconSolid,
   ChartBarIcon as ChartBarIconSolid,
   CogIcon as CogIconSolid,
+  EnvelopeIcon as EnvelopeIconSolid,
+  PaperAirplaneIcon as PaperAirplaneIconSolid,
+  ChartPieIcon as ChartPieIconSolid,
+  ClockIcon as ClockIconSolid,
 } from "@heroicons/react/24/solid";
 
 interface MenuItem {
@@ -170,6 +178,49 @@ const menuItems: MenuItem[] = [
         href: "/admin/marketing/coupons",
         icon: TagIcon,
         iconSolid: TagIconSolid,
+      },
+    ],
+  },
+  {
+    id: "emails",
+    label: "Email Management",
+    icon: EnvelopeIcon,
+    iconSolid: EnvelopeIconSolid,
+    children: [
+      {
+        id: "email-dashboard",
+        label: "Dashboard",
+        href: "/admin/emails",
+        icon: ChartPieIcon,
+        iconSolid: ChartPieIconSolid,
+      },
+      {
+        id: "email-templates",
+        label: "Templates",
+        href: "/admin/emails/templates",
+        icon: DocumentTextIcon,
+        iconSolid: DocumentTextIcon,
+      },
+      {
+        id: "send-email",
+        label: "Send Email",
+        href: "/admin/emails/send",
+        icon: PaperAirplaneIcon,
+        iconSolid: PaperAirplaneIconSolid,
+      },
+      {
+        id: "email-analytics",
+        label: "Analytics",
+        href: "/admin/emails/analytics",
+        icon: ChartBarIcon,
+        iconSolid: ChartBarIconSolid,
+      },
+      {
+        id: "email-history",
+        label: "Email History",
+        href: "/admin/emails/history",
+        icon: ClockIcon,
+        iconSolid: ClockIconSolid,
       },
     ],
   },

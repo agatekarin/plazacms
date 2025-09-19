@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getDb } from "../lib/db";
 import { adminMiddleware } from "../lib/auth";
+import { createEmailService } from "../lib/email-service";
 
 const reviewEmailNotifications = new Hono<{
   Bindings: Env;
@@ -235,38 +236,41 @@ reviewEmailNotifications.post(
         );
       });
 
-      // TODO: Integrate with your email service (SendGrid, AWS SES, etc.)
-      // For now, we'll just log the email and return success
-      console.log("Email to send:", {
-        to: customer_email,
-        subject: processedSubject,
-        content: processedContent,
-        order_id,
-        order_item_id,
-      });
+      // Send email using EmailService with Resend
+      const emailService = createEmailService(c);
+      
+      const emailResult = await emailService.sendWithTemplate(
+        template_id || 'review_request', 
+        customer_email,
+        {
+          customer_name: customerName,
+          product_name: product_name || "Product",
+          order_number: orderNumber,
+          review_link: reviewLink,
+          store_name: c.env?.STORE_NAME || "Your Store",
+        },
+        {
+          isType: !template_id, // Use type-based lookup if no specific template_id
+          customSubject: !template_id ? processedSubject : undefined,
+          customContent: !template_id ? processedContent : undefined,
+          orderId: order_id,
+          orderItemId: order_item_id
+        }
+      );
 
-      // Log email notification
-      await sql`
-      INSERT INTO public.email_notifications (
-        type,
-        recipient_email,
-        subject,
-        content,
-        order_id,
-        order_item_id,
-        status,
-        sent_at
-      ) VALUES (
-        'review_request',
-        ${customer_email},
-        ${processedSubject},
-        ${processedContent},
-        ${order_id || null},
-        ${order_item_id || null},
-        'sent',
-        CURRENT_TIMESTAMP
-      )
-    `;
+      if (!emailResult.success) {
+        console.error("[review-email:send]", emailResult.error);
+        return c.json({ 
+          error: "Failed to send email notification", 
+          details: emailResult.error 
+        }, 500);
+      }
+
+      console.log("Email sent successfully:", {
+        to: customer_email,
+        messageId: emailResult.messageId,
+        subject: processedSubject,
+      });
 
       return c.json({
         success: true,
