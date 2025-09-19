@@ -112,6 +112,9 @@ CREATE TABLE public.email_settings (
 	webhook_url varchar(500) NULL,
 	webhook_secret varchar(255) NULL,
 	webhook_events _text NULL,
+	multi_smtp_enabled bool DEFAULT false NULL,
+	multi_smtp_fallback_enabled bool DEFAULT true NULL,
+	last_multi_smtp_sync_at timestamptz NULL,
 	CONSTRAINT email_settings_pkey PRIMARY KEY (id)
 );
 
@@ -316,6 +319,74 @@ create trigger set_timestamp_shipping_zones before
 update
     on
     public.shipping_zones for each row execute function trigger_set_timestamp();
+
+
+-- public.smtp_accounts definition
+
+-- Drop table
+
+-- DROP TABLE public.smtp_accounts;
+
+CREATE TABLE public.smtp_accounts (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	"name" varchar(255) NOT NULL,
+	description text NULL,
+	host varchar(255) NOT NULL,
+	port int4 DEFAULT 587 NOT NULL,
+	username varchar(255) NOT NULL,
+	password_encrypted text NOT NULL, -- AES encrypted password, decrypted by EmailService
+	encryption varchar(10) DEFAULT 'tls'::character varying NULL,
+	weight int4 DEFAULT 1 NULL, -- Weight for weighted load balancing (higher = more emails)
+	priority int4 DEFAULT 100 NULL, -- Priority level (1=highest, 1000=lowest)
+	daily_limit int4 DEFAULT 1000 NULL,
+	hourly_limit int4 DEFAULT 100 NULL,
+	is_active bool DEFAULT true NULL,
+	is_healthy bool DEFAULT true NULL,
+	last_used_at timestamptz NULL,
+	last_health_check_at timestamptz DEFAULT now() NULL,
+	consecutive_failures int4 DEFAULT 0 NULL, -- Count of consecutive failures for health monitoring
+	total_success_count int4 DEFAULT 0 NULL,
+	total_failure_count int4 DEFAULT 0 NULL,
+	cooldown_until timestamptz NULL,
+	today_sent_count int4 DEFAULT 0 NULL,
+	current_hour_sent int4 DEFAULT 0 NULL,
+	daily_reset_at date DEFAULT CURRENT_DATE NULL,
+	hourly_reset_at timestamptz DEFAULT date_trunc('hour'::text, now()) NULL,
+	avg_response_time_ms int4 DEFAULT 0 NULL,
+	last_error_message text NULL,
+	last_error_at timestamptz NULL,
+	tags jsonb DEFAULT '[]'::jsonb NULL,
+	metadata jsonb DEFAULT '{}'::jsonb NULL,
+	created_at timestamptz DEFAULT now() NULL,
+	updated_at timestamptz DEFAULT now() NULL,
+	CONSTRAINT smtp_accounts_daily_limit_check CHECK ((daily_limit > 0)),
+	CONSTRAINT smtp_accounts_encryption_check CHECK (((encryption)::text = ANY ((ARRAY['tls'::character varying, 'ssl'::character varying, 'none'::character varying])::text[]))),
+	CONSTRAINT smtp_accounts_hourly_limit_check CHECK ((hourly_limit > 0)),
+	CONSTRAINT smtp_accounts_name_key UNIQUE (name),
+	CONSTRAINT smtp_accounts_pkey PRIMARY KEY (id),
+	CONSTRAINT smtp_accounts_weight_check CHECK ((weight > 0))
+);
+CREATE INDEX idx_smtp_accounts_active_healthy ON public.smtp_accounts USING btree (is_active, is_healthy);
+CREATE INDEX idx_smtp_accounts_daily_usage ON public.smtp_accounts USING btree (daily_reset_at, today_sent_count);
+CREATE INDEX idx_smtp_accounts_last_used ON public.smtp_accounts USING btree (last_used_at);
+CREATE INDEX idx_smtp_accounts_priority ON public.smtp_accounts USING btree (priority) WHERE (is_active = true);
+CREATE INDEX idx_smtp_accounts_tags ON public.smtp_accounts USING gin (tags);
+CREATE INDEX idx_smtp_accounts_weight ON public.smtp_accounts USING btree (weight) WHERE ((is_active = true) AND (is_healthy = true));
+COMMENT ON TABLE public.smtp_accounts IS 'Multiple SMTP accounts for load balancing email sending';
+
+-- Column comments
+
+COMMENT ON COLUMN public.smtp_accounts.password_encrypted IS 'AES encrypted password, decrypted by EmailService';
+COMMENT ON COLUMN public.smtp_accounts.weight IS 'Weight for weighted load balancing (higher = more emails)';
+COMMENT ON COLUMN public.smtp_accounts.priority IS 'Priority level (1=highest, 1000=lowest)';
+COMMENT ON COLUMN public.smtp_accounts.consecutive_failures IS 'Count of consecutive failures for health monitoring';
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_smtp_accounts before
+update
+    on
+    public.smtp_accounts for each row execute function set_updated_at();
 
 
 -- public.tax_classes definition
@@ -691,6 +762,115 @@ CREATE TABLE public.shipping_zone_countries (
 	CONSTRAINT shipping_zone_countries_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.shipping_zones(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_zone_countries_country ON public.shipping_zone_countries USING btree (country_code);
+
+
+-- public.smtp_account_health_checks definition
+
+-- Drop table
+
+-- DROP TABLE public.smtp_account_health_checks;
+
+CREATE TABLE public.smtp_account_health_checks (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	smtp_account_id uuid NOT NULL,
+	status varchar(20) NOT NULL,
+	response_time_ms int4 DEFAULT 0 NULL,
+	error_message text NULL,
+	error_code varchar(50) NULL,
+	test_email_sent bool DEFAULT false NULL,
+	test_recipient varchar(255) NULL,
+	checked_at timestamptz DEFAULT now() NULL,
+	CONSTRAINT smtp_account_health_checks_pkey PRIMARY KEY (id),
+	CONSTRAINT smtp_account_health_checks_status_check CHECK (((status)::text = ANY ((ARRAY['healthy'::character varying, 'unhealthy'::character varying, 'timeout'::character varying, 'connection_error'::character varying])::text[]))),
+	CONSTRAINT smtp_account_health_checks_smtp_account_id_fkey FOREIGN KEY (smtp_account_id) REFERENCES public.smtp_accounts(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_smtp_health_checks_account_status ON public.smtp_account_health_checks USING btree (smtp_account_id, status);
+CREATE INDEX idx_smtp_health_checks_checked_at ON public.smtp_account_health_checks USING btree (checked_at);
+COMMENT ON TABLE public.smtp_account_health_checks IS 'Health monitoring results for SMTP accounts';
+
+
+-- public.smtp_rotation_config definition
+
+-- Drop table
+
+-- DROP TABLE public.smtp_rotation_config;
+
+CREATE TABLE public.smtp_rotation_config (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	enabled bool DEFAULT false NULL,
+	fallback_to_single bool DEFAULT true NULL,
+	strategy varchar(20) DEFAULT 'round_robin'::character varying NULL, -- Load balancing strategy: round_robin, weighted, priority, health_based, least_used
+	max_retry_attempts int4 DEFAULT 3 NULL,
+	retry_delay_seconds int4 DEFAULT 30 NULL,
+	failure_cooldown_minutes int4 DEFAULT 30 NULL,
+	health_check_interval_minutes int4 DEFAULT 5 NULL,
+	failure_threshold int4 DEFAULT 5 NULL,
+	success_threshold int4 DEFAULT 3 NULL,
+	global_daily_limit int4 NULL,
+	global_hourly_limit int4 NULL,
+	prefer_healthy_accounts bool DEFAULT true NULL,
+	balance_by_response_time bool DEFAULT false NULL,
+	avoid_consecutive_same_account bool DEFAULT true NULL,
+	emergency_fallback_enabled bool DEFAULT true NULL,
+	emergency_single_account_id uuid NULL,
+	track_performance_metrics bool DEFAULT true NULL,
+	log_rotation_decisions bool DEFAULT false NULL,
+	settings jsonb DEFAULT '{}'::jsonb NULL,
+	created_at timestamptz DEFAULT now() NULL,
+	updated_at timestamptz DEFAULT now() NULL,
+	CONSTRAINT smtp_rotation_config_max_retry_attempts_check CHECK ((max_retry_attempts > 0)),
+	CONSTRAINT smtp_rotation_config_pkey PRIMARY KEY (id),
+	CONSTRAINT smtp_rotation_config_retry_delay_seconds_check CHECK ((retry_delay_seconds > 0)),
+	CONSTRAINT smtp_rotation_config_strategy_check CHECK (((strategy)::text = ANY ((ARRAY['round_robin'::character varying, 'weighted'::character varying, 'priority'::character varying, 'health_based'::character varying, 'least_used'::character varying])::text[]))),
+	CONSTRAINT fk_emergency_account FOREIGN KEY (emergency_single_account_id) REFERENCES public.smtp_accounts(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX idx_smtp_rotation_config_singleton ON public.smtp_rotation_config USING btree ((1));
+COMMENT ON TABLE public.smtp_rotation_config IS 'Configuration for SMTP load balancing strategies';
+
+-- Column comments
+
+COMMENT ON COLUMN public.smtp_rotation_config.strategy IS 'Load balancing strategy: round_robin, weighted, priority, health_based, least_used';
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_smtp_rotation_config before
+update
+    on
+    public.smtp_rotation_config for each row execute function set_updated_at();
+
+
+-- public.smtp_usage_logs definition
+
+-- Drop table
+
+-- DROP TABLE public.smtp_usage_logs;
+
+CREATE TABLE public.smtp_usage_logs (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	smtp_account_id uuid NOT NULL,
+	email_notification_id uuid NULL,
+	recipient_email varchar(255) NOT NULL,
+	subject text NOT NULL,
+	status varchar(20) NOT NULL,
+	message_id varchar(500) NULL,
+	response_time_ms int4 DEFAULT 0 NULL,
+	error_code varchar(50) NULL,
+	error_message text NULL,
+	rotation_strategy varchar(20) NOT NULL,
+	was_fallback bool DEFAULT false NULL,
+	attempt_number int4 DEFAULT 1 NULL,
+	queue_wait_time_ms int4 DEFAULT 0 NULL,
+	total_processing_time_ms int4 DEFAULT 0 NULL,
+	created_at timestamptz DEFAULT now() NULL,
+	CONSTRAINT smtp_usage_logs_pkey PRIMARY KEY (id),
+	CONSTRAINT smtp_usage_logs_status_check CHECK (((status)::text = ANY ((ARRAY['success'::character varying, 'failed'::character varying, 'timeout'::character varying, 'rate_limited'::character varying])::text[]))),
+	CONSTRAINT smtp_usage_logs_smtp_account_id_fkey FOREIGN KEY (smtp_account_id) REFERENCES public.smtp_accounts(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_smtp_usage_logs_account_status ON public.smtp_usage_logs USING btree (smtp_account_id, status);
+CREATE INDEX idx_smtp_usage_logs_created_at ON public.smtp_usage_logs USING btree (created_at);
+CREATE INDEX idx_smtp_usage_logs_email_notification ON public.smtp_usage_logs USING btree (email_notification_id);
+CREATE INDEX idx_smtp_usage_logs_status_created ON public.smtp_usage_logs USING btree (status, created_at);
+COMMENT ON TABLE public.smtp_usage_logs IS 'Detailed logs of SMTP usage for analytics and debugging';
 
 
 -- public.states definition
@@ -1425,13 +1605,20 @@ CREATE TABLE public.email_notifications (
 	retry_count int4 DEFAULT 0 NULL,
 	last_retry_at timestamptz NULL,
 	priority text DEFAULT 'normal'::text NULL,
+	smtp_account_id uuid NULL,
+	smtp_account_name varchar(255) NULL,
+	rotation_strategy varchar(20) NULL,
+	attempt_count int4 DEFAULT 1 NULL,
+	was_fallback bool DEFAULT false NULL,
+	response_time_ms int4 DEFAULT 0 NULL,
 	CONSTRAINT email_notifications_pkey PRIMARY KEY (id),
 	CONSTRAINT email_notifications_priority_check CHECK ((priority = ANY (ARRAY['high'::text, 'normal'::text, 'low'::text]))),
 	CONSTRAINT email_notifications_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'bounced'::character varying])::text[]))),
 	CONSTRAINT email_notifications_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.email_campaigns(id) ON DELETE SET NULL,
 	CONSTRAINT email_notifications_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE SET NULL,
 	CONSTRAINT email_notifications_order_item_id_fkey FOREIGN KEY (order_item_id) REFERENCES public.order_items(id) ON DELETE SET NULL,
-	CONSTRAINT email_notifications_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.email_templates(id) ON DELETE SET NULL
+	CONSTRAINT email_notifications_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.email_templates(id) ON DELETE SET NULL,
+	CONSTRAINT fk_email_notifications_smtp_account FOREIGN KEY (smtp_account_id) REFERENCES public.smtp_accounts(id) ON DELETE SET NULL
 );
 CREATE INDEX idx_email_notifications_campaign_id ON public.email_notifications USING btree (campaign_id);
 CREATE INDEX idx_email_notifications_order_id ON public.email_notifications USING btree (order_id);
@@ -1440,7 +1627,9 @@ CREATE INDEX idx_email_notifications_priority ON public.email_notifications USIN
 CREATE INDEX idx_email_notifications_recipient ON public.email_notifications USING btree (recipient_email);
 CREATE INDEX idx_email_notifications_resend_id ON public.email_notifications USING btree (resend_message_id);
 CREATE INDEX idx_email_notifications_retry ON public.email_notifications USING btree (retry_count, status) WHERE ((status)::text = 'failed'::text);
+CREATE INDEX idx_email_notifications_rotation ON public.email_notifications USING btree (rotation_strategy, created_at);
 CREATE INDEX idx_email_notifications_sent_at ON public.email_notifications USING btree (sent_at);
+CREATE INDEX idx_email_notifications_smtp_account ON public.email_notifications USING btree (smtp_account_id);
 CREATE INDEX idx_email_notifications_template_id ON public.email_notifications USING btree (template_id);
 CREATE INDEX idx_email_notifications_type ON public.email_notifications USING btree (type);
 
@@ -1700,6 +1889,32 @@ END;
 $function$
 ;
 
+-- DROP FUNCTION public.cleanup_smtp_health_checks();
+
+CREATE OR REPLACE FUNCTION public.cleanup_smtp_health_checks()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    DELETE FROM smtp_account_health_checks 
+    WHERE checked_at < NOW() - INTERVAL '30 days';
+END;
+$function$
+;
+
+-- DROP FUNCTION public.cleanup_smtp_usage_logs();
+
+CREATE OR REPLACE FUNCTION public.cleanup_smtp_usage_logs()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    DELETE FROM smtp_usage_logs 
+    WHERE created_at < NOW() - INTERVAL '90 days';
+END;
+$function$
+;
+
 -- DROP FUNCTION public.crypt(text, text);
 
 CREATE OR REPLACE FUNCTION public.crypt(text, text)
@@ -1790,15 +2005,6 @@ CREATE OR REPLACE FUNCTION public.gen_random_uuid()
 AS '$libdir/pgcrypto', $function$pg_random_uuid$function$
 ;
 
--- DROP FUNCTION public.gen_salt(text);
-
-CREATE OR REPLACE FUNCTION public.gen_salt(text)
- RETURNS text
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pg_gen_salt$function$
-;
-
 -- DROP FUNCTION public.gen_salt(text, int4);
 
 CREATE OR REPLACE FUNCTION public.gen_salt(text, integer)
@@ -1806,6 +2012,15 @@ CREATE OR REPLACE FUNCTION public.gen_salt(text, integer)
  LANGUAGE c
  PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pg_gen_salt_rounds$function$
+;
+
+-- DROP FUNCTION public.gen_salt(text);
+
+CREATE OR REPLACE FUNCTION public.gen_salt(text)
+ RETURNS text
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pg_gen_salt$function$
 ;
 
 -- DROP FUNCTION public.generate_order_number_seq();
@@ -1861,15 +2076,6 @@ CREATE OR REPLACE FUNCTION public.pgp_key_id(bytea)
 AS '$libdir/pgcrypto', $function$pgp_key_id_w$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
-;
-
 -- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
@@ -1882,6 +2088,15 @@ AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
 -- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -1933,15 +2148,6 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
-;
-
 -- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
@@ -1951,13 +2157,13 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
- RETURNS text
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
+ RETURNS bytea
  LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
 ;
 
 -- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
@@ -1969,13 +2175,13 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
- RETURNS bytea
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
+ RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
 ;
 
 -- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
@@ -1987,13 +2193,13 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt(text, text);
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
  RETURNS bytea
  LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
 ;
 
 -- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
@@ -2005,13 +2211,13 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
 ;
 
 -- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text);
@@ -2021,6 +2227,47 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text)
  LANGUAGE c
  PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.reset_smtp_daily_counters();
+
+CREATE OR REPLACE FUNCTION public.reset_smtp_daily_counters()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    UPDATE smtp_accounts 
+    SET 
+        today_sent_count = 0,
+        daily_reset_at = CURRENT_DATE
+    WHERE daily_reset_at < CURRENT_DATE;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.reset_smtp_hourly_counters();
+
+CREATE OR REPLACE FUNCTION public.reset_smtp_hourly_counters()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    UPDATE smtp_accounts 
+    SET 
+        current_hour_sent = 0,
+        hourly_reset_at = DATE_TRUNC('hour', NOW())
+    WHERE hourly_reset_at < DATE_TRUNC('hour', NOW());
+END;
+$function$
 ;
 
 -- DROP FUNCTION public.set_order_number_seq();

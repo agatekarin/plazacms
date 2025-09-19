@@ -1881,3 +1881,299 @@ const emailService = await createEmailService(context);
 - Batch email support untuk campaigns
 - Provider failover untuk high availability
 - Rate limiting dengan respectful sending practices
+
+---
+
+## 🔄 Multi-SMTP Load Balancing System
+
+### **Architecture Overview**
+
+PlazaCMS includes an advanced multi-SMTP load balancing system that provides enterprise-grade email reliability, automatic failover, and performance optimization through intelligent distribution across multiple SMTP accounts.
+
+### **Core Tables**
+
+#### `smtp_accounts`
+
+- **Purpose**: Stores multiple SMTP account configurations with encrypted credentials and performance tracking
+- **Key Columns**:
+  - `id` (UUID): Primary Key
+  - `name` (TEXT): Account display name (e.g., "Gmail Primary", "SendGrid Backup")
+  - `description` (TEXT): Optional account description
+  - `host` (TEXT): SMTP server host (e.g., smtp.gmail.com)
+  - `port` (INTEGER): SMTP port (587, 465, 25)
+  - `username` (TEXT): SMTP username/email
+  - `password_encrypted` (TEXT): AES-encrypted SMTP password
+  - `encryption` (TEXT): Encryption type ('tls', 'ssl', 'none')
+  - `weight` (INTEGER): Load balancing weight (1-10, higher = more emails)
+  - `priority` (INTEGER): Priority level (1-1000, lower = higher priority)
+  - `daily_limit` (INTEGER): Maximum emails per day for this account
+  - `hourly_limit` (INTEGER): Maximum emails per hour for this account
+  - `is_active` (BOOLEAN): Whether account is available for use
+  - `is_healthy` (BOOLEAN): Current health status based on recent performance
+  - `consecutive_failures` (INTEGER): Count of consecutive failed attempts
+  - `total_success_count` (BIGINT): Total successful emails sent
+  - `total_failure_count` (BIGINT): Total failed email attempts
+  - `today_sent_count` (INTEGER): Emails sent today (resets daily)
+  - `current_hour_sent` (INTEGER): Emails sent this hour (resets hourly)
+  - `avg_response_time_ms` (INTEGER): Average response time in milliseconds
+  - `last_used_at` (TIMESTAMPTZ): Last time this account was used
+  - `last_error_message` (TEXT): Most recent error message
+  - `last_error_at` (TIMESTAMPTZ): Time of last error
+  - `cooldown_until` (TIMESTAMPTZ): Account unavailable until this time
+  - `tags` (JSONB): Array of tags for organization ['primary', 'backup', 'high-volume']
+  - `metadata` (JSONB): Additional account-specific configuration
+
+#### `smtp_rotation_config`
+
+- **Purpose**: Global configuration for the load balancing algorithm and behavior
+- **Key Columns**:
+  - `id` (UUID): Primary Key
+  - `enabled` (BOOLEAN): Enable/disable multi-SMTP system
+  - `fallback_to_single` (BOOLEAN): Use single SMTP if multi-SMTP fails
+  - `strategy` (TEXT): Load balancing strategy ('round_robin', 'weighted', 'priority', 'health_based', 'least_used')
+  - `max_retry_attempts` (INTEGER): Maximum retry attempts before giving up
+  - `retry_delay_seconds` (INTEGER): Delay between retry attempts
+  - `failure_cooldown_minutes` (INTEGER): Minutes to wait before retrying failed account
+  - `health_check_interval_minutes` (INTEGER): How often to perform health checks
+  - `failure_threshold` (INTEGER): Consecutive failures before marking unhealthy
+  - `success_threshold` (INTEGER): Consecutive successes to mark healthy again
+  - `global_daily_limit` (INTEGER): Optional global daily limit across all accounts
+  - `global_hourly_limit` (INTEGER): Optional global hourly limit across all accounts
+  - `prefer_healthy_accounts` (BOOLEAN): Prioritize healthy accounts over unhealthy
+  - `balance_by_response_time` (BOOLEAN): Consider response time in account selection
+  - `avoid_consecutive_same_account` (BOOLEAN): Try to use different accounts for consecutive emails
+  - `emergency_fallback_enabled` (BOOLEAN): Use emergency account when all others fail
+  - `emergency_single_account_id` (UUID): Specific account to use in emergencies
+  - `track_performance_metrics` (BOOLEAN): Enable detailed performance logging
+  - `log_rotation_decisions` (BOOLEAN): Log account selection decisions (for debugging)
+  - `settings` (JSONB): Additional configuration options
+
+#### `smtp_usage_logs`
+
+- **Purpose**: Comprehensive logging of every email attempt through multi-SMTP system
+- **Key Columns**:
+  - `id` (UUID): Primary Key
+  - `smtp_account_id` (UUID): Foreign Key to `smtp_accounts.id`
+  - `email_notification_id` (UUID): Foreign Key to `email_notifications.id`
+  - `recipient_email` (TEXT): Recipient email address
+  - `subject` (TEXT): Email subject line
+  - `status` (TEXT): Send status ('success', 'failed', 'timeout', 'rate_limited')
+  - `message_id` (TEXT): Provider message ID (for tracking)
+  - `response_time_ms` (INTEGER): Time taken to send email
+  - `rotation_strategy` (TEXT): Strategy used for account selection
+  - `was_fallback` (BOOLEAN): Whether this was a fallback attempt
+  - `attempt_number` (INTEGER): Attempt number in retry sequence
+  - `error_code` (TEXT): Error code from SMTP provider
+  - `error_message` (TEXT): Detailed error message
+  - `created_at` (TIMESTAMPTZ): Timestamp of sending attempt
+
+#### `smtp_account_health_checks`
+
+- **Purpose**: Track automated health monitoring of SMTP accounts
+- **Key Columns**:
+  - `id` (UUID): Primary Key
+  - `smtp_account_id` (UUID): Foreign Key to `smtp_accounts.id`
+  - `status` (TEXT): Health check result ('healthy', 'unhealthy', 'timeout', 'connection_error')
+  - `response_time_ms` (INTEGER): Connection response time
+  - `test_email_sent` (BOOLEAN): Whether a test email was sent
+  - `test_recipient` (TEXT): Email address used for test (if any)
+  - `error_message` (TEXT): Error details if health check failed
+  - `checked_at` (TIMESTAMPTZ): When the health check was performed
+
+### **Load Balancing Strategies**
+
+#### **Round Robin** (Default)
+
+- Fair distribution across all healthy accounts
+- Each account gets equal opportunity regardless of performance
+- Best for: Even distribution, preventing account overuse
+
+#### **Weighted Distribution**
+
+- Distribution based on account weights (1-10 scale)
+- Higher weight = more emails assigned to that account
+- Best for: Accounts with different capacity limits
+
+#### **Priority-Based**
+
+- Uses highest priority accounts first (lower number = higher priority)
+- Fallback to lower priority when high-priority accounts unavailable
+- Best for: Primary/backup account hierarchies
+
+#### **Health-Based**
+
+- Prioritizes accounts with best recent performance
+- Considers success rate, response time, consecutive failures
+- Best for: Optimizing delivery success rates
+
+#### **Least Used**
+
+- Selects account with lowest recent usage
+- Balances load by avoiding overused accounts
+- Best for: Preventing rate limit violations
+
+### **Service Layer Architecture**
+
+#### **SMTPRotationService**
+
+- Core service handling account selection and rotation logic
+- Features:
+  - Real-time account health assessment
+  - Rate limit tracking and enforcement
+  - Performance metrics collection
+  - Automatic failure recovery
+  - Configurable retry strategies
+
+#### **EmailService Integration**
+
+- Enhanced `EmailService` with multi-SMTP provider support
+- Automatic provider selection: `multi_smtp`, `resend`, `smtp`, `cloudflare`
+- Seamless fallback to single-provider modes
+- Performance tracking and error handling
+
+### **Admin Interface**
+
+#### **SMTP Accounts Management** (`/admin/settings/email/smtp-accounts`)
+
+- Complete CRUD interface for SMTP accounts
+- Real-time health monitoring and status display
+- Account testing and validation
+- Bulk operations and filtering
+- Mobile-responsive design with card/table views
+
+#### **Analytics Dashboard**
+
+- Account performance metrics and usage statistics
+- Load distribution visualization
+- Success/failure rate analysis
+- Response time monitoring
+- Health trend tracking
+
+#### **Configuration Interface**
+
+- Web-based configuration for all rotation settings
+- Strategy selection with live preview
+- Rate limit configuration per account and globally
+- Health monitoring settings and thresholds
+- Emergency fallback configuration
+
+### **Security Features**
+
+#### **Credential Protection**
+
+- AES encryption for SMTP passwords in database
+- Secure credential transmission and storage
+- Account isolation prevents credential leaks
+- Automatic credential rotation support
+
+#### **Rate Limit Protection**
+
+- Per-account daily and hourly limits
+- Global rate limiting across all accounts
+- Automatic cooldown for exceeded limits
+- Provider-specific rate limit awareness
+
+#### **Health Isolation**
+
+- Unhealthy accounts automatically excluded
+- Individual account failures don't affect others
+- Gradual recovery with success threshold verification
+- Emergency isolation for problematic accounts
+
+### **Performance Optimization**
+
+#### **Caching Strategy**
+
+- Configuration caching with 5-minute TTL
+- Account health status caching
+- Performance metrics aggregation
+- Efficient database queries with proper indexing
+
+#### **Background Processing**
+
+- Async health checks every 5 minutes
+- Automatic counter resets (daily/hourly)
+- Performance metrics calculation
+- Usage log cleanup and archival
+
+#### **Monitoring & Alerting**
+
+- Real-time account health monitoring
+- Performance degradation alerts
+- Rate limit approaching warnings
+- Failure pattern detection
+
+### **API Endpoints**
+
+#### **Account Management**
+
+- `GET /api/admin/smtp-accounts` - List accounts with filters
+- `POST /api/admin/smtp-accounts` - Create new account
+- `PUT /api/admin/smtp-accounts/:id` - Update account
+- `DELETE /api/admin/smtp-accounts/:id` - Remove account
+- `POST /api/admin/smtp-accounts/:id/test` - Test connection
+
+#### **Analytics & Monitoring**
+
+- `GET /api/admin/smtp-accounts/stats/overview` - Usage analytics
+- `GET /api/admin/smtp-accounts/:id` - Account details with stats
+
+#### **Configuration**
+
+- `GET /api/admin/smtp-accounts/config` - Get rotation settings
+- `POST /api/admin/smtp-accounts/config` - Update configuration
+
+### **Integration with Email System**
+
+#### **Provider Integration**
+
+- Multi-SMTP as new provider type in EmailService
+- Automatic selection via SMTPRotationService
+- Fallback to existing providers (Resend, single SMTP, Cloudflare)
+- Seamless transition for existing email functionality
+
+#### **Performance Tracking**
+
+- Response time monitoring for each send operation
+- Success/failure logging with detailed error information
+- Usage statistics integration with email analytics
+- Real-time health status updates
+
+#### **Configuration Management**
+
+- Database-driven configuration with UI management
+- Real-time settings updates without restart
+- Environment variable fallbacks for development
+- Production deployment with zero-downtime updates
+
+### **Use Cases**
+
+#### **High-Volume Sending**
+
+- Distribute load across multiple provider accounts
+- Prevent rate limit violations with automatic limiting
+- Scale email capacity by adding more accounts
+- Monitor and optimize sending performance
+
+#### **Reliability & Failover**
+
+- Automatic failover when accounts become unhealthy
+- Multiple provider redundancy (Gmail + SendGrid + Outlook)
+- Emergency fallback to single-provider mode
+- Zero-downtime email sending even during account failures
+
+#### **Cost Optimization**
+
+- Balance usage across different provider pricing tiers
+- Use free tier limits effectively across multiple accounts
+- Priority-based sending for cost-sensitive scenarios
+- Performance-based selection for optimal delivery rates
+
+#### **Compliance & Monitoring**
+
+- Detailed audit trail of all sending attempts
+- Performance metrics for SLA compliance
+- Health monitoring for proactive maintenance
+- Usage tracking for billing and quota management
+
+This multi-SMTP system provides enterprise-grade email infrastructure with automatic load balancing, health monitoring, and performance optimization - ensuring maximum email deliverability and reliability for PlazaCMS.

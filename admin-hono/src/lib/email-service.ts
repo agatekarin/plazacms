@@ -7,6 +7,11 @@ import { Resend } from "resend";
 import { WorkerMailer } from "worker-mailer";
 import { createMimeMessage } from "mimetext";
 import { getDb } from "./db";
+import {
+  createSMTPRotationService,
+  SMTPRotationService,
+  DecryptedSMTPAccount,
+} from "./smtp-rotation-service";
 
 // Types
 export interface EmailTemplate {
@@ -62,7 +67,7 @@ export interface EmailNotificationLog {
 }
 
 interface EmailSettings {
-  provider: "resend" | "smtp" | "cloudflare";
+  provider: "resend" | "smtp" | "cloudflare" | "multi_smtp";
   from_name: string;
   from_email: string;
   resend_api_key?: string;
@@ -71,6 +76,9 @@ interface EmailSettings {
   smtp_username?: string;
   smtp_password?: string;
   smtp_encryption?: string;
+  // Multi-SMTP settings
+  multi_smtp_enabled?: boolean;
+  multi_smtp_fallback_enabled?: boolean;
 }
 
 export class EmailService {
@@ -78,6 +86,7 @@ export class EmailService {
   private sql: any;
   private settings: EmailSettings;
   private env?: any; // Cloudflare Workers environment
+  private rotationService?: SMTPRotationService;
 
   constructor(settings: EmailSettings, sql: any, env?: any) {
     this.settings = settings;
@@ -87,6 +96,11 @@ export class EmailService {
     // Initialize provider-specific clients
     if (settings.provider === "resend" && settings.resend_api_key) {
       this.resend = new Resend(settings.resend_api_key);
+    }
+
+    // Initialize multi-SMTP rotation service if enabled
+    if (settings.multi_smtp_enabled || settings.provider === "multi_smtp") {
+      this.rotationService = createSMTPRotationService(sql);
     }
   }
 
@@ -109,6 +123,11 @@ export class EmailService {
       return this.sendViaWorkerMailer(options);
     } else if (this.settings.provider === "cloudflare") {
       return this.sendViaCloudflare(options);
+    } else if (
+      this.settings.provider === "multi_smtp" ||
+      this.settings.multi_smtp_enabled
+    ) {
+      return this.sendViaMultiSMTP(options);
     } else {
       throw new Error(`Unsupported email provider: ${this.settings.provider}`);
     }
@@ -294,6 +313,214 @@ export class EmailService {
       console.error("[sendViaCloudflare] Error:", error);
       return { error };
     }
+  }
+
+  /**
+   * 🔄 Send email via Multi-SMTP Load Balancing
+   */
+  private async sendViaMultiSMTP(options: {
+    fromName: string;
+    fromEmail: string;
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+    replyTo?: string;
+    template?: EmailTemplate;
+  }): Promise<any> {
+    if (!this.rotationService) {
+      throw new Error("Multi-SMTP rotation service not initialized");
+    }
+
+    const maxAttempts = 3; // Max retry attempts
+    const excludedAccounts: string[] = [];
+    let lastError: any = null;
+    let attempt = 0;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+
+      try {
+        // Get next available SMTP account
+        const smtpAccount = await this.rotationService.getNextAccount(
+          excludedAccounts
+        );
+
+        if (!smtpAccount) {
+          // No available accounts, try fallback if enabled
+          if (this.settings.multi_smtp_fallback_enabled) {
+            console.warn(
+              "[MultiSMTP] No SMTP accounts available, falling back to single provider"
+            );
+            return this.fallbackToSingleProvider(options);
+          } else {
+            throw new Error("No available SMTP accounts for sending email");
+          }
+        }
+
+        console.log(
+          `[MultiSMTP] Attempt ${attempt}: Using account ${smtpAccount.name} (${smtpAccount.host})`
+        );
+
+        // Record start time for performance tracking
+        const startTime = Date.now();
+
+        try {
+          // Send via selected SMTP account using WorkerMailer
+          const result = await WorkerMailer.send(
+            {
+              host: smtpAccount.host,
+              port: smtpAccount.port,
+              secure: smtpAccount.encryption === "ssl",
+              startTls: smtpAccount.encryption === "tls",
+              credentials: {
+                username: smtpAccount.username,
+                password: smtpAccount.password, // Already decrypted by rotation service
+              },
+              authType: "plain",
+            },
+            {
+              from: { name: options.fromName, email: options.fromEmail },
+              to: options.to,
+              subject: options.subject,
+              text: options.text,
+              html: options.html,
+              reply: options.replyTo ? options.replyTo : undefined,
+            }
+          );
+
+          const responseTime = Date.now() - startTime;
+
+          // Mark account as successful
+          await this.rotationService.markSuccess(
+            smtpAccount.id,
+            `smtp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            responseTime,
+            Array.isArray(options.to) ? options.to[0] : options.to,
+            options.subject
+          );
+
+          // Return success result
+          return {
+            data: {
+              id: `multi_smtp_${Date.now()}_${Math.random()
+                .toString(36)
+                .substr(2, 9)}`,
+              account_name: smtpAccount.name,
+              account_host: smtpAccount.host,
+              response_time_ms: responseTime,
+              attempt: attempt,
+            },
+          };
+        } catch (smtpError) {
+          const responseTime = Date.now() - startTime;
+
+          // Mark account as failed
+          await this.rotationService.markFailure(
+            smtpAccount.id,
+            smtpError instanceof Error
+              ? smtpError
+              : new Error(String(smtpError)),
+            responseTime,
+            Array.isArray(options.to) ? options.to[0] : options.to,
+            options.subject
+          );
+
+          // Exclude this account from next attempts
+          excludedAccounts.push(smtpAccount.id);
+          lastError = smtpError;
+
+          console.warn(
+            `[MultiSMTP] Account ${smtpAccount.name} failed:`,
+            smtpError
+          );
+
+          // Continue to next attempt
+          continue;
+        }
+      } catch (error) {
+        console.error(`[MultiSMTP] Attempt ${attempt} error:`, error);
+        lastError = error;
+
+        // Wait before retry (exponential backoff)
+        if (attempt < maxAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5s delay
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    // All attempts failed, try fallback if enabled
+    if (this.settings.multi_smtp_fallback_enabled) {
+      console.warn(
+        "[MultiSMTP] All SMTP accounts failed, falling back to single provider"
+      );
+      try {
+        return await this.fallbackToSingleProvider(options);
+      } catch (fallbackError) {
+        console.error("[MultiSMTP] Fallback also failed:", fallbackError);
+        return { error: fallbackError };
+      }
+    }
+
+    // Return the last error
+    return {
+      error:
+        lastError ||
+        new Error(`Failed to send email after ${maxAttempts} attempts`),
+    };
+  }
+
+  /**
+   * 🔄 Fallback to single provider when multi-SMTP fails
+   */
+  private async fallbackToSingleProvider(options: {
+    fromName: string;
+    fromEmail: string;
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+    replyTo?: string;
+    template?: EmailTemplate;
+  }): Promise<any> {
+    // Try providers in order of preference
+
+    // 1. Try Resend if configured
+    if (this.settings.resend_api_key) {
+      try {
+        console.log("[MultiSMTP] Fallback: Trying Resend");
+        return await this.sendViaResend(options);
+      } catch (error) {
+        console.warn("[MultiSMTP] Resend fallback failed:", error);
+      }
+    }
+
+    // 2. Try single SMTP if configured
+    if (
+      this.settings.smtp_host &&
+      this.settings.smtp_username &&
+      this.settings.smtp_password
+    ) {
+      try {
+        console.log("[MultiSMTP] Fallback: Trying single SMTP");
+        return await this.sendViaWorkerMailer(options);
+      } catch (error) {
+        console.warn("[MultiSMTP] Single SMTP fallback failed:", error);
+      }
+    }
+
+    // 3. Try Cloudflare if available
+    if (this.env?.EMAIL_SENDER || this.env?.EMAIL || this.env?.Plazaku) {
+      try {
+        console.log("[MultiSMTP] Fallback: Trying Cloudflare Email Workers");
+        return await this.sendViaCloudflare(options);
+      } catch (error) {
+        console.warn("[MultiSMTP] Cloudflare fallback failed:", error);
+      }
+    }
+
+    throw new Error("All fallback providers failed");
   }
 
   /**
@@ -769,7 +996,19 @@ export async function createEmailService(c: any): Promise<EmailService> {
     smtp_username: emailSettings?.smtp_username,
     smtp_password: emailSettings?.smtp_password,
     smtp_encryption: emailSettings?.smtp_encryption || "tls",
+    // Multi-SMTP settings
+    multi_smtp_enabled: emailSettings?.multi_smtp_enabled || false,
+    multi_smtp_fallback_enabled:
+      emailSettings?.multi_smtp_fallback_enabled !== false, // Default true
   };
+
+  // Override provider to multi_smtp if multi_smtp_enabled is true
+  if (settings.multi_smtp_enabled) {
+    settings.provider = "multi_smtp";
+    console.log(
+      "[EmailService] Multi-SMTP enabled, switching to multi_smtp provider"
+    );
+  }
 
   // Validate provider configuration
   if (settings.provider === "resend" && !settings.resend_api_key) {
@@ -800,6 +1039,42 @@ export async function createEmailService(c: any): Promise<EmailService> {
       throw new Error(
         "Cloudflare Email Workers not configured. Add [[send_email]] binding to wrangler.toml and set destination_address."
       );
+    }
+  }
+
+  if (settings.provider === "multi_smtp") {
+    // Check if there are any active SMTP accounts
+    try {
+      const smtpAccounts = await sql`
+        SELECT COUNT(*) as count FROM smtp_accounts WHERE is_active = TRUE
+      `;
+
+      const accountCount = parseInt(smtpAccounts[0]?.count || "0");
+
+      if (accountCount === 0) {
+        console.warn(
+          "[EmailService] No active SMTP accounts found, multi-SMTP will use fallback"
+        );
+
+        // If fallback is disabled and no accounts, throw error
+        if (!settings.multi_smtp_fallback_enabled) {
+          throw new Error(
+            "Multi-SMTP enabled but no active SMTP accounts found and fallback is disabled. Please add SMTP accounts or enable fallback."
+          );
+        }
+      } else {
+        console.log(
+          `[EmailService] Multi-SMTP initialized with ${accountCount} active accounts`
+        );
+      }
+    } catch (error) {
+      console.warn("[EmailService] Error checking SMTP accounts:", error);
+
+      if (!settings.multi_smtp_fallback_enabled) {
+        throw new Error(
+          "Multi-SMTP enabled but cannot verify SMTP accounts and fallback is disabled."
+        );
+      }
     }
   }
 

@@ -29,6 +29,7 @@ import {
   PaperAirplaneIcon,
   ChartPieIcon,
   ClockIcon,
+  ServerIcon,
 } from "@heroicons/react/24/outline";
 
 import {
@@ -44,6 +45,7 @@ import {
   PaperAirplaneIcon as PaperAirplaneIconSolid,
   ChartPieIcon as ChartPieIconSolid,
   ClockIcon as ClockIconSolid,
+  ServerIcon as ServerIconSolid,
 } from "@heroicons/react/24/solid";
 
 interface MenuItem {
@@ -236,6 +238,20 @@ const menuItems: MenuItem[] = [
         icon: ClockIcon,
         iconSolid: ClockIconSolid,
       },
+      {
+        id: "email-settings",
+        label: "Email Settings",
+        href: "/admin/emails/settings",
+        icon: CogIcon,
+        iconSolid: CogIconSolid,
+      },
+      {
+        id: "smtp-accounts",
+        label: "SMTP Accounts",
+        href: "/admin/emails/settings/smtp-accounts",
+        icon: ServerIcon,
+        iconSolid: ServerIconSolid,
+      },
     ],
   },
   {
@@ -250,13 +266,6 @@ const menuItems: MenuItem[] = [
         href: "/admin/settings/general",
         icon: CogIcon,
         iconSolid: CogIconSolid,
-      },
-      {
-        id: "email-settings",
-        label: "Email Settings",
-        href: "/admin/settings/email",
-        icon: EnvelopeIcon,
-        iconSolid: EnvelopeIconSolid,
       },
       {
         id: "shipping-settings",
