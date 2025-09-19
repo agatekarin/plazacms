@@ -46,7 +46,7 @@ interface ProductImportExportStats {
 }
 
 export default function ProductImportExportPage() {
-  const { apiCallJson, uploadWithProgress } = useAuthenticatedFetch({
+  const { apiCallJson, apiCall, uploadWithProgress } = useAuthenticatedFetch({
     onError: (url, error) => {
       console.error(`API Error on ${url}:`, error);
       toast.error(error?.message || "Operation failed");
@@ -55,6 +55,7 @@ export default function ProductImportExportPage() {
 
   const [stats, setStats] = useState<ProductImportExportStats | null>(null);
   const [exportFormat, setExportFormat] = useState("csv");
+  const [importMode, setImportMode] = useState("upsert");
   const [exportStatus, setExportStatus] = useState("pending");
   const [exportProgress, setExportProgress] = useState(0);
   const [importStatus, setImportStatus] = useState("pending");
@@ -86,14 +87,8 @@ export default function ProductImportExportPage() {
       setExportStatus("exporting");
       setExportProgress(0);
 
-      const response = await fetch(
-        `/api/admin/products/export?format=${exportFormat}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("auth-token")}`,
-          },
-        }
+      const response = await apiCall(
+        `/api/admin/products/import-export/export?format=${exportFormat}`
       );
 
       if (!response.ok) {
@@ -149,7 +144,7 @@ export default function ProductImportExportPage() {
       formData.append("file", file);
 
       const response = await uploadWithProgress(
-        "/api/admin/products/import?mode=upsert",
+        `/api/admin/products/import-export/import?mode=${importMode}`,
         formData,
         (progress) => {
           setImportProgress(progress);
@@ -430,6 +425,36 @@ export default function ProductImportExportPage() {
             <CardContent className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 block">
+                  Import Mode
+                </label>
+                <Select value={importMode} onValueChange={setImportMode}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="upsert">
+                      Upsert (Create new / Update existing)
+                    </SelectItem>
+                    <SelectItem value="create">
+                      Create only (Skip existing products)
+                    </SelectItem>
+                    <SelectItem value="update">
+                      Update only (Skip new products)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="mt-2 text-xs text-gray-600">
+                  {importMode === "upsert" &&
+                    "Creates new products or updates existing ones by slug"}
+                  {importMode === "create" &&
+                    "Only creates new products, skips if product slug already exists"}
+                  {importMode === "update" &&
+                    "Only updates existing products, skips if product slug doesn't exist"}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">
                   Import File
                 </label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
@@ -630,10 +655,17 @@ export default function ProductImportExportPage() {
 
               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
-                  <strong>Note:</strong> Products are identified by slug.
-                  Variants are identified by SKU. Use "upsert" mode to create
-                  new products or update existing ones. Image IDs should
-                  reference existing media in your media library.
+                  <strong>Import Modes:</strong>
+                  <br />• <strong>Upsert:</strong> Creates new products or
+                  updates existing ones (recommended)
+                  <br />• <strong>Create:</strong> Only creates new products,
+                  skips existing slugs
+                  <br />• <strong>Update:</strong> Only updates existing
+                  products, skips new slugs
+                  <br />
+                  <br />
+                  Products are identified by slug, variants by SKU. Image IDs
+                  should reference existing media in your library.
                 </p>
               </div>
             </div>

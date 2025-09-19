@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { useRouter } from "next/navigation";
 import {
@@ -20,6 +20,10 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { CountrySelector } from "@/components/CountrySelector";
+import { StateSelector } from "@/components/StateSelector";
+import ProductPickerModal from "./ProductPickerModal";
+import OrderItemCard from "./OrderItemCard";
 
 type ProductOption = {
   value: string;
@@ -84,13 +88,9 @@ interface AddressForm {
   street: string;
   city: string;
   state: string;
+  state_id: string;
   postal_code: string;
   country_code: string;
-}
-
-interface CountryOption {
-  iso2: string;
-  name: string;
 }
 
 export default function OrderEditor({ orderId }: OrderEditorProps) {
@@ -116,6 +116,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     street: "",
     city: "",
     state: "",
+    state_id: "",
     postal_code: "",
     country_code: "",
   });
@@ -125,6 +126,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     street: "",
     city: "",
     state: "",
+    state_id: "",
     postal_code: "",
     country_code: "",
   });
@@ -134,11 +136,6 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
   const [shippingMethods, setShippingMethods] = useState<
     ShippingMethodOption[]
   >([]);
-  const [countries, setCountries] = useState<CountryOption[]>([]);
-  const countryOptions: ComboboxOption[] = countries.map((c) => ({
-    value: c.iso2,
-    label: c.name,
-  }));
   const shippingMethodOptions: ComboboxOption[] = shippingMethods.map((m) => ({
     value: m.id,
     label: `${m.name}${m.zone_name ? ` • ${m.zone_name}` : ""}${
@@ -154,6 +151,28 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
   >({});
   const [rowProductIds, setRowProductIds] = useState<Record<number, string>>(
     {}
+  );
+
+  // Product picker modal
+  const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+
+  // Variant cache for items
+  const [variantDetails, setVariantDetails] = useState<
+    Record<
+      string,
+      {
+        value: string;
+        label: string;
+        price: number;
+        image?: string | null;
+        stock?: number;
+      }
+    >
+  >({});
+
+  // Track which variants are currently being loaded to prevent duplicate requests
+  const [loadingVariants, setLoadingVariants] = useState<Set<string>>(
+    new Set()
   );
 
   const fetchOrder = async () => {
@@ -183,6 +202,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
         street: orderData.shipping_address?.street || "",
         city: orderData.shipping_address?.city || "",
         state: orderData.shipping_address?.state || "",
+        state_id: orderData.shipping_address?.state_id || "",
         postal_code: orderData.shipping_address?.postal_code || "",
         country_code: orderData.shipping_address?.country_code || "",
       });
@@ -192,6 +212,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
         street: orderData.billing_address?.street || "",
         city: orderData.billing_address?.city || "",
         state: orderData.billing_address?.state || "",
+        state_id: orderData.billing_address?.state_id || "",
         postal_code: orderData.billing_address?.postal_code || "",
         country_code: orderData.billing_address?.country_code || "",
       });
@@ -208,41 +229,66 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
   useEffect(() => {
     (async () => {
       if (!items?.length) return;
-      // Preload product and variant info for each item
+
+      // Only process items that haven't been hydrated yet
       for (let i = 0; i < items.length; i++) {
         const vId = items[i].product_variant_id;
-        if (!vId) continue;
+        if (!vId || variantDetails[vId] || rowProductIds[i]) continue;
+
         try {
           const data = await apiCallJson(`/api/admin/variants/${vId}`);
           const it = data.item || data;
           const productId = String(it.product_id);
+
           // Track active product per index for UI
           setRowProductIds((prev) => ({ ...prev, [i]: productId }));
+
           // Ensure its variants loaded
           await ensureVariantsLoaded(productId);
-          // Fill missing name/price if empty
-          const price = Number(it.sale_price ?? it.regular_price ?? 0);
-          const changed: Partial<OrderItem> = {};
-          if (!items[i].product_name)
-            changed.product_name = it.product_name || "";
-          if (!items[i].product_price || items[i].product_price === 0)
-            changed.product_price = price;
-          if (Object.keys(changed).length) {
-            updateItem(
-              i,
-              "product_name",
-              changed.product_name ?? items[i].product_name
+
+          // Cache variant details for UI
+          if (!variantDetails[vId]) {
+            setVariantDetails((prev) => ({
+              ...prev,
+              [vId]: {
+                value: vId,
+                label:
+                  it.attributes?.map((attr: any) => attr.value).join(" • ") ||
+                  it.sku ||
+                  "Default",
+                price: Number(it.sale_price ?? it.regular_price ?? 0),
+                image: it.image_url,
+                stock: Number(it.stock || 0),
+              },
+            }));
+          }
+
+          // Only update missing item data to avoid loops
+          const updates: Partial<OrderItem> = {};
+          if (!items[i].product_name && it.product_name) {
+            updates.product_name = it.product_name;
+          }
+          if (
+            (!items[i].product_price || items[i].product_price === 0) &&
+            (it.sale_price || it.regular_price)
+          ) {
+            updates.product_price = Number(
+              it.sale_price ?? it.regular_price ?? 0
             );
-            updateItem(
-              i,
-              "product_price",
-              changed.product_price ?? items[i].product_price
-            );
+          }
+
+          // Batch update to avoid multiple state changes
+          if (Object.keys(updates).length > 0) {
+            setItems((prevItems) => {
+              const newItems = [...prevItems];
+              newItems[i] = { ...newItems[i], ...updates };
+              return newItems;
+            });
           }
         } catch {}
       }
     })();
-  }, [items]);
+  }, [items.length]);
 
   const fetchOptions = async () => {
     try {
@@ -295,11 +341,7 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
         setShippingMethods(methods);
       }
 
-      // Fetch countries
-      const cData = await apiCallJson(
-        "/api/admin/locations/countries?limit=300"
-      );
-      setCountries(cData.countries || []);
+      // Countries are now handled by CountrySelector component
     } catch (err) {
       console.error("Failed to fetch options:", err);
     }
@@ -388,6 +430,11 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     }
   };
 
+  const addItems = (newItems: OrderItem[]) => {
+    setItems((prev) => [...prev, ...newItems]);
+    recalculateTotal([...items, ...newItems]);
+  };
+
   const addItem = () => {
     setItems([
       ...items,
@@ -425,9 +472,86 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
     setTotalAmount(itemsTotal + shippingCost);
   };
 
+  // Load variant details for items
+  const loadVariantDetails = async (variantIds: string[]) => {
+    // Filter out variants that are already loaded or currently being loaded
+    const toLoad = variantIds.filter(
+      (id) => id && !variantDetails[id] && !loadingVariants.has(id)
+    );
+
+    if (toLoad.length === 0) return;
+
+    // Mark variants as loading
+    setLoadingVariants((prev) => new Set([...prev, ...toLoad]));
+
+    const newDetails: Record<
+      string,
+      {
+        value: string;
+        label: string;
+        price: number;
+        image?: string | null;
+        stock?: number;
+      }
+    > = {};
+
+    // Load variants in parallel
+    const loadPromises = toLoad.map(async (variantId) => {
+      try {
+        const data = await apiCallJson(`/api/admin/variants/${variantId}`);
+        const variant = data.item || data;
+
+        newDetails[variantId] = {
+          value: variantId,
+          label:
+            variant.attributes?.map((attr: any) => attr.value).join(" • ") ||
+            variant.sku ||
+            "Default",
+          price: Number(variant.sale_price ?? variant.regular_price ?? 0),
+          image: variant.image_url,
+          stock: Number(variant.stock || 0),
+        };
+      } catch (error) {
+        console.error(`Failed to load variant ${variantId}:`, error);
+      }
+    });
+
+    // Wait for all to complete
+    await Promise.all(loadPromises);
+
+    // Update state with all loaded variants
+    if (Object.keys(newDetails).length > 0) {
+      setVariantDetails((prev) => ({ ...prev, ...newDetails }));
+    }
+
+    // Clear loading state
+    setLoadingVariants((prev) => {
+      const next = new Set(prev);
+      toLoad.forEach((id) => next.delete(id));
+      return next;
+    });
+  };
+
   useEffect(() => {
     recalculateTotal(items);
   }, [shippingCost]);
+
+  // Memoize variant IDs to prevent unnecessary recalculations
+  const variantIds = useMemo(() => {
+    return items.map((item) => item.product_variant_id).filter(Boolean);
+  }, [items]);
+
+  // Load variant details when items change
+  useEffect(() => {
+    // Only load variants that aren't already cached and not currently loading
+    const missingVariantIds = variantIds.filter(
+      (id) => !variantDetails[id] && !loadingVariants.has(id)
+    );
+
+    if (missingVariantIds.length > 0) {
+      loadVariantDetails(missingVariantIds);
+    }
+  }, [variantIds.join(","), Object.keys(variantDetails).length]);
 
   // Fetch product list for picker when query changes
   useEffect(() => {
@@ -581,185 +705,51 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
             <div className="p-6 border-b">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold">Order Items</h2>
-                <Button onClick={addItem} variant="outline" size="sm">
+                <Button
+                  onClick={() => setIsProductPickerOpen(true)}
+                  variant="outline"
+                  size="sm"
+                >
                   <PlusIcon className="h-4 w-4 mr-2" />
-                  Add Item
+                  Add Products
                 </Button>
               </div>
             </div>
             <div className="p-6">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead>
-                    <tr className="text-left text-sm text-gray-600">
-                      <th className="py-2 pr-3 font-medium">Product</th>
-                      <th className="py-2 px-3 font-medium w-80">Variant</th>
-                      <th className="py-2 px-3 font-medium w-24">Qty</th>
-                      <th className="py-2 px-3 font-medium w-28 text-right">
-                        Price
-                      </th>
-                      <th className="py-2 pl-3 font-medium w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {items.map((item, index) => {
-                      const activeProductId = rowProductIds[index];
-                      const product = productOptions.find(
-                        (p) => p.value === activeProductId
-                      );
-                      const variants = activeProductId
-                        ? variantOptionsByProduct[activeProductId] || []
-                        : [];
-                      const selectedVar = variants.find(
-                        (v) => v.value === item.product_variant_id
-                      );
-                      const thumb =
-                        selectedVar?.image || product?.image || null;
-                      return (
-                        <tr key={index} className="align-middle">
-                          <td className="py-3 pr-3">
-                            <div className="flex items-center gap-3">
-                              {thumb ? (
-                                <img
-                                  src={thumb}
-                                  alt="thumb"
-                                  className="w-12 h-12 rounded-md border object-cover"
-                                />
-                              ) : (
-                                <div className="w-12 h-12 rounded-md border bg-gray-50" />
-                              )}
-                              <div className="min-w-0">
-                                <div className="text-sm font-medium truncate">
-                                  {item.product_name ||
-                                    product?.label ||
-                                    "Select product"}
-                                </div>
-                                <div className="text-xs text-gray-500 truncate">
-                                  {selectedVar?.label || ""}
-                                </div>
-                                <div className="mt-2 w-72">
-                                  <Combobox
-                                    value={activeProductId || ""}
-                                    onChange={async (productId) => {
-                                      setRowProductIds((prev) => ({
-                                        ...prev,
-                                        [index]: productId,
-                                      }));
-                                      await ensureVariantsLoaded(productId);
-                                      // Clear current variant and price until a new variant is chosen
-                                      updateItem(
-                                        index,
-                                        "product_variant_id",
-                                        ""
-                                      );
-                                      updateItem(
-                                        index,
-                                        "product_name",
-                                        productOptions.find(
-                                          (p) => p.value === productId
-                                        )?.label || ""
-                                      );
-                                      updateItem(index, "product_price", 0);
-                                    }}
-                                    options={productOptions.map((o) => ({
-                                      value: o.value,
-                                      label: o.label,
-                                    }))}
-                                    placeholder="Choose product"
-                                    searchPlaceholder="Search products..."
-                                    className="h-9"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-3">
-                            {activeProductId ? (
-                              <Combobox
-                                value={item.product_variant_id}
-                                onChange={async (variantId) => {
-                                  try {
-                                    const data = await apiCallJson(
-                                      `/api/admin/variants/${variantId}`,
-                                      { cache: "no-store" }
-                                    );
-                                    const it = data.item || data;
-                                    const price = Number(
-                                      it.sale_price ?? it.regular_price ?? 0
-                                    );
-                                    updateItem(
-                                      index,
-                                      "product_variant_id",
-                                      variantId
-                                    );
-                                    updateItem(
-                                      index,
-                                      "product_name",
-                                      it.product_name || ""
-                                    );
-                                    updateItem(index, "product_price", price);
-                                    recalculateTotal([
-                                      ...items.slice(0, index),
-                                      {
-                                        ...items[index],
-                                        product_price: price,
-                                      },
-                                      ...items.slice(index + 1),
-                                    ]);
-                                  } catch {}
-                                }}
-                                options={(
-                                  variantOptionsByProduct[activeProductId] || []
-                                ).map((o) => ({
-                                  value: o.value,
-                                  label: o.label || "Variant",
-                                }))}
-                                placeholder="Choose variant"
-                                searchPlaceholder="Search variants..."
-                                className="h-9 w-80"
-                              />
-                            ) : (
-                              <div className="text-sm text-gray-500">
-                                Choose product first
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 w-24">
-                            <Input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) =>
-                                updateItem(
-                                  index,
-                                  "quantity",
-                                  parseInt(e.target.value) || 1
-                                )
-                              }
-                              className="h-9"
-                            />
-                          </td>
-                          <td className="py-3 px-3 w-28">
-                            <div className="text-right tabular-nums">
-                              {"$" + item.product_price.toFixed(2)}
-                            </div>
-                          </td>
-                          <td className="py-3 pl-3 w-10">
-                            <Button
-                              onClick={() => removeItem(index)}
-                              variant="ghost"
-                              size="icon"
-                              className="text-red-600 hover:text-red-800 h-8 w-8"
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {items.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="h-12 w-12 text-gray-300 mx-auto mb-4">📦</div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No items in this order
+                  </h3>
+                  <p className="text-gray-500 mb-4">
+                    Add products to get started with this order.
+                  </p>
+                  <Button onClick={() => setIsProductPickerOpen(true)}>
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    Add Products
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {items.map((item, index) => (
+                    <OrderItemCard
+                      key={`${item.product_variant_id}-${index}`}
+                      item={item}
+                      index={index}
+                      productImage={
+                        variantDetails[item.product_variant_id]?.image
+                      }
+                      variantLabel={
+                        variantDetails[item.product_variant_id]?.label
+                      }
+                      stock={variantDetails[item.product_variant_id]?.stock}
+                      onUpdate={updateItem}
+                      onRemove={removeItem}
+                    />
+                  ))}
+                </div>
+              )}
 
               {/* Order Total */}
               <div className="mt-6 pt-4 border-t">
@@ -921,15 +911,16 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                       })
                     }
                   />
-                  <Input
-                    placeholder="State"
-                    value={shippingAddress.state}
-                    onChange={(e) =>
+                  <StateSelector
+                    value={shippingAddress.state_id}
+                    onValueChange={(value) =>
                       setShippingAddress({
                         ...shippingAddress,
-                        state: e.target.value,
+                        state_id: value,
                       })
                     }
+                    countryCode={shippingAddress.country_code}
+                    placeholder="Select state..."
                   />
                   <Input
                     placeholder="Postal Code"
@@ -942,17 +933,16 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                     }
                   />
                   <div>
-                    <Combobox
+                    <CountrySelector
                       value={shippingAddress.country_code}
-                      onChange={(v) =>
+                      onValueChange={(v) =>
                         setShippingAddress({
                           ...shippingAddress,
                           country_code: v,
+                          state_id: "", // Reset state when country changes
                         })
                       }
-                      options={countryOptions}
-                      placeholder="Country"
-                      searchPlaceholder="Search country..."
+                      placeholder="Select country..."
                     />
                   </div>
                 </div>
@@ -1005,15 +995,16 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                       })
                     }
                   />
-                  <Input
-                    placeholder="State"
-                    value={billingAddress.state}
-                    onChange={(e) =>
+                  <StateSelector
+                    value={billingAddress.state_id}
+                    onValueChange={(value) =>
                       setBillingAddress({
                         ...billingAddress,
-                        state: e.target.value,
+                        state_id: value,
                       })
                     }
+                    countryCode={billingAddress.country_code}
+                    placeholder="Select state..."
                   />
                   <Input
                     placeholder="Postal Code"
@@ -1026,17 +1017,16 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
                     }
                   />
                   <div>
-                    <Combobox
+                    <CountrySelector
                       value={billingAddress.country_code}
-                      onChange={(v) =>
+                      onValueChange={(v) =>
                         setBillingAddress({
                           ...billingAddress,
                           country_code: v,
+                          state_id: "", // Reset state when country changes
                         })
                       }
-                      options={countryOptions}
-                      placeholder="Country"
-                      searchPlaceholder="Search country..."
+                      placeholder="Select country..."
                     />
                   </div>
                 </div>
@@ -1045,6 +1035,13 @@ export default function OrderEditor({ orderId }: OrderEditorProps) {
           </Card>
         </div>
       </div>
+
+      {/* Product Picker Modal */}
+      <ProductPickerModal
+        isOpen={isProductPickerOpen}
+        onClose={() => setIsProductPickerOpen(false)}
+        onAddItems={addItems}
+      />
     </div>
   );
 }

@@ -237,7 +237,7 @@ locations.get("/sync", adminMiddleware as any, async (c) => {
   }
 });
 
-// POST /api/admin/locations/sync
+// POST /api/admin/locations/sync (Legacy - for backward compatibility)
 locations.post("/sync", adminMiddleware as any, async (c) => {
   const sql = getDb(c as any);
   const body = await c.req.json().catch(() => ({} as any));
@@ -256,17 +256,21 @@ locations.post("/sync", adminMiddleware as any, async (c) => {
   await (sql as any).unsafe(
     `CREATE TABLE IF NOT EXISTS public.location_sync_progress (
       id uuid PRIMARY KEY,
+      table_type text DEFAULT 'combined',
       status text NOT NULL,
       progress int NOT NULL DEFAULT 0,
       message text,
       records_imported int,
+      records_new int DEFAULT 0,
+      records_updated int DEFAULT 0,
       started_at timestamptz NOT NULL DEFAULT NOW(),
-      completed_at timestamptz
+      completed_at timestamptz,
+      error text
     )`
   );
   await sql`
-    INSERT INTO public.location_sync_progress (id, status, progress, message, started_at)
-    VALUES (${importId}, ${"pending"}, ${0}, ${"Queued"}, ${startedAt})
+    INSERT INTO public.location_sync_progress (id, table_type, status, progress, message, started_at)
+    VALUES (${importId}, ${"combined"}, ${"pending"}, ${0}, ${"Queued"}, ${startedAt})
   `;
 
   c.executionCtx.waitUntil(
@@ -280,6 +284,21 @@ locations.post("/sync", adminMiddleware as any, async (c) => {
     format,
     tables,
   });
+});
+
+// POST /api/admin/locations/sync/countries
+locations.post("/sync/countries", adminMiddleware as any, async (c) => {
+  return await startTableImport(c, "countries");
+});
+
+// POST /api/admin/locations/sync/states
+locations.post("/sync/states", adminMiddleware as any, async (c) => {
+  return await startTableImport(c, "states");
+});
+
+// POST /api/admin/locations/sync/cities
+locations.post("/sync/cities", adminMiddleware as any, async (c) => {
+  return await startTableImport(c, "cities");
 });
 
 // GET /api/admin/locations/sync/progress/:id
@@ -307,6 +326,177 @@ locations.get("/sync/progress", adminMiddleware as any, async (c) => {
   if (!rows[0]) return c.json({ status: "unknown" });
   return c.json(rows[0]);
 });
+
+async function startTableImport(
+  c: any,
+  table: "countries" | "states" | "cities"
+) {
+  const sql = getDb(c as any);
+  const body = await c.req.json().catch(() => ({}));
+  const format = "csv"; // Always use CSV for individual imports
+  const importId = crypto.randomUUID();
+  const startedAt = new Date().toISOString();
+
+  try {
+    // Ensure progress table exists and insert initial row
+    await (sql as any).unsafe(
+      `CREATE TABLE IF NOT EXISTS public.location_sync_progress (
+        id uuid PRIMARY KEY,
+        table_type text DEFAULT 'combined',
+        status text NOT NULL,
+        progress int NOT NULL DEFAULT 0,
+        message text,
+        records_imported int,
+        records_new int DEFAULT 0,
+        records_updated int DEFAULT 0,
+        started_at timestamptz NOT NULL DEFAULT NOW(),
+        completed_at timestamptz,
+        error text
+      )`
+    );
+
+    await sql`
+      INSERT INTO public.location_sync_progress (id, table_type, status, progress, message, started_at)
+      VALUES (${importId}, ${table}, ${"pending"}, ${0}, ${"Queued for import"}, ${startedAt})
+    `;
+
+    // Start import in background
+    c.executionCtx.waitUntil(
+      runTableImport(c, sql, importId, table).catch(() => {})
+    );
+
+    return c.json({
+      import_id: importId,
+      status: "started",
+      message: `${
+        table.charAt(0).toUpperCase() + table.slice(1)
+      } import started`,
+      table,
+      format,
+    });
+  } catch (error) {
+    return c.json(
+      {
+        error: `Failed to start ${table} import: ${String(error)}`,
+      },
+      500
+    );
+  }
+}
+
+async function runTableImport(
+  c: any,
+  sql: any,
+  importId: string,
+  table: "countries" | "states" | "cities"
+) {
+  const BASE_URL =
+    "https://raw.githubusercontent.com/dr5hn/countries-states-cities-database/master";
+  const BATCH_SIZE = 25; // Optimized for CF Workers + Neon
+
+  const updateProgress = async (
+    status: string,
+    progress: number,
+    message: string,
+    recordsImported?: number,
+    recordsNew?: number,
+    recordsUpdated?: number,
+    error?: string
+  ) => {
+    await (sql as any).unsafe(
+      `UPDATE public.location_sync_progress
+       SET status = $1, progress = $2, message = $3, 
+           records_imported = $4, records_new = $5, records_updated = $6,
+           error = $7,
+           completed_at = CASE WHEN $1 IN ('completed','failed') THEN NOW() ELSE completed_at END
+       WHERE id = $8`,
+      [
+        status,
+        progress,
+        message,
+        recordsImported ?? null,
+        recordsNew ?? null,
+        recordsUpdated ?? null,
+        error ?? null,
+        importId,
+      ]
+    );
+  };
+
+  try {
+    await updateProgress("downloading", 10, `Downloading ${table} data...`);
+
+    // Download CSV data
+    const url = `${BASE_URL}/csv/${table}.csv`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to download ${table} data: ${response.status}`);
+    }
+
+    const csvText = await response.text();
+    const rows = parseCsv(csvText);
+
+    await updateProgress(
+      "importing",
+      30,
+      `Processing ${rows.length} ${table} records...`
+    );
+
+    // Import in chunks with upsert
+    let totalImported = 0;
+    let totalNew = 0;
+    let totalUpdated = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const chunk = rows.slice(i, i + BATCH_SIZE);
+      const progress = 30 + Math.round((i / rows.length) * 60);
+
+      await updateProgress(
+        "importing",
+        progress,
+        `Importing ${table}: ${i + 1}-${Math.min(
+          i + BATCH_SIZE,
+          rows.length
+        )} of ${rows.length}`,
+        totalImported
+      );
+
+      // Import chunk with upsert and get stats
+      const result = await importTableChunk(sql, table, chunk);
+      totalImported += result.imported;
+      totalNew += result.new;
+      totalUpdated += result.updated;
+
+      // Add small delay to avoid rate limits
+      if (i + BATCH_SIZE < rows.length) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+
+    await updateProgress(
+      "completed",
+      100,
+      `Successfully imported ${totalImported} ${table} records`,
+      totalImported,
+      totalNew,
+      totalUpdated
+    );
+
+    // Update sync tracking
+    await trackTableSync(sql, table, totalImported);
+  } catch (error) {
+    await updateProgress(
+      "failed",
+      0,
+      `Import failed: ${String(error)}`,
+      0,
+      0,
+      0,
+      String(error)
+    );
+  }
+}
 
 async function runImport(
   c: any,
@@ -463,110 +653,251 @@ function parseCsvLine(line: string): string[] {
   return result.map((v) => v.replace(/^"|"$/g, ""));
 }
 
+// Helper function for chunked table imports with upsert statistics
+async function importTableChunk(sql: any, table: string, rows: any[]) {
+  switch (table) {
+    case "countries":
+      return await importCountriesChunk(sql, rows);
+    case "states":
+      return await importStatesChunk(sql, rows);
+    case "cities":
+      return await importCitiesChunk(sql, rows);
+    default:
+      throw new Error(`Unsupported table: ${table}`);
+  }
+}
+
+async function importCountriesChunk(sql: any, countries: any[]) {
+  if (!countries.length) return { imported: 0, new: 0, updated: 0 };
+
+  const values = countries.map((c: any) => {
+    const phone = c.phone_code ?? c.phonecode ?? c.phoneCode ?? "";
+    const emojiu = c.emojiu ?? c.emojiU ?? "";
+    return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${String(
+      c.iso3 || ""
+    )}, ${String(c.iso2 || "")}, ${String(c.numeric_code || "")}, ${String(
+      phone || ""
+    )}, ${String(c.capital || "")}, ${String(c.currency || "")}, ${String(
+      c.currency_name || ""
+    )}, ${String(c.currency_symbol || "")}, ${String(c.tld || "")}, ${String(
+      c.native || ""
+    )}, ${String(c.region || "")}, ${String(c.subregion || "")}, ${String(
+      c.timezones || ""
+    )}, ${c.latitude ? Number(c.latitude) : null}, ${
+      c.longitude ? Number(c.longitude) : null
+    }, ${String(c.emoji || "")}, ${String(emojiu || "")} )`;
+  });
+
+  const result = await sql`
+    INSERT INTO public.countries (
+      id, name, iso3, iso2, numeric_code, phone_code, capital, currency,
+      currency_name, currency_symbol, tld, native, region, subregion, timezones,
+      latitude, longitude, emoji, emojiu
+    )
+    VALUES ${sql(values)}
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      iso3 = EXCLUDED.iso3,
+      iso2 = EXCLUDED.iso2,
+      numeric_code = EXCLUDED.numeric_code,
+      phone_code = EXCLUDED.phone_code,
+      capital = EXCLUDED.capital,
+      currency = EXCLUDED.currency,
+      currency_name = EXCLUDED.currency_name,
+      currency_symbol = EXCLUDED.currency_symbol,
+      tld = EXCLUDED.tld,
+      native = EXCLUDED.native,
+      region = EXCLUDED.region,
+      subregion = EXCLUDED.subregion,
+      timezones = EXCLUDED.timezones,
+      latitude = EXCLUDED.latitude,
+      longitude = EXCLUDED.longitude,
+      emoji = EXCLUDED.emoji,
+      emojiu = EXCLUDED.emojiu,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING xmax
+  `;
+
+  // Count new vs updated records based on xmax (PostgreSQL internal)
+  let newRecords = 0;
+  let updatedRecords = 0;
+
+  for (const row of result) {
+    if (row.xmax === 0) {
+      newRecords++; // New record
+    } else {
+      updatedRecords++; // Updated record
+    }
+  }
+
+  return {
+    imported: result.length,
+    new: newRecords,
+    updated: updatedRecords,
+  };
+}
+
+async function importStatesChunk(sql: any, states: any[]) {
+  if (!states.length) return { imported: 0, new: 0, updated: 0 };
+
+  const values = states.map(
+    (s: any) =>
+      sql`(${Number(s.id || 0)}, ${String(s.name || "")}, ${Number(
+        s.country_id || 0
+      )}, ${String(s.country_code || "")}, ${String(
+        s.fips_code || ""
+      )}, ${String(s.iso2 || "")}, ${String(s.type || "")}, ${
+        s.latitude ? Number(s.latitude) : null
+      }, ${s.longitude ? Number(s.longitude) : null}, ${String(
+        s.state_code || ""
+      )})`
+  );
+
+  const result = await sql`
+    INSERT INTO public.states (id, name, country_id, country_code, fips_code, iso2, type, latitude, longitude, state_code)
+    VALUES ${sql(values)}
+    ON CONFLICT (id) DO UPDATE SET 
+      name = EXCLUDED.name,
+      country_id = EXCLUDED.country_id,
+      country_code = EXCLUDED.country_code,
+      fips_code = EXCLUDED.fips_code,
+      iso2 = EXCLUDED.iso2,
+      type = EXCLUDED.type,
+      latitude = EXCLUDED.latitude,
+      longitude = EXCLUDED.longitude,
+      state_code = EXCLUDED.state_code,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING xmax
+  `;
+
+  let newRecords = 0;
+  let updatedRecords = 0;
+
+  for (const row of result) {
+    if (row.xmax === 0) {
+      newRecords++;
+    } else {
+      updatedRecords++;
+    }
+  }
+
+  return {
+    imported: result.length,
+    new: newRecords,
+    updated: updatedRecords,
+  };
+}
+
+async function importCitiesChunk(sql: any, cities: any[]) {
+  if (!cities.length) return { imported: 0, new: 0, updated: 0 };
+
+  const values = cities.map((c: any) => {
+    const wiki = c.wikiDataId ?? c.wikidataid ?? c.wiki_data_id ?? "";
+    return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${Number(
+      c.state_id || 0
+    )}, ${String(c.state_code || "")}, ${Number(c.country_id || 0)}, ${String(
+      c.country_code || ""
+    )}, ${c.latitude ? Number(c.latitude) : null}, ${
+      c.longitude ? Number(c.longitude) : null
+    }, ${String(wiki || "")})`;
+  });
+
+  const result = await sql`
+    INSERT INTO public.cities (id, name, state_id, state_code, country_id, country_code, latitude, longitude, wikidataid)
+    VALUES ${sql(values)}
+    ON CONFLICT (id) DO UPDATE SET 
+      name = EXCLUDED.name,
+      state_id = EXCLUDED.state_id,
+      state_code = EXCLUDED.state_code,
+      country_id = EXCLUDED.country_id,
+      country_code = EXCLUDED.country_code,
+      latitude = EXCLUDED.latitude,
+      longitude = EXCLUDED.longitude,
+      wikidataid = EXCLUDED.wikidataid,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING xmax
+  `;
+
+  let newRecords = 0;
+  let updatedRecords = 0;
+
+  for (const row of result) {
+    if (row.xmax === 0) {
+      newRecords++;
+    } else {
+      updatedRecords++;
+    }
+  }
+
+  return {
+    imported: result.length,
+    new: newRecords,
+    updated: updatedRecords,
+  };
+}
+
+async function trackTableSync(
+  sql: any,
+  table: string,
+  recordsImported: number
+) {
+  const latest = await fetchLatestRelease();
+  const version = latest.tag ?? new Date().toISOString().split("T")[0];
+  await sql`
+    INSERT INTO public.location_data_sync (data_version, records_imported, sync_status, table_type)
+    VALUES (${version}, ${recordsImported}, 'success', ${table})
+  `;
+}
+
+// Legacy function - keep for backward compatibility but remove TRUNCATE
 async function importCountries(sql: any, countries: any[], batch = 200) {
-  await sql`TRUNCATE TABLE public.countries RESTART IDENTITY CASCADE`;
+  // NO MORE TRUNCATE - this is incremental now
   if (!countries.length) return;
   for (let i = 0; i < countries.length; i += batch) {
     const slice = countries.slice(i, i + batch);
-    const values = slice.map((c: any) => {
-      const phone = c.phone_code ?? c.phonecode ?? c.phoneCode ?? "";
-      const emojiu = c.emojiu ?? c.emojiU ?? "";
-      return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${String(
-        c.iso3 || ""
-      )}, ${String(c.iso2 || "")}, ${String(c.numeric_code || "")}, ${String(
-        phone || ""
-      )}, ${String(c.capital || "")}, ${String(c.currency || "")}, ${String(
-        c.currency_name || ""
-      )}, ${String(c.currency_symbol || "")}, ${String(c.tld || "")}, ${String(
-        c.native || ""
-      )}, ${String(c.region || "")}, ${String(c.subregion || "")}, ${String(
-        c.timezones || ""
-      )}, ${c.latitude ? Number(c.latitude) : null}, ${
-        c.longitude ? Number(c.longitude) : null
-      }, ${String(c.emoji || "")}, ${String(emojiu || "")} )`;
-    });
-    await sql`
-      INSERT INTO public.countries (
-        id, name, iso3, iso2, numeric_code, phone_code, capital, currency,
-        currency_name, currency_symbol, tld, native, region, subregion, timezones,
-        latitude, longitude, emoji, emojiu
-      )
-      VALUES ${sql(values)}
-      ON CONFLICT (id) DO UPDATE SET
-        name = EXCLUDED.name,
-        iso3 = EXCLUDED.iso3,
-        iso2 = EXCLUDED.iso2,
-        numeric_code = EXCLUDED.numeric_code,
-        phone_code = EXCLUDED.phone_code,
-        capital = EXCLUDED.capital,
-        currency = EXCLUDED.currency,
-        currency_name = EXCLUDED.currency_name,
-        currency_symbol = EXCLUDED.currency_symbol,
-        tld = EXCLUDED.tld,
-        native = EXCLUDED.native,
-        region = EXCLUDED.region,
-        subregion = EXCLUDED.subregion,
-        timezones = EXCLUDED.timezones,
-        latitude = EXCLUDED.latitude,
-        longitude = EXCLUDED.longitude,
-        emoji = EXCLUDED.emoji,
-        emojiu = EXCLUDED.emojiu,
-        updated_at = CURRENT_TIMESTAMP`;
+    await importCountriesChunk(sql, slice);
   }
 }
 
+// Legacy function - keep for backward compatibility but remove TRUNCATE
 async function importStates(sql: any, states: any[], batch = 200) {
-  await sql`TRUNCATE TABLE public.states RESTART IDENTITY CASCADE`;
+  // NO MORE TRUNCATE - this is incremental now
   if (!states.length) return;
   for (let i = 0; i < states.length; i += batch) {
     const slice = states.slice(i, i + batch);
-    const values = slice.map(
-      (s: any) =>
-        sql`(${Number(s.id || 0)}, ${String(s.name || "")}, ${Number(
-          s.country_id || 0
-        )}, ${String(s.country_code || "")}, ${String(
-          s.fips_code || ""
-        )}, ${String(s.iso2 || "")}, ${String(s.type || "")}, ${
-          s.latitude ? Number(s.latitude) : null
-        }, ${s.longitude ? Number(s.longitude) : null}, ${String(
-          s.state_code || ""
-        )})`
-    );
-    await sql`
-      INSERT INTO public.states (id, name, country_id, country_code, fips_code, iso2, type, latitude, longitude, state_code)
-      VALUES ${sql(values)}
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = CURRENT_TIMESTAMP`;
+    await importStatesChunk(sql, slice);
   }
 }
 
+// Legacy function - keep for backward compatibility but remove TRUNCATE
 async function importCities(sql: any, cities: any[], batch = 200) {
-  await sql`TRUNCATE TABLE public.cities RESTART IDENTITY CASCADE`;
+  // NO MORE TRUNCATE - this is incremental now
   if (!cities.length) return;
   for (let i = 0; i < cities.length; i += batch) {
     const slice = cities.slice(i, i + batch);
-    const values = slice.map((c: any) => {
-      const wiki = c.wikiDataId ?? c.wikidataid ?? c.wiki_data_id ?? "";
-      return sql`(${Number(c.id || 0)}, ${String(c.name || "")}, ${Number(
-        c.state_id || 0
-      )}, ${String(c.state_code || "")}, ${Number(c.country_id || 0)}, ${String(
-        c.country_code || ""
-      )}, ${c.latitude ? Number(c.latitude) : null}, ${
-        c.longitude ? Number(c.longitude) : null
-      }, ${String(wiki || "")})`;
-    });
-    await sql`
-      INSERT INTO public.cities (id, name, state_id, state_code, country_id, country_code, latitude, longitude, wikidataid)
-      VALUES ${sql(values)}
-      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = CURRENT_TIMESTAMP`;
+    await importCitiesChunk(sql, slice);
   }
 }
 
 async function trackSync(sql: any, recordsImported: number) {
   const latest = await fetchLatestRelease();
   const version = latest.tag ?? new Date().toISOString().split("T")[0];
+
+  // Ensure table has table_type column
+  await (sql as any).unsafe(
+    `CREATE TABLE IF NOT EXISTS public.location_data_sync (
+      id SERIAL PRIMARY KEY,
+      data_version TEXT NOT NULL,
+      records_imported INTEGER,
+      sync_status TEXT DEFAULT 'success',
+      table_type TEXT DEFAULT 'combined',
+      sync_date TIMESTAMP DEFAULT NOW()
+    )`
+  );
+
   await sql`
-    INSERT INTO public.location_data_sync (data_version, records_imported, sync_status)
-    VALUES (${version}, ${recordsImported}, 'success')`;
+    INSERT INTO public.location_data_sync (data_version, records_imported, sync_status, table_type)
+    VALUES (${version}, ${recordsImported}, 'success', 'combined')`;
 }
 
 export default locations;

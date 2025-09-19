@@ -5,7 +5,6 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import ProductImportModal from "./ProductImportModal";
 import { Badge } from "@/components/ui/badge";
 import toast from "react-hot-toast";
 import {
@@ -34,7 +33,6 @@ export default function ProductsToolbar({
   const sp = useSearchParams();
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [showImport, setShowImport] = useState(false);
 
   // Enhanced API Helper with global error handling
   const { apiCall } = useAuthenticatedFetch({
@@ -233,7 +231,7 @@ export default function ProductsToolbar({
                   size="sm"
                   className="p-2"
                   title="Import CSV"
-                  onClick={() => setShowImport(true)}
+                  onClick={() => router.push("/admin/products/import-export")}
                 >
                   <Upload className="h-4 w-4" />
                 </Button>
@@ -250,7 +248,7 @@ export default function ProductsToolbar({
                       if (status) params.set("status", status);
 
                       const response = await apiCall(
-                        `/api/admin/products/export?${params.toString()}`
+                        `/api/admin/products/import-export/export?${params.toString()}`
                       );
 
                       const blob = await response.blob();
@@ -393,11 +391,6 @@ export default function ProductsToolbar({
           )}
         </div>
       )}
-      <ProductImportModal
-        open={showImport}
-        onClose={() => setShowImport(false)}
-        onImported={() => router.refresh()}
-      />
     </div>
   );
 }

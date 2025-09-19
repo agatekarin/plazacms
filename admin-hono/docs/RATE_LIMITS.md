@@ -28,7 +28,7 @@ This app uses `hono-rate-limiter` with Cloudflare Workers KV (`@hono-rate-limite
 
 - **Heavy endpoints (admin-only)**
 
-  - Paths: `/api/admin/products/import`, `/api/admin/products/export`, `/api/admin/media/upload`, `/api/admin/media/bulk`
+  - Paths: `/api/admin/products/import-export/import`, `/api/admin/products/import-export/export`, `/api/admin/media/upload`, `/api/admin/media/bulk`
   - Limit: 120 requests / 180s per key
   - Key Strategy: prefer `user:{id}`, fallback IP
   - Prefix: `rl:api:heavy:`

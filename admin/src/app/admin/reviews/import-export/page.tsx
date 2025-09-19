@@ -35,7 +35,7 @@ interface ImportExportStats {
 }
 
 export default function ReviewImportExportPage() {
-  const { apiCallJson, uploadWithProgress } = useAuthenticatedFetch({
+  const { apiCallJson, apiCall, uploadWithProgress } = useAuthenticatedFetch({
     onError: (url, error) => {
       console.error(`API Error on ${url}:`, error);
       toast.error(error?.message || "Operation failed");
@@ -75,14 +75,8 @@ export default function ReviewImportExportPage() {
       setExportStatus("exporting");
       setExportProgress(0);
 
-      const response = await fetch(
-        `/api/admin/reviews/import-export/export?format=${exportFormat}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("auth-token")}`,
-          },
-        }
+      const response = await apiCall(
+        `/api/admin/reviews/import-export/export?format=${exportFormat}`
       );
 
       if (!response.ok) {

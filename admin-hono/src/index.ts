@@ -21,8 +21,6 @@ import taxClassesRoutes from "./routes/tax-classes";
 import productBulkRoutes from "./routes/product-bulk";
 import productVariantsRoutes from "./routes/product-variants";
 import productMediaRoutes from "./routes/product-media";
-import productImportRoutes from "./routes/product-import";
-import productExportRoutes from "./routes/product-export";
 import mediaRoutes from "./routes/media";
 import mediaUploadRoutes from "./routes/media-upload";
 import mediaFoldersRoutes from "./routes/media-folders";
@@ -177,8 +175,8 @@ for (const prefix of ["/api/admin/*", "/api/auth/*", "/api/account/*"]) {
 
 // 3) Heavy endpoints – stricter limits per user (fallback IP)
 for (const p of [
-  "/api/admin/products/import",
-  "/api/admin/products/export",
+    "/api/admin/products/import-export/import",
+    "/api/admin/products/import-export/export",
   "/api/admin/media/upload",
   "/api/admin/media/bulk",
 ]) {
@@ -332,8 +330,6 @@ app.route("/api/auth", authRoutes);
 app.route("/api/admin/attributes", attributesRoutes);
 // Mount specific product routes FIRST (before generic /products route with :id)
 app.route("/api/admin/products/bulk", productBulkRoutes);
-app.route("/api/admin/products/import", productImportRoutes);
-app.route("/api/admin/products/export", productExportRoutes);
 app.route("/api/admin/products", productImportExportRoutes);
 app.route("/api/admin/products", productAnalyticsRoutes);
 app.route("/api/admin/products", productVariantsRoutes);

@@ -23,6 +23,7 @@ import {
   AlertCircle,
   Clock,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 
@@ -39,10 +40,13 @@ interface SyncStatus {
 
 interface ImportProgress {
   id: string;
+  table: string;
   status: "pending" | "downloading" | "importing" | "completed" | "failed";
   progress: number;
   message: string;
   records_imported?: number;
+  records_updated?: number;
+  records_new?: number;
   error?: string;
   started_at: string;
   completed_at?: string;
@@ -51,16 +55,23 @@ interface ImportProgress {
 export function LocationSyncPanel() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const { apiCallJson } = useAuthenticatedFetch();
-  const [importProgress, setImportProgress] = useState<ImportProgress | null>(
-    null
-  );
-  const [loading, setLoading] = useState(false);
-  const [selectedFormat, setSelectedFormat] = useState<"json" | "csv">("csv");
-  const [selectedTables, setSelectedTables] = useState([
-    "countries",
-    "states",
-    "cities",
-  ]);
+
+  // Individual progress tracking for each table
+  const [importProgress, setImportProgress] = useState<{
+    countries?: ImportProgress;
+    states?: ImportProgress;
+    cities?: ImportProgress;
+  }>({});
+
+  const [loadingStates, setLoadingStates] = useState<{
+    countries: boolean;
+    states: boolean;
+    cities: boolean;
+  }>({
+    countries: false,
+    states: false,
+    cities: false,
+  });
 
   useEffect(() => {
     checkSyncStatus();
@@ -77,32 +88,31 @@ export function LocationSyncPanel() {
     }
   };
 
-  const startImport = async () => {
-    setLoading(true);
+  const startTableImport = async (table: "countries" | "states" | "cities") => {
+    setLoadingStates((prev) => ({ ...prev, [table]: true }));
+
     try {
-      const data = await apiCallJson("/api/admin/locations/sync", {
+      const data = await apiCallJson(`/api/admin/locations/sync/${table}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          format: selectedFormat,
-          tables: selectedTables,
+          format: "csv", // Always use CSV for efficiency
         }),
       });
 
       if (data.import_id) {
         // Start polling for progress
-        pollImportProgress(data.import_id);
+        pollTableImportProgress(data.import_id, table);
       } else {
-        console.error("Import failed:", data.error);
+        console.error(`${table} import failed:`, data.error);
       }
     } catch (error) {
-      console.error("Failed to start import:", error);
-    } finally {
-      setLoading(false);
+      console.error(`Failed to start ${table} import:`, error);
+      setLoadingStates((prev) => ({ ...prev, [table]: false }));
     }
   };
 
-  const pollImportProgress = (importId: string) => {
+  const pollTableImportProgress = (importId: string, table: string) => {
     const poll = setInterval(async () => {
       try {
         const progress = await apiCallJson(
@@ -110,10 +120,15 @@ export function LocationSyncPanel() {
           { cache: "no-store" }
         );
 
-        setImportProgress(progress);
+        setImportProgress((prev) => ({
+          ...prev,
+          [table]: progress,
+        }));
 
         if (progress.status === "completed" || progress.status === "failed") {
           clearInterval(poll);
+          setLoadingStates((prev) => ({ ...prev, [table]: false }));
+
           if (progress.status === "completed") {
             // Refresh status after successful import
             setTimeout(() => {
@@ -123,6 +138,7 @@ export function LocationSyncPanel() {
         }
       } catch (error) {
         clearInterval(poll);
+        setLoadingStates((prev) => ({ ...prev, [table]: false }));
         console.error("Failed to check progress:", error);
       }
     }, 2000);
@@ -141,27 +157,46 @@ export function LocationSyncPanel() {
 
   const tableInfo = [
     {
-      id: "countries",
+      id: "countries" as const,
       label: "Countries",
       icon: Globe,
       count: syncStatus?.total_countries || 250,
-      description: "All countries worldwide",
+      description:
+        "All countries worldwide with ISO codes, currencies, and timezones",
+      color: "blue",
     },
     {
-      id: "states",
+      id: "states" as const,
       label: "States/Provinces",
       icon: MapPin,
       count: syncStatus?.total_states || 5038,
-      description: "States, provinces, regions",
+      description: "States, provinces, regions with geographical coordinates",
+      color: "green",
     },
     {
-      id: "cities",
+      id: "cities" as const,
       label: "Cities",
       icon: Building,
       count: syncStatus?.total_cities || 151024,
-      description: "Cities, towns, districts",
+      description: "Cities, towns, districts with latitude/longitude data",
+      color: "purple",
     },
   ];
+
+  const isTableImporting = (tableId: string) => {
+    const progress = importProgress[tableId as keyof typeof importProgress];
+    return (
+      progress &&
+      ["pending", "downloading", "importing"].includes(progress.status)
+    );
+  };
+
+  const getTableStatus = (tableId: string) => {
+    const progress = importProgress[tableId as keyof typeof importProgress];
+    if (!progress) return null;
+
+    return progress.status;
+  };
 
   return (
     <div className="space-y-6">
@@ -241,248 +276,246 @@ export function LocationSyncPanel() {
               </AlertDescription>
             </Alert>
           )}
-        </CardContent>
-      </Card>
 
-      {/* Import Configuration */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="w-5 h-5" />
-            Import Configuration
-          </CardTitle>
-          <CardDescription>
-            Choose data format and tables to import from GitHub repository
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Format Selection */}
-          <div>
-            <label className="text-sm font-medium block mb-2">
-              Data Format
-            </label>
-            <div className="flex gap-2">
-              <Button
-                variant={selectedFormat === "csv" ? "primary" : "outline"}
-                size="sm"
-                onClick={() => setSelectedFormat("csv")}
-                className="flex items-center gap-2"
-              >
-                <Database className="w-4 h-4" />
-                CSV (Recommended)
-              </Button>
-              <Button
-                variant={selectedFormat === "json" ? "primary" : "outline"}
-                size="sm"
-                onClick={() => setSelectedFormat("json")}
-                className="flex items-center gap-2"
-              >
-                <Globe className="w-4 h-4" />
-                JSON
-              </Button>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              CSV is faster for large datasets, JSON provides better validation
-            </p>
-          </div>
-
-          {/* Table Selection */}
-          <div>
-            <label className="text-sm font-medium block mb-3">
-              Tables to Import
-            </label>
-            <div className="grid grid-cols-1 gap-3">
-              {tableInfo.map((table) => (
-                <div
-                  key={table.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="checkbox"
-                      id={table.id}
-                      checked={selectedTables.includes(table.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedTables([...selectedTables, table.id]);
-                        } else {
-                          setSelectedTables(
-                            selectedTables.filter((t) => t !== table.id)
-                          );
-                        }
-                      }}
-                      className="rounded"
-                    />
-                    <table.icon className="w-5 h-5 text-gray-600" />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <label
-                          htmlFor={table.id}
-                          className="text-sm font-medium cursor-pointer"
-                        >
-                          {table.label}
-                        </label>
-                        <Badge variant="secondary" className="text-xs">
-                          {table.count.toLocaleString()}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        {table.description}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Import Actions */}
           <div className="flex gap-2 pt-2 border-t">
-            <Button
-              onClick={startImport}
-              disabled={
-                loading ||
-                selectedTables.length === 0 ||
-                Boolean(
-                  importProgress &&
-                    ["pending", "downloading", "importing"].includes(
-                      importProgress.status
-                    )
-                )
-              }
-              className="flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              {loading ? "Starting Import..." : "Start Import"}
-            </Button>
-
             <Button
               variant="outline"
               onClick={checkSyncStatus}
               className="flex items-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />
-              Check Status
+              Refresh Status
             </Button>
           </div>
-
-          {selectedTables.length === 0 && (
-            <p className="text-sm text-red-600">
-              Please select at least one table to import.
-            </p>
-          )}
         </CardContent>
       </Card>
 
-      {/* Import Progress */}
-      {importProgress && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {importProgress.status === "completed" ? (
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              ) : importProgress.status === "failed" ? (
-                <AlertCircle className="w-5 h-5 text-red-600" />
-              ) : (
-                <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
-              )}
-              Import Progress
-            </CardTitle>
-            <CardDescription>
-              Started at: {formatDate(importProgress.started_at)}
-              {importProgress.completed_at && (
-                <> • Completed at: {formatDate(importProgress.completed_at)}</>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium">
-                  {importProgress.message}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {importProgress.progress}%
-                </span>
-              </div>
-              <Progress
-                value={importProgress.progress}
-                className={`w-full h-2 ${
-                  importProgress.status === "completed"
-                    ? "bg-green-100"
-                    : importProgress.status === "failed"
-                    ? "bg-red-100"
-                    : "bg-blue-100"
-                }`}
-              />
-            </div>
+      {/* Individual Import Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {tableInfo.map((table) => {
+          const progress = importProgress[table.id];
+          const isImporting = isTableImporting(table.id);
+          const status = getTableStatus(table.id);
 
-            {importProgress.records_imported && (
-              <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                📊 Imported {importProgress.records_imported.toLocaleString()}{" "}
-                records
-              </div>
-            )}
+          return (
+            <Card key={table.id} className="relative">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg bg-${table.color}-100`}>
+                      <table.icon
+                        className={`w-6 h-6 text-${table.color}-600`}
+                      />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{table.label}</CardTitle>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="secondary" className="text-xs">
+                          {table.count.toLocaleString()} records
+                        </Badge>
+                        {status === "completed" && (
+                          <Badge className="text-xs bg-green-100 text-green-800">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Updated
+                          </Badge>
+                        )}
+                        {status === "failed" && (
+                          <Badge className="text-xs bg-red-100 text-red-800">
+                            <AlertCircle className="w-3 h-3 mr-1" />
+                            Failed
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <CardDescription className="text-sm">
+                  {table.description}
+                </CardDescription>
+              </CardHeader>
 
-            {importProgress.status === "completed" && (
-              <Alert className="border-green-200 bg-green-50">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-green-800">
-                  Location data import completed successfully! You can now
-                  create shipping zones based on countries, states, and cities.
-                </AlertDescription>
-              </Alert>
-            )}
+              <CardContent className="space-y-4">
+                {/* Import Progress */}
+                {progress && (
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="font-medium">{progress.message}</span>
+                      <span className="text-gray-500">
+                        {progress.progress}%
+                      </span>
+                    </div>
 
-            {importProgress.status === "failed" && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Import failed:{" "}
-                  {importProgress.error || importProgress.message}
-                </AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                    <Progress
+                      value={progress.progress}
+                      className={`w-full h-2 ${
+                        progress.status === "completed"
+                          ? "bg-green-100"
+                          : progress.status === "failed"
+                          ? "bg-red-100"
+                          : `bg-${table.color}-100`
+                      }`}
+                    />
 
-      {/* Database Statistics */}
+                    {progress.records_imported && (
+                      <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded grid grid-cols-3 gap-2">
+                        <div>
+                          📊{" "}
+                          <strong>
+                            {progress.records_imported.toLocaleString()}
+                          </strong>{" "}
+                          imported
+                        </div>
+                        {progress.records_new && (
+                          <div>
+                            ✨{" "}
+                            <strong>
+                              {progress.records_new.toLocaleString()}
+                            </strong>{" "}
+                            new
+                          </div>
+                        )}
+                        {progress.records_updated && (
+                          <div>
+                            🔄{" "}
+                            <strong>
+                              {progress.records_updated.toLocaleString()}
+                            </strong>{" "}
+                            updated
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {progress.error && (
+                      <Alert className="text-xs border-red-200 bg-red-50">
+                        <AlertCircle className="h-3 w-3 text-red-600" />
+                        <AlertDescription className="text-red-800">
+                          {progress.error}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div className="text-xs text-gray-500">
+                      Started: {formatDate(progress.started_at)}
+                      {progress.completed_at && (
+                        <> • Completed: {formatDate(progress.completed_at)}</>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Import Button */}
+                <Button
+                  onClick={() => startTableImport(table.id)}
+                  disabled={isImporting || loadingStates[table.id]}
+                  className={`w-full flex items-center gap-2 bg-${table.color}-600 hover:bg-${table.color}-700`}
+                  size="sm"
+                >
+                  {isImporting || loadingStates[table.id] ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Import {table.label}
+                    </>
+                  )}
+                </Button>
+
+                {/* Help text */}
+                <p className="text-xs text-gray-500">
+                  Uses incremental import (upsert) - preserves existing data and
+                  adds new records.
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Import Information */}
       <Card>
         <CardHeader>
-          <CardTitle>Expected Database Statistics</CardTitle>
-          <CardDescription>
-            Data from countries-states-cities-database repository
-          </CardDescription>
+          <CardTitle>Import Information</CardTitle>
+          <CardDescription>How incremental imports work</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {tableInfo.map((table) => (
-              <div
-                key={table.id}
-                className="p-4 border rounded-lg text-center hover:bg-gray-50 transition-colors"
-              >
-                <table.icon className="w-8 h-8 mx-auto mb-2 text-blue-600" />
-                <div className="text-2xl font-bold">
-                  {table.count.toLocaleString()}
-                </div>
-                <div className="text-sm text-gray-600">{table.label}</div>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <h4 className="font-medium text-green-900 flex items-center gap-2">
+                <CheckCircle className="w-4 h-4" />✅ What Happens
+              </h4>
+              <ul className="text-sm text-gray-700 space-y-1 ml-6">
+                <li>
+                  • <strong>Preserves existing data</strong> - no deletion
+                </li>
+                <li>
+                  • <strong>Adds new records</strong> from GitHub updates
+                </li>
+                <li>
+                  • <strong>Updates changed records</strong> with latest info
+                </li>
+                <li>
+                  • <strong>Chunked processing</strong> - 25 records per batch
+                </li>
+                <li>
+                  • <strong>Rate-limit friendly</strong> - optimized for CF
+                  Workers
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium text-blue-900 flex items-center gap-2">
+                <Database className="w-4 h-4" />
+                📊 Technical Details
+              </h4>
+              <ul className="text-sm text-gray-700 space-y-1 ml-6">
+                <li>
+                  • <strong>Source:</strong> countries-states-cities-database
+                </li>
+                <li>
+                  • <strong>Format:</strong> CSV (faster processing)
+                </li>
+                <li>
+                  • <strong>Method:</strong> UPSERT (INSERT ... ON CONFLICT
+                  UPDATE)
+                </li>
+                <li>
+                  • <strong>Batch Size:</strong> 25 rows/batch
+                </li>
+                <li>
+                  • <strong>Retry Logic:</strong> Auto-retry on connection
+                  issues
+                </li>
+              </ul>
+            </div>
           </div>
 
-          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">
-              Coverage Includes:
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
+              <Globe className="w-4 h-4" />
+              Expected Coverage:
             </h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• 250 countries with ISO codes, currencies, and timezones</li>
-              <li>• 5,038 states/provinces with geographical coordinates</li>
-              <li>• 151,024 cities with latitude/longitude data</li>
-              <li>
-                • Complete hierarchy: Country → State → City relationships
-              </li>
-            </ul>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-blue-800">
+              <div>
+                <strong>Countries:</strong> ~250
+                <br />
+                ISO codes, currencies, timezones
+              </div>
+              <div>
+                <strong>States:</strong> ~5,000
+                <br />
+                Provinces, regions with coordinates
+              </div>
+              <div>
+                <strong>Cities:</strong> ~150,000
+                <br />
+                Towns, districts with lat/lng
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
