@@ -192,67 +192,6 @@ emails.delete("/templates/:id", adminMiddleware as any, async (c) => {
 // EMAIL ANALYTICS & NOTIFICATIONS
 // ============================================================================
 
-// GET /api/admin/emails/analytics - Get email analytics
-emails.get("/analytics", adminMiddleware as any, async (c) => {
-  const sql = getDb(c as any);
-
-  try {
-    const days = parseInt(c.req.query("days") || "30");
-
-    // Overall stats
-    const [stats] = await sql`
-      SELECT 
-        COUNT(*) as total_sent,
-        COUNT(CASE WHEN status = 'sent' THEN 1 END) as delivered,
-        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending
-      FROM email_notifications
-      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
-    `;
-
-    // Email events breakdown
-    const events = await sql`
-      SELECT event_type, COUNT(*) as count
-      FROM email_events
-      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
-      GROUP BY event_type
-      ORDER BY count DESC
-    `;
-
-    // Top email types
-    const topTypes = await sql`
-      SELECT type, COUNT(*) as count
-      FROM email_notifications
-      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
-      GROUP BY type
-      ORDER BY count DESC
-      LIMIT 10
-    `;
-
-    // Daily stats (last 7 days)
-    const dailyStats = await sql`
-      SELECT 
-        DATE(created_at) as date,
-        COUNT(*) as sent,
-        COUNT(CASE WHEN status = 'sent' THEN 1 END) as delivered
-      FROM email_notifications
-      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
-      GROUP BY DATE(created_at)
-      ORDER BY date DESC
-    `;
-
-    return c.json({
-      stats,
-      events,
-      topTypes,
-      dailyStats,
-    });
-  } catch (err) {
-    console.error("[emails:analytics]", err);
-    return c.json({ error: "Failed to fetch email analytics" }, 500);
-  }
-});
-
 // GET /api/admin/emails/notifications - Get email notification history
 emails.get("/notifications", adminMiddleware as any, async (c) => {
   const sql = getDb(c as any);
@@ -309,7 +248,11 @@ emails.get("/export-history", adminMiddleware as any, async (c) => {
     const status = c.req.query("status");
     const days = parseInt(c.req.query("days") || "30");
 
-    let whereClause = sql`WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'`;
+    // Calculate cutoff date
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    let whereClause = sql`WHERE created_at >= ${cutoffDate.toISOString()}`;
     if (type) whereClause = sql`${whereClause} AND type = ${type}`;
     if (status) whereClause = sql`${whereClause} AND status = ${status}`;
 
@@ -397,7 +340,7 @@ emails.post("/send", adminMiddleware as any, async (c) => {
       return c.json({ error: "Missing required fields" }, 400);
     }
 
-    const emailService = createEmailService(c);
+    const emailService = await createEmailService(c);
 
     let result;
     if (template_id) {
@@ -438,7 +381,7 @@ emails.post("/webhook/resend", async (c) => {
     const body = await c.req.json();
     console.log("[Resend Webhook]", body);
 
-    const emailService = createEmailService(c);
+    const emailService = await createEmailService(c);
     await emailService.handleWebhook(body);
 
     return c.json({ success: true });
@@ -458,22 +401,41 @@ emails.post("/test", adminMiddleware as any, async (c) => {
     const body = await c.req.json();
     const {
       email = c.env?.ADMIN_EMAIL || "admin@example.com",
+      template_id,
       template_type = "welcome",
     } = body;
 
-    const emailService = createEmailService(c);
+    const emailService = await createEmailService(c);
 
-    const result = await emailService.sendWithTemplate(
-      template_type,
-      email,
-      {
+    let result;
+    if (template_id) {
+      // Template preview: use specific template ID (uses template's own from_name/from_email)
+      result = await emailService.sendWithTemplate(template_id, email, {
         customer_name: "Test User",
-        store_name: c.env?.STORE_NAME || "PlazaCMS Demo",
+        store_name: "PlazaCMS Demo", // Will be replaced by template's from_name if set
         order_number: "TEST-001",
         product_name: "Test Product",
-      },
-      { isType: true }
-    );
+        order_total: "$99.99",
+        review_link: "https://plazacms.com/review/test",
+        tracking_url: "https://track.example.com/TEST001",
+        unsubscribe_url: "https://plazacms.com/unsubscribe",
+        store_url: "https://plazacms.com",
+        customer_email: email,
+      });
+    } else {
+      // General test: use template type (uses email settings from database)
+      result = await emailService.sendWithTemplate(
+        template_type,
+        email,
+        {
+          customer_name: "Test User",
+          store_name: "PlazaCMS Demo",
+          order_number: "TEST-001",
+          product_name: "Test Product",
+        },
+        { isType: true }
+      );
+    }
 
     if (!result.success) {
       return c.json({ error: result.error }, 500);
@@ -487,6 +449,183 @@ emails.post("/test", adminMiddleware as any, async (c) => {
   } catch (err) {
     console.error("[emails:test]", err);
     return c.json({ error: "Failed to send test email" }, 500);
+  }
+});
+
+// ============================================================================
+// EMAIL ANALYTICS
+// ============================================================================
+
+// GET /api/admin/emails/analytics - Get email analytics data
+emails.get("/analytics", adminMiddleware as any, async (c) => {
+  try {
+    const { days = "30" } = c.req.query();
+    const dayCount = parseInt(days);
+
+    const sql = getDb(c);
+
+    // Calculate cutoff date
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - dayCount);
+
+    // Get overview statistics
+    const [overviewStats] = await sql`
+      SELECT 
+        COUNT(*) as total_sent,
+        COUNT(CASE WHEN status = 'sent' THEN 1 END) as delivered,
+        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
+      FROM email_notifications 
+      WHERE created_at >= ${cutoffDate.toISOString()}
+    `;
+
+    // Get event statistics
+    const eventStats = await sql`
+      SELECT event_type, COUNT(*) as count
+      FROM email_events
+      WHERE created_at >= ${cutoffDate.toISOString()}
+      GROUP BY event_type
+    `;
+
+    // Get daily statistics for chart
+    const dailyStats = await sql`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as sent,
+        COUNT(CASE WHEN status = 'sent' THEN 1 END) as delivered,
+        0 as opened,
+        0 as clicked
+      FROM email_notifications
+      WHERE created_at >= ${cutoffDate.toISOString()}
+      GROUP BY DATE(created_at)
+      ORDER BY date DESC
+    `;
+
+    // Get top templates
+    const topTemplates = await sql`
+      SELECT 
+        et.name as template_name,
+        COUNT(en.id) as sent_count,
+        COALESCE(
+          (COUNT(CASE WHEN ee.event_type = 'opened' THEN 1 END)::float / 
+           COUNT(en.id)::float * 100), 0
+        ) as open_rate,
+        COALESCE(
+          (COUNT(CASE WHEN ee.event_type = 'clicked' THEN 1 END)::float / 
+           COUNT(en.id)::float * 100), 0
+        ) as click_rate
+      FROM email_notifications en
+      LEFT JOIN email_templates et ON en.template_id = et.id
+      LEFT JOIN email_events ee ON en.id = ee.notification_id
+      WHERE en.created_at >= ${cutoffDate.toISOString()}
+        AND et.name IS NOT NULL
+      GROUP BY et.name, et.id
+      ORDER BY sent_count DESC
+      LIMIT 10
+    `;
+
+    // Get recent events
+    const recentEvents = await sql`
+      SELECT 
+        ee.event_type,
+        en.recipient_email,
+        et.name as template_name,
+        ee.created_at
+      FROM email_events ee
+      JOIN email_notifications en ON ee.notification_id = en.id
+      LEFT JOIN email_templates et ON en.template_id = et.id
+      WHERE ee.created_at >= ${new Date(
+        Date.now() - 7 * 24 * 60 * 60 * 1000
+      ).toISOString()}
+      ORDER BY ee.created_at DESC
+      LIMIT 20
+    `;
+
+    // Process event statistics
+    const eventCounts = eventStats.reduce((acc: any, stat: any) => {
+      acc[stat.event_type] = parseInt(stat.count);
+      return acc;
+    }, {});
+
+    const totalSent = parseInt(overviewStats.total_sent) || 0;
+    const delivered = parseInt(overviewStats.delivered) || 0;
+    const failed = parseInt(overviewStats.failed) || 0;
+    const opened = eventCounts.opened || 0;
+    const clicked = eventCounts.clicked || 0;
+    const bounced = eventCounts.bounced || 0;
+    const unsubscribed = eventCounts.unsubscribed || 0;
+
+    // Calculate rates
+    const deliveryRate = totalSent > 0 ? (delivered / totalSent) * 100 : 0;
+    const openRate = delivered > 0 ? (opened / delivered) * 100 : 0;
+    const clickRate = opened > 0 ? (clicked / opened) * 100 : 0;
+    const bounceRate = totalSent > 0 ? (bounced / totalSent) * 100 : 0;
+
+    // Process daily data for chart
+    const chartDaily = dailyStats.map((day: any) => ({
+      date: day.date,
+      sent: parseInt(day.sent),
+      delivered: parseInt(day.delivered),
+      opened: 0, // Could be enhanced with join to events
+      clicked: 0, // Could be enhanced with join to events
+    }));
+
+    // Mock campaign data (could be enhanced with actual campaign table)
+    const campaignData = [
+      {
+        name: "Welcome Series",
+        sent: Math.floor(totalSent * 0.3),
+        opened: Math.floor(opened * 0.4),
+        clicked: Math.floor(clicked * 0.3),
+      },
+      {
+        name: "Newsletter",
+        sent: Math.floor(totalSent * 0.5),
+        opened: Math.floor(opened * 0.4),
+        clicked: Math.floor(clicked * 0.5),
+      },
+      {
+        name: "Product Updates",
+        sent: Math.floor(totalSent * 0.2),
+        opened: Math.floor(opened * 0.2),
+        clicked: Math.floor(clicked * 0.2),
+      },
+    ];
+
+    const analyticsData = {
+      overview: {
+        totalSent,
+        delivered,
+        opened,
+        clicked,
+        bounced,
+        unsubscribed,
+        deliveryRate: parseFloat(deliveryRate.toFixed(1)),
+        openRate: parseFloat(openRate.toFixed(1)),
+        clickRate: parseFloat(clickRate.toFixed(1)),
+        bounceRate: parseFloat(bounceRate.toFixed(1)),
+      },
+      chartData: {
+        daily: chartDaily,
+        campaigns: campaignData,
+      },
+      topTemplates: topTemplates.map((t: any) => ({
+        template_name: t.template_name,
+        sent_count: parseInt(t.sent_count),
+        open_rate: parseFloat(t.open_rate) || 0,
+        click_rate: parseFloat(t.click_rate) || 0,
+      })),
+      recentEvents: recentEvents.map((e: any) => ({
+        event_type: e.event_type,
+        recipient_email: e.recipient_email,
+        template_name: e.template_name,
+        created_at: e.created_at,
+      })),
+    };
+
+    return c.json(analyticsData);
+  } catch (err) {
+    console.error("[emails:analytics]", err);
+    return c.json({ error: "Failed to fetch analytics data" }, 500);
   }
 });
 

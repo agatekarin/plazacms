@@ -164,11 +164,13 @@ export default function EmailTemplatesPage() {
       await apiCallJson("/api/admin/emails/test", {
         method: "POST",
         body: JSON.stringify({
-          template_type: template.type,
+          template_id: template.id,
         }),
       });
 
-      toast.success(`Test email sent using "${template.name}" template`);
+      toast.success(
+        `Test email sent using "${template.name}" template with its own settings`
+      );
     } catch (error) {
       console.error("Error sending test email:", error);
       toast.error("Failed to send test email");

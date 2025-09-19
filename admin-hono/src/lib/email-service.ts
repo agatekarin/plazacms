@@ -68,8 +68,8 @@ export class EmailService {
   constructor(
     apiKey: string,
     sql: any,
-    defaultFromEmail: string = "noreply@plazacms.com",
-    defaultFromName: string = "PlazaCMS"
+    defaultFromEmail: string = "onboarding@resend.dev",
+    defaultFromName: string = "PlazaCMS Demo"
   ) {
     this.resend = new Resend(apiKey);
     this.sql = sql;
@@ -86,9 +86,9 @@ export class EmailService {
   ): string {
     let processedContent = content;
 
-    // Default variables
+    // Default variables (store_name comes from constructor now)
     const defaultVars: TemplateVariables = {
-      store_name: "PlazaCMS",
+      store_name: this.defaultFromName,
       store_url: "https://plazacms.com",
       ...variables,
     };
@@ -180,10 +180,17 @@ export class EmailService {
         ? this.replaceVariables(htmlContent, variables)
         : "";
 
-      // Send email via Resend
-      const fromName = template?.from_name || this.defaultFromName;
-      const fromEmail = template?.from_email || this.defaultFromEmail;
-      const replyTo = template?.reply_to;
+      // Process template fields with variable replacement
+      const rawFromName = template?.from_name || this.defaultFromName;
+      const rawFromEmail = template?.from_email || this.defaultFromEmail;
+      const rawReplyTo = template?.reply_to;
+
+      // Replace variables in template fields
+      const fromName = this.replaceVariables(rawFromName, variables);
+      const fromEmail = this.replaceVariables(rawFromEmail, variables);
+      const replyTo = rawReplyTo
+        ? this.replaceVariables(rawReplyTo, variables)
+        : undefined;
 
       const emailResult = await this.resend.emails.send({
         from: `${fromName} <${fromEmail}>`,
@@ -368,6 +375,15 @@ export class EmailService {
    */
   private async logEmailNotification(log: EmailNotificationLog): Promise<void> {
     try {
+      console.log("[EmailService] Logging notification:", {
+        type: log.type,
+        recipient: log.recipient_email,
+        subject: log.subject,
+        status: log.status,
+        messageId: log.resend_message_id,
+        templateId: log.template_id,
+      });
+
       await this.sql`
         INSERT INTO email_notifications (
           type, recipient_email, subject, content, template_id, campaign_id,
@@ -380,9 +396,11 @@ export class EmailService {
           ${log.status}, ${log.resend_message_id || null}, ${
         log.error_message || null
       },
-          ${log.status === "sent" ? "CURRENT_TIMESTAMP" : null}
+          ${log.status === "sent" ? new Date() : null}
         )
       `;
+
+      console.log("[EmailService] Notification logged successfully");
     } catch (error) {
       console.error("[EmailService] Error logging notification:", error);
     }
@@ -474,6 +492,10 @@ export class EmailService {
 
         return { campaign, events };
       } else {
+        // Calculate cutoff date
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+
         // Overall email analytics
         const stats = await this.sql`
           SELECT 
@@ -481,13 +503,13 @@ export class EmailService {
             COUNT(CASE WHEN status = 'sent' THEN 1 END) as delivered,
             COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
           FROM email_notifications
-          WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
+          WHERE created_at >= ${cutoffDate.toISOString()}
         `;
 
         const events = await this.sql`
           SELECT event_type, COUNT(*) as count
           FROM email_events
-          WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '${days} days'
+          WHERE created_at >= ${cutoffDate.toISOString()}
           GROUP BY event_type
         `;
 
@@ -503,15 +525,29 @@ export class EmailService {
 /**
  * Factory function to create EmailService instance
  */
-export function createEmailService(c: any): EmailService {
-  const resendApiKey = c.env?.RESEND_API_KEY;
+export async function createEmailService(c: any): Promise<EmailService> {
+  const sql = getDb(c);
+
+  // Get email settings from database
+  const [emailSettings] = await sql`
+    SELECT * FROM email_settings 
+    WHERE is_active = true 
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `;
+
+  // Fallback to environment variables if no DB settings
+  const resendApiKey = emailSettings?.resend_api_key || c.env?.RESEND_API_KEY;
+  const fromEmail =
+    emailSettings?.from_email || c.env?.FROM_EMAIL || "onboarding@resend.dev";
+  const fromName =
+    emailSettings?.from_name || c.env?.STORE_NAME || "PlazaCMS Demo";
+
   if (!resendApiKey) {
-    throw new Error("RESEND_API_KEY environment variable is required");
+    throw new Error(
+      "Resend API key is required. Configure it in Email Settings or RESEND_API_KEY environment variable."
+    );
   }
 
-  const sql = getDb(c);
-  const fromEmail = c.env?.FROM_EMAIL || "noreply@plazacms.com";
-  const storeName = c.env?.STORE_NAME || "PlazaCMS";
-
-  return new EmailService(resendApiKey, sql, fromEmail, storeName);
+  return new EmailService(resendApiKey, sql, fromEmail, fromName);
 }

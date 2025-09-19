@@ -237,10 +237,10 @@ reviewEmailNotifications.post(
       });
 
       // Send email using EmailService with Resend
-      const emailService = createEmailService(c);
-      
+      const emailService = await createEmailService(c);
+
       const emailResult = await emailService.sendWithTemplate(
-        template_id || 'review_request', 
+        template_id || "review_request",
         customer_email,
         {
           customer_name: customerName,
@@ -254,16 +254,19 @@ reviewEmailNotifications.post(
           customSubject: !template_id ? processedSubject : undefined,
           customContent: !template_id ? processedContent : undefined,
           orderId: order_id,
-          orderItemId: order_item_id
+          orderItemId: order_item_id,
         }
       );
 
       if (!emailResult.success) {
         console.error("[review-email:send]", emailResult.error);
-        return c.json({ 
-          error: "Failed to send email notification", 
-          details: emailResult.error 
-        }, 500);
+        return c.json(
+          {
+            error: "Failed to send email notification",
+            details: emailResult.error,
+          },
+          500
+        );
       }
 
       console.log("Email sent successfully:", {

@@ -3,7 +3,10 @@
  * Overview of email system with quick actions and recent activity
  */
 
-import { Suspense } from "react";
+"use client";
+
+import { Suspense, useEffect, useState } from "react";
+import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import PageContainer from "@/components/PageContainer";
 import {
   Card,
@@ -104,9 +107,7 @@ export default function EmailDashboardPage() {
         </div>
 
         {/* Email Statistics */}
-        <Suspense fallback={<EmailStatsLoading />}>
-          <EmailStats />
-        </Suspense>
+        <EmailStats />
 
         {/* Quick Actions & Recent Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

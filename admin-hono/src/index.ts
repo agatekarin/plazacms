@@ -28,6 +28,7 @@ import mediaUploadRoutes from "./routes/media-upload";
 import mediaFoldersRoutes from "./routes/media-folders";
 import mediaBulkRoutes from "./routes/media-bulk";
 import settingsGeneralRoutes from "./routes/settings-general";
+import settingsEmailRoutes from "./routes/settings-email";
 import changePasswordRoutes from "./routes/change-password";
 import usersRoutes from "./routes/users";
 import ordersRoutes from "./routes/orders";
@@ -342,6 +343,7 @@ app.route("/api/admin/media/bulk", mediaBulkRoutes);
 // Generic media route LAST (catches remaining paths)
 app.route("/api/admin/media", mediaRoutes);
 app.route("/api/admin/settings/general", settingsGeneralRoutes);
+app.route("/api/admin/settings/email", settingsEmailRoutes);
 app.route("/api/admin/users", usersRoutes);
 app.route("/api/admin/customers", customersRoutes);
 app.route("/api/admin/orders", ordersRoutes);

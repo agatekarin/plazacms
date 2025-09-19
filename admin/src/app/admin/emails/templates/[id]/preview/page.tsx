@@ -133,7 +133,7 @@ export default function PreviewTemplatePage() {
         method: "POST",
         body: JSON.stringify({
           template_id: template.id,
-          email: "test@example.com", // In real app, would prompt for email
+          email: "agatekarin@gmail.com", // In real app, would prompt for email
         }),
       });
 

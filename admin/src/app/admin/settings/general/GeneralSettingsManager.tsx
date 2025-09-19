@@ -65,6 +65,10 @@ interface SettingsData {
   default_avatar_alt?: string;
   social_share_url?: string;
   social_share_alt?: string;
+  // Email settings
+  email_from_name?: string;
+  email_from_email?: string;
+  email_reply_to?: string;
 }
 
 interface GeneralSettingsManagerProps {

@@ -238,6 +238,13 @@ const menuItems: MenuItem[] = [
         iconSolid: CogIconSolid,
       },
       {
+        id: "email-settings",
+        label: "Email Settings",
+        href: "/admin/settings/email",
+        icon: EnvelopeIcon,
+        iconSolid: EnvelopeIconSolid,
+      },
+      {
         id: "shipping-settings",
         label: "Shipping Settings",
         href: "/admin/shipping/settings",
