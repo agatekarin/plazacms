@@ -31,6 +31,8 @@ interface SMTPAccount {
   hourly_limit: number;
   is_active: boolean;
   tags: string[];
+  from_email?: string;
+  from_name?: string;
 }
 
 interface SMTPAccountModalProps {
@@ -111,6 +113,8 @@ export default function SMTPAccountModal({
     hourly_limit: 100,
     is_active: true,
     tags: [] as string[],
+    from_email: "",
+    from_name: "PlazaCMS",
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -135,6 +139,8 @@ export default function SMTPAccountModal({
         hourly_limit: editingAccount.hourly_limit,
         is_active: editingAccount.is_active,
         tags: [...editingAccount.tags],
+        from_email: editingAccount.from_email || "",
+        from_name: editingAccount.from_name || "PlazaCMS",
       });
     } else {
       setFormData({
@@ -151,6 +157,8 @@ export default function SMTPAccountModal({
         hourly_limit: 100,
         is_active: true,
         tags: [],
+        from_email: "",
+        from_name: "PlazaCMS",
       });
     }
     setErrors({});
@@ -190,6 +198,19 @@ export default function SMTPAccountModal({
 
     if (!editingAccount && !formData.password.trim()) {
       newErrors.password = "Password is required for new accounts";
+    }
+
+    // Validate from_email if provided
+    if (formData.from_email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.from_email.trim())) {
+        newErrors.from_email = "Please enter a valid email address";
+      }
+    }
+
+    // Validate from_name if provided
+    if (formData.from_name.trim() && formData.from_name.trim().length > 100) {
+      newErrors.from_name = "From name must be 100 characters or less";
     }
 
     if (formData.weight < 1 || formData.weight > 10) {
@@ -560,6 +581,70 @@ export default function SMTPAccountModal({
                     Leave empty to keep the current password
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* From Email Settings */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              From Email Settings
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  From Email
+                </label>
+                <Input
+                  type="email"
+                  value={formData.from_email}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      from_email: e.target.value,
+                    }))
+                  }
+                  placeholder="noreply@plazacms.com"
+                  className={errors.from_email ? "border-red-500" : ""}
+                />
+                {errors.from_email && (
+                  <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.from_email}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  The email address that will appear as the sender. Leave empty
+                  to auto-detect from username.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  From Name
+                </label>
+                <Input
+                  type="text"
+                  value={formData.from_name}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      from_name: e.target.value,
+                    }))
+                  }
+                  placeholder="PlazaCMS"
+                  className={errors.from_name ? "border-red-500" : ""}
+                />
+                {errors.from_name && (
+                  <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {errors.from_name}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  The name that will appear as the sender (e.g., "PlazaCMS",
+                  "Customer Support").
+                </p>
               </div>
             </div>
           </div>

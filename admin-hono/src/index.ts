@@ -28,6 +28,7 @@ import mediaBulkRoutes from "./routes/media-bulk";
 import settingsGeneralRoutes from "./routes/settings-general";
 import settingsEmailRoutes from "./routes/settings-email";
 import smtpAccountsRoutes from "./routes/smtp-accounts";
+import emailSettingsRoutes from "./routes/email-settings";
 import changePasswordRoutes from "./routes/change-password";
 import usersRoutes from "./routes/users";
 import ordersRoutes from "./routes/orders";
@@ -176,8 +177,8 @@ for (const prefix of ["/api/admin/*", "/api/auth/*", "/api/account/*"]) {
 
 // 3) Heavy endpoints – stricter limits per user (fallback IP)
 for (const p of [
-    "/api/admin/products/import-export/import",
-    "/api/admin/products/import-export/export",
+  "/api/admin/products/import-export/import",
+  "/api/admin/products/import-export/export",
   "/api/admin/media/upload",
   "/api/admin/media/bulk",
 ]) {
@@ -348,6 +349,7 @@ app.route("/api/admin/media", mediaRoutes);
 app.route("/api/admin/settings/general", settingsGeneralRoutes);
 app.route("/api/admin/settings/email", settingsEmailRoutes);
 app.route("/api/admin/smtp-accounts", smtpAccountsRoutes);
+app.route("/api/admin/email-settings", emailSettingsRoutes);
 app.route("/api/admin/users", usersRoutes);
 app.route("/api/admin/customers", customersRoutes);
 app.route("/api/admin/orders", ordersRoutes);

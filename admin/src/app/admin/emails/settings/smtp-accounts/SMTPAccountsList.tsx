@@ -41,6 +41,8 @@ interface SMTPAccount {
   hourly_usage_percent: number;
   success_rate_percent?: number;
   tags: string[];
+  from_email?: string;
+  from_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -50,7 +52,7 @@ interface SMTPAccountsListProps {
   loading: boolean;
   onEdit: (account: SMTPAccount) => void;
   onDelete: (accountId: string) => void;
-  onTest: (accountId: string, email?: string) => void;
+  onTest: (accountId: string, accountName: string) => void;
 }
 
 export default function SMTPAccountsList({
@@ -64,14 +66,14 @@ export default function SMTPAccountsList({
     new Set()
   );
 
-  const handleTest = async (accountId: string) => {
-    setTestingAccounts((prev) => new Set([...prev, accountId]));
+  const handleTest = async (account: SMTPAccount) => {
+    setTestingAccounts((prev) => new Set([...prev, account.id]));
     try {
-      await onTest(accountId);
+      await onTest(account.id, account.name);
     } finally {
       setTestingAccounts((prev) => {
         const next = new Set(prev);
-        next.delete(accountId);
+        next.delete(account.id);
         return next;
       });
     }
@@ -304,7 +306,7 @@ export default function SMTPAccountsList({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleTest(account.id)}
+                      onClick={() => handleTest(account)}
                       disabled={testingAccounts.has(account.id)}
                       className="p-2"
                       title="Test Connection"
@@ -366,7 +368,7 @@ export default function SMTPAccountsList({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleTest(account.id)}
+                  onClick={() => handleTest(account)}
                   disabled={testingAccounts.has(account.id)}
                   className="p-2"
                 >

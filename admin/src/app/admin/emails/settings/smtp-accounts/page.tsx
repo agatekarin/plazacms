@@ -5,25 +5,26 @@ import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Plus, 
-  Search, 
-  RefreshCw, 
-  Settings, 
-  TrendingUp, 
+import {
+  Plus,
+  Search,
+  RefreshCw,
+  Settings,
+  TrendingUp,
   AlertCircle,
   CheckCircle,
   Clock,
   Server,
   Mail,
   Activity,
-  BarChart3
+  BarChart3,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SMTPAccountsList from "./SMTPAccountsList";
 import SMTPAccountModal from "./SMTPAccountModal";
 import SMTPAnalyticsPanel from "./SMTPAnalyticsPanel";
 import SMTPConfigModal from "./SMTPConfigModal";
+import SMTPTestModal from "./SMTPTestModal";
 
 interface SMTPAccount {
   id: string;
@@ -75,8 +76,15 @@ export default function SMTPAccountsPage() {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<SMTPAccount | null>(null);
+  const [editingAccount, setEditingAccount] = useState<SMTPAccount | null>(
+    null
+  );
   const [refreshing, setRefreshing] = useState(false);
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testingAccount, setTestingAccount] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const { apiCallJson } = useAuthenticatedFetch({
     onError: (url, error) => {
@@ -88,7 +96,7 @@ export default function SMTPAccountsPage() {
   // Load SMTP accounts
   const loadAccounts = async () => {
     if (!loading && !refreshing) setRefreshing(true);
-    
+
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -99,8 +107,10 @@ export default function SMTPAccountsPage() {
         sortOrder,
       });
 
-      const response = await apiCallJson(`/api/admin/smtp-accounts?${params.toString()}`);
-      
+      const response = await apiCallJson(
+        `/api/admin/smtp-accounts?${params.toString()}`
+      );
+
       if (response.success) {
         setAccounts(response.data.accounts);
         setStats(response.data.stats);
@@ -123,13 +133,16 @@ export default function SMTPAccountsPage() {
   const handleAccountSave = async (accountData: any) => {
     try {
       let response;
-      
+
       if (editingAccount) {
         // Update existing account
-        response = await apiCallJson(`/api/admin/smtp-accounts/${editingAccount.id}`, {
-          method: "PUT",
-          body: JSON.stringify(accountData),
-        });
+        response = await apiCallJson(
+          `/api/admin/smtp-accounts/${editingAccount.id}`,
+          {
+            method: "PUT",
+            body: JSON.stringify(accountData),
+          }
+        );
       } else {
         // Create new account
         response = await apiCallJson("/api/admin/smtp-accounts", {
@@ -140,8 +153,8 @@ export default function SMTPAccountsPage() {
 
       if (response.success) {
         toast.success(
-          editingAccount 
-            ? "SMTP account updated successfully" 
+          editingAccount
+            ? "SMTP account updated successfully"
             : "SMTP account created successfully"
         );
         setShowAccountModal(false);
@@ -161,9 +174,12 @@ export default function SMTPAccountsPage() {
     if (!confirm("Are you sure you want to delete this SMTP account?")) return;
 
     try {
-      const response = await apiCallJson(`/api/admin/smtp-accounts/${accountId}`, {
-        method: "DELETE",
-      });
+      const response = await apiCallJson(
+        `/api/admin/smtp-accounts/${accountId}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       if (response.success) {
         toast.success("SMTP account deleted successfully");
@@ -177,26 +193,10 @@ export default function SMTPAccountsPage() {
     }
   };
 
-  // Test account connection
-  const handleAccountTest = async (accountId: string, testEmail: string = "test@example.com") => {
-    try {
-      const response = await apiCallJson(`/api/admin/smtp-accounts/${accountId}/test`, {
-        method: "POST",
-        body: JSON.stringify({ email: testEmail }),
-      });
-
-      if (response.success && response.data.success) {
-        toast.success(`✅ Test successful! Response time: ${response.data.response_time_ms}ms`);
-      } else {
-        toast.error(`❌ Test failed: ${response.data?.message || "Connection error"}`);
-      }
-      
-      // Refresh accounts to update health status
-      loadAccounts();
-    } catch (error) {
-      console.error("Error testing SMTP account:", error);
-      toast.error("Failed to test SMTP account connection");
-    }
+  // Test account connection - now opens modal
+  const handleAccountTest = async (accountId: string, accountName: string) => {
+    setTestingAccount({ id: accountId, name: accountName });
+    setShowTestModal(true);
   };
 
   // Handle edit account
@@ -230,9 +230,11 @@ export default function SMTPAccountsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">SMTP Accounts</h1>
-          <p className="text-gray-600">Manage multiple SMTP accounts for load balancing</p>
+          <p className="text-gray-600">
+            Manage multiple SMTP accounts for load balancing
+          </p>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -242,7 +244,7 @@ export default function SMTPAccountsPage() {
             <BarChart3 className="h-4 w-4" />
             {showAnalytics ? "Hide Analytics" : "Show Analytics"}
           </Button>
-          
+
           <Button
             variant="outline"
             onClick={() => setShowConfigModal(true)}
@@ -251,7 +253,7 @@ export default function SMTPAccountsPage() {
             <Settings className="h-4 w-4" />
             Configuration
           </Button>
-          
+
           <Button
             onClick={handleAddAccount}
             className="flex items-center gap-2"
@@ -263,9 +265,7 @@ export default function SMTPAccountsPage() {
       </div>
 
       {/* Analytics Panel */}
-      {showAnalytics && (
-        <SMTPAnalyticsPanel />
-      )}
+      {showAnalytics && <SMTPAnalyticsPanel />}
 
       {/* Stats Cards */}
       {stats && (
@@ -274,7 +274,9 @@ export default function SMTPAccountsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Total Accounts</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.total_accounts}</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.total_accounts}
+                </p>
               </div>
               <Server className="h-8 w-8 text-blue-500" />
             </div>
@@ -289,16 +291,26 @@ export default function SMTPAccountsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Healthy Accounts</p>
-                <p className="text-2xl font-bold text-green-600">{stats.healthy_accounts}</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {stats.healthy_accounts}
+                </p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-500" />
             </div>
             <div className="mt-2">
-              <Badge 
-                variant={stats.healthy_accounts === stats.active_accounts ? "success" : "warning"}
+              <Badge
+                variant={
+                  stats.healthy_accounts === stats.active_accounts
+                    ? "success"
+                    : "warning"
+                }
                 className="text-xs"
               >
-                {Math.round((stats.healthy_accounts / Math.max(stats.total_accounts, 1)) * 100)}% Healthy
+                {Math.round(
+                  (stats.healthy_accounts / Math.max(stats.total_accounts, 1)) *
+                    100
+                )}
+                % Healthy
               </Badge>
             </div>
           </div>
@@ -307,7 +319,9 @@ export default function SMTPAccountsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Emails Today</p>
-                <p className="text-2xl font-bold text-blue-600">{stats.total_emails_today}</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {stats.total_emails_today}
+                </p>
               </div>
               <Mail className="h-8 w-8 text-blue-500" />
             </div>
@@ -319,15 +333,23 @@ export default function SMTPAccountsPage() {
                 <p className="text-sm text-gray-600">Success Rate</p>
                 <p className="text-2xl font-bold text-green-600">
                   {stats.total_successful_emails + stats.total_failed_emails > 0
-                    ? Math.round((stats.total_successful_emails / (stats.total_successful_emails + stats.total_failed_emails)) * 100)
-                    : 100}%
+                    ? Math.round(
+                        (stats.total_successful_emails /
+                          (stats.total_successful_emails +
+                            stats.total_failed_emails)) *
+                          100
+                      )
+                    : 100}
+                  %
                 </p>
               </div>
               <TrendingUp className="h-8 w-8 text-green-500" />
             </div>
             <div className="mt-2">
               <Badge variant="outline" className="text-xs">
-                {stats.total_successful_emails} / {stats.total_successful_emails + stats.total_failed_emails} Total
+                {stats.total_successful_emails} /{" "}
+                {stats.total_successful_emails + stats.total_failed_emails}{" "}
+                Total
               </Badge>
             </div>
           </div>
@@ -346,7 +368,7 @@ export default function SMTPAccountsPage() {
               className="pl-10"
             />
           </div>
-          
+
           <div className="flex items-center gap-2">
             <select
               value={statusFilter}
@@ -359,7 +381,7 @@ export default function SMTPAccountsPage() {
                 </option>
               ))}
             </select>
-            
+
             <select
               value={`${sortBy}_${sortOrder}`}
               onChange={(e) => {
@@ -377,14 +399,18 @@ export default function SMTPAccountsPage() {
               <option value="last_used_at_desc">Recently Used</option>
               <option value="total_success_count_desc">Most Successful</option>
             </select>
-            
+
             <Button
               variant="outline"
               onClick={loadAccounts}
               disabled={loading || refreshing}
               className="p-2"
             >
-              <RefreshCw className={`h-4 w-4 ${(loading || refreshing) ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  loading || refreshing ? "animate-spin" : ""
+                }`}
+              />
             </Button>
           </div>
         </div>
@@ -409,11 +435,11 @@ export default function SMTPAccountsPage() {
           >
             Previous
           </Button>
-          
+
           <span className="px-4 py-2 text-sm text-gray-600">
             Page {currentPage} of {totalPages}
           </span>
-          
+
           <Button
             variant="outline"
             disabled={currentPage === totalPages}
@@ -439,6 +465,20 @@ export default function SMTPAccountsPage() {
         open={showConfigModal}
         onClose={() => setShowConfigModal(false)}
         onConfigUpdate={loadAccounts}
+      />
+
+      <SMTPTestModal
+        isOpen={showTestModal}
+        onClose={() => {
+          setShowTestModal(false);
+          setTestingAccount(null);
+        }}
+        accountId={testingAccount?.id || ""}
+        accountName={testingAccount?.name || ""}
+        onTestComplete={() => {
+          // Refresh accounts to update health status
+          loadAccounts();
+        }}
       />
     </div>
   );

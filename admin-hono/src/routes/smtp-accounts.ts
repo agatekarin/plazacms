@@ -93,7 +93,7 @@ app.get("/", async (c) => {
         total_success_count, total_failure_count, cooldown_until,
         today_sent_count, current_hour_sent, avg_response_time_ms,
         last_error_message, last_error_at, tags, metadata,
-        created_at, updated_at,
+        from_email, from_name, created_at, updated_at,
         -- Calculate usage percentages
         CAST(((today_sent_count::float / NULLIF(daily_limit, 0)) * 100) AS DECIMAL(5,1)) as daily_usage_percent,
         CAST(((current_hour_sent::float / NULLIF(hourly_limit, 0)) * 100) AS DECIMAL(5,1)) as hourly_usage_percent,
@@ -236,14 +236,15 @@ app.post("/", async (c) => {
       );
     }
 
-    // Encrypt password (simple implementation - should use proper encryption in production)
-    const encryptedPassword = `encrypted_${body.password}_${Date.now()}`;
+    // Store password (TODO: implement proper encryption in production)
+    const encryptedPassword = body.password;
 
     // Create new SMTP account
     const [newAccount] = await sql`
       INSERT INTO smtp_accounts (
         name, description, host, port, username, password_encrypted, encryption,
-        weight, priority, daily_limit, hourly_limit, is_active, tags, metadata
+        weight, priority, daily_limit, hourly_limit, is_active, tags, metadata,
+        from_email, from_name
       ) VALUES (
         ${body.name},
         ${body.description || null},
@@ -258,8 +259,15 @@ app.post("/", async (c) => {
         ${body.hourly_limit || 100},
         ${body.is_active !== false}, -- Default to true
         ${JSON.stringify(body.tags || [])},
-        ${JSON.stringify(body.metadata || {})}
-      ) RETURNING id, name, host, port, is_active, created_at
+        ${JSON.stringify(body.metadata || {})},
+        ${
+          body.from_email ||
+          (body.username && body.username.includes("@")
+            ? body.username
+            : "noreply@plazacms.com")
+        },
+        ${body.from_name || "PlazaCMS"}
+      ) RETURNING id, name, host, port, is_active, from_email, from_name, created_at
     `;
 
     console.log(
@@ -797,9 +805,8 @@ app.put("/:id", async (c) => {
       }
     }
 
-    // Build update fields dynamically
-    const updateFields = [];
-    const updateValues = [];
+    // Build update object dynamically
+    const updateData: any = {};
 
     const allowedFields = [
       "name",
@@ -813,38 +820,36 @@ app.put("/:id", async (c) => {
       "daily_limit",
       "hourly_limit",
       "is_active",
+      "from_email",
+      "from_name",
     ];
 
     allowedFields.forEach((field) => {
       if (body[field] !== undefined) {
-        updateFields.push(`${field} = $${updateFields.length + 1}`);
-        updateValues.push(body[field]);
+        updateData[field] = body[field];
       }
     });
 
-    // Handle password update separately (encrypt it)
-    if (body.password) {
-      updateFields.push(`password_encrypted = $${updateFields.length + 1}`);
-      updateValues.push(`encrypted_${body.password}_${Date.now()}`);
+    // Handle password update - only if provided
+    if (body.password && body.password.trim() !== "") {
+      updateData.password_encrypted = body.password.trim();
     }
 
     // Handle tags and metadata
     if (body.tags !== undefined) {
-      updateFields.push(`tags = $${updateFields.length + 1}`);
-      updateValues.push(
-        JSON.stringify(Array.isArray(body.tags) ? body.tags : [])
+      updateData.tags = JSON.stringify(
+        Array.isArray(body.tags) ? body.tags : []
       );
     }
 
     if (body.metadata !== undefined) {
-      updateFields.push(`metadata = $${updateFields.length + 1}`);
-      updateValues.push(JSON.stringify(body.metadata || {}));
+      updateData.metadata = JSON.stringify(body.metadata || {});
     }
 
     // Always update updated_at
-    updateFields.push(`updated_at = NOW()`);
+    updateData.updated_at = sql`NOW()`;
 
-    if (updateFields.length === 1) {
+    if (Object.keys(updateData).length === 1) {
       // Only updated_at
       return c.json(
         {
@@ -858,7 +863,7 @@ app.put("/:id", async (c) => {
     // Perform update
     const [updatedAccount] = await sql`
       UPDATE smtp_accounts 
-      SET ${sql.unsafe(updateFields.join(", "))}
+      SET ${sql(updateData, Object.keys(updateData))}
       WHERE id = ${accountId}
       RETURNING id, name, host, port, is_active, updated_at
     `;
@@ -984,7 +989,7 @@ app.post("/:id/test", async (c) => {
 
     // Get account details
     const [account] = await sql`
-      SELECT id, name, host, port, username, password_encrypted, encryption
+      SELECT id, name, host, port, username, password_encrypted, encryption, from_email, from_name
       FROM smtp_accounts WHERE id = ${accountId}
     `;
 
@@ -1000,24 +1005,77 @@ app.post("/:id/test", async (c) => {
 
     const testEmail = body.email || "test@example.com";
 
-    // Create rotation service and perform health check
+    // Create rotation service and perform REAL SMTP test
     const rotationService = createSMTPRotationService(sql);
-    const healthResult = await rotationService.performHealthCheck(accountId);
 
-    // TODO: In a real implementation, this would test actual SMTP connection
-    // For now, simulate test result based on account health
-    const testSuccess = healthResult; // Use health check result
+    // Perform real SMTP test to the specified email address
+    let testSuccess = false;
+    let responseTime = 0;
+    let errorMessage = "";
+    const startTime = Date.now();
+
+    try {
+      const { WorkerMailer } = await import("worker-mailer");
+
+      // Test SMTP connection and send email to specified address
+      await WorkerMailer.send(
+        {
+          host: account.host,
+          port: account.port,
+          secure: account.encryption === "ssl",
+          startTls: account.encryption === "tls",
+          credentials: {
+            username: account.username,
+            password: rotationService.decryptPassword(
+              account.password_encrypted
+            ),
+          },
+          authType: "plain",
+        },
+        {
+          from: {
+            name: account.from_name || "SMTP Test",
+            email: account.from_email || "noreply@plazacms.com",
+          },
+          to: testEmail, // Send to the specified test email
+          subject: `Test Email from ${account.name}`,
+          text: `This is a test email sent from ${account.name} (${
+            account.host
+          }) at ${new Date().toISOString()}. If you receive this, the SMTP configuration is working correctly.`,
+          html: `<p>This is a test email sent from <strong>${
+            account.name
+          }</strong> (${
+            account.host
+          }) at ${new Date().toISOString()}.</p><p>If you receive this, the SMTP configuration is working correctly.</p>`,
+        }
+      );
+
+      responseTime = Date.now() - startTime;
+      testSuccess = true;
+      console.log(
+        `[SMTP Test] Successfully sent test email to ${testEmail} via ${account.name}`
+      );
+    } catch (error: any) {
+      responseTime = Date.now() - startTime;
+      testSuccess = false;
+      errorMessage = error.message || "SMTP test failed";
+      console.error(
+        `[SMTP Test] Failed to send test email via ${account.name}:`,
+        errorMessage
+      );
+    }
 
     const result = {
       success: testSuccess,
       account_name: account.name,
       account_host: account.host,
       test_email: testEmail,
-      response_time_ms: Math.floor(Math.random() * 2000) + 500, // Simulated
+      response_time_ms: responseTime,
       timestamp: new Date().toISOString(),
       message: testSuccess
-        ? `Successfully connected to ${account.host}:${account.port} and sent test email`
-        : `Failed to connect to ${account.host}:${account.port} - connection timeout or authentication failed`,
+        ? `Successfully connected to ${account.host}:${account.port} and sent test email to ${testEmail}`
+        : `Failed to send test email via ${account.host}:${account.port} - ${errorMessage}`,
+      ...(errorMessage && !testSuccess && { error_details: errorMessage }),
     };
 
     // Log the test attempt
@@ -1027,12 +1085,51 @@ app.post("/:id/test", async (c) => {
       ) VALUES (
         ${accountId}, 
         ${testSuccess ? "healthy" : "connection_error"}, 
-        ${result.response_time_ms}, 
+        ${responseTime}, 
         TRUE,
         ${testEmail},
         NOW()
       )
     `;
+
+    // Update account statistics for analytics
+    if (testSuccess) {
+      await sql`
+        UPDATE smtp_accounts 
+        SET 
+          total_success_count = total_success_count + 1,
+          last_used_at = NOW(),
+          consecutive_failures = 0,
+          is_healthy = TRUE,
+          updated_at = NOW()
+        WHERE id = ${accountId}
+      `;
+
+      // Log usage for analytics
+      await sql`
+        INSERT INTO smtp_usage_logs (
+          smtp_account_id, recipient_email, subject, status, 
+          response_time_ms, rotation_strategy, was_fallback, attempt_number
+        ) VALUES (
+          ${accountId}, ${testEmail}, ${
+        "Test Email from " + account.name
+      }, 'success',
+          ${responseTime}, 'manual_test', FALSE, 1
+        )
+      `;
+    } else {
+      await sql`
+        UPDATE smtp_accounts 
+        SET 
+          total_failure_count = total_failure_count + 1,
+          consecutive_failures = consecutive_failures + 1,
+          is_healthy = CASE WHEN consecutive_failures >= 5 THEN FALSE ELSE is_healthy END,
+          last_error_message = ${errorMessage},
+          last_error_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${accountId}
+      `;
+    }
 
     return c.json({
       success: true,

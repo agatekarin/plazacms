@@ -1,13 +1,13 @@
 /**
  * 📧 SMTPRotationService - Multi-SMTP Load Balancing Service
- * 
+ *
  * Handles intelligent SMTP account selection based on round-robin strategy:
  * - Fair distribution across healthy accounts
  * - Rate limit awareness (hourly/daily limits)
  * - Health monitoring & auto-recovery
  * - Failure tracking & retry logic
  * - Performance metrics collection
- * 
+ *
  * PlazaCMS Email System Enhancement
  */
 
@@ -19,7 +19,7 @@ export interface SMTPAccount {
   port: number;
   username: string;
   password_encrypted: string;
-  encryption: 'tls' | 'ssl' | 'none';
+  encryption: "tls" | "ssl" | "none";
   weight: number;
   priority: number;
   daily_limit: number;
@@ -46,7 +46,12 @@ export interface RotationConfig {
   id: string;
   enabled: boolean;
   fallback_to_single: boolean;
-  strategy: 'round_robin' | 'weighted' | 'priority' | 'health_based' | 'least_used';
+  strategy:
+    | "round_robin"
+    | "weighted"
+    | "priority"
+    | "health_based"
+    | "least_used";
   max_retry_attempts: number;
   retry_delay_seconds: number;
   failure_cooldown_minutes: number;
@@ -69,7 +74,7 @@ export interface UsageLogEntry {
   smtp_account_id: string;
   recipient_email: string;
   subject: string;
-  status: 'success' | 'failed' | 'timeout' | 'rate_limited';
+  status: "success" | "failed" | "timeout" | "rate_limited";
   message_id?: string;
   response_time_ms: number;
   rotation_strategy: string;
@@ -79,7 +84,8 @@ export interface UsageLogEntry {
   error_message?: string;
 }
 
-export interface DecryptedSMTPAccount extends Omit<SMTPAccount, 'password_encrypted'> {
+export interface DecryptedSMTPAccount
+  extends Omit<SMTPAccount, "password_encrypted"> {
   password: string; // Decrypted password for actual use
 }
 
@@ -101,19 +107,23 @@ export class SMTPRotationService {
   /**
    * 🎯 Get next SMTP account based on round-robin strategy
    */
-  async getNextAccount(excludeAccountIds: string[] = []): Promise<DecryptedSMTPAccount | null> {
+  async getNextAccount(
+    excludeAccountIds: string[] = []
+  ): Promise<DecryptedSMTPAccount | null> {
     try {
       await this.loadConfig();
-      
+
       if (!this.config?.enabled) {
-        console.log('[SMTPRotation] Multi-SMTP disabled, returning null');
+        console.log("[SMTPRotation] Multi-SMTP disabled, returning null");
         return null;
       }
 
-      const availableAccounts = await this.getAvailableAccounts(excludeAccountIds);
-      
+      const availableAccounts = await this.getAvailableAccounts(
+        excludeAccountIds
+      );
+
       if (availableAccounts.length === 0) {
-        console.warn('[SMTPRotation] No available SMTP accounts found');
+        console.warn("[SMTPRotation] No available SMTP accounts found");
         return null;
       }
 
@@ -123,7 +133,7 @@ export class SMTPRotationService {
       // Decrypt password for use
       const decryptedAccount: DecryptedSMTPAccount = {
         ...selectedAccount,
-        password: this.decryptPassword(selectedAccount.password_encrypted)
+        password: this.decryptPassword(selectedAccount.password_encrypted),
       };
 
       // Update last used timestamp
@@ -131,13 +141,14 @@ export class SMTPRotationService {
       this.lastUsedAccountId = selectedAccount.id;
 
       if (this.config.log_rotation_decisions) {
-        console.log(`[SMTPRotation] Selected ${selectedAccount.name} (round_robin)`);
+        console.log(
+          `[SMTPRotation] Selected ${selectedAccount.name} (round_robin)`
+        );
       }
 
       return decryptedAccount;
-      
     } catch (error) {
-      console.error('[SMTPRotation] Error selecting account:', error);
+      console.error("[SMTPRotation] Error selecting account:", error);
       return null;
     }
   }
@@ -148,33 +159,38 @@ export class SMTPRotationService {
   private selectRoundRobin(accounts: SMTPAccount[]): SMTPAccount {
     // Avoid consecutive same account if configured
     if (this.config?.avoid_consecutive_same_account && this.lastUsedAccountId) {
-      const filteredAccounts = accounts.filter(acc => acc.id !== this.lastUsedAccountId);
+      const filteredAccounts = accounts.filter(
+        (acc) => acc.id !== this.lastUsedAccountId
+      );
       if (filteredAccounts.length > 0) {
         accounts = filteredAccounts;
       }
     }
-    
+
     // Round-robin selection
     this.roundRobinIndex = this.roundRobinIndex % accounts.length;
     const selectedAccount = accounts[this.roundRobinIndex];
     this.roundRobinIndex = (this.roundRobinIndex + 1) % accounts.length;
-    
+
     return selectedAccount;
   }
 
   /**
    * 📋 Get available SMTP accounts based on health, limits, and filters
    */
-  private async getAvailableAccounts(excludeIds: string[] = []): Promise<SMTPAccount[]> {
+  private async getAvailableAccounts(
+    excludeIds: string[] = []
+  ): Promise<SMTPAccount[]> {
     try {
       // First reset counters if needed (daily/hourly)
       await this.resetCountersIfNeeded();
-      
+
       // Build query to get available accounts
-      const excludePlaceholders = excludeIds.length > 0 
-        ? `AND id NOT IN (${excludeIds.map(() => '?').join(',')})` 
-        : '';
-      
+      const excludePlaceholders =
+        excludeIds.length > 0
+          ? `AND id NOT IN (${excludeIds.map(() => "?").join(",")})`
+          : "";
+
       const accounts = await this.sql`
         SELECT 
           id, name, description, host, port, username, password_encrypted,
@@ -189,22 +205,27 @@ export class SMTPRotationService {
           AND (cooldown_until IS NULL OR cooldown_until <= NOW())
           AND today_sent_count < daily_limit
           AND current_hour_sent < hourly_limit
-          ${excludeIds.length > 0 ? this.sql`AND id NOT IN ${this.sql(excludeIds)}` : this.sql``}
+          ${
+            excludeIds.length > 0
+              ? this.sql`AND id NOT IN ${this.sql(excludeIds)}`
+              : this.sql``
+          }
         ORDER BY priority ASC, weight DESC
       `;
-      
+
       // Apply health preference if configured
       if (this.config?.prefer_healthy_accounts) {
-        const healthyAccounts = accounts.filter((acc: SMTPAccount) => acc.is_healthy);
+        const healthyAccounts = accounts.filter(
+          (acc: SMTPAccount) => acc.is_healthy
+        );
         if (healthyAccounts.length > 0) {
           return healthyAccounts;
         }
       }
-      
+
       return accounts;
-      
     } catch (error) {
-      console.error('[SMTPRotation] Error fetching available accounts:', error);
+      console.error("[SMTPRotation] Error fetching available accounts:", error);
       return [];
     }
   }
@@ -213,15 +234,15 @@ export class SMTPRotationService {
    * ✅ Mark account as successful
    */
   async markSuccess(
-    accountId: string, 
-    messageId: string, 
-    responseTimeMs: number = 0, 
-    recipient: string = '',
-    subject: string = ''
+    accountId: string,
+    messageId: string,
+    responseTimeMs: number = 0,
+    recipient: string = "",
+    subject: string = ""
   ): Promise<void> {
     try {
       const timestamp = new Date();
-      
+
       // Update account statistics
       await this.sql`
         UPDATE smtp_accounts SET
@@ -242,17 +263,16 @@ export class SMTPRotationService {
           smtp_account_id: accountId,
           recipient_email: recipient,
           subject: subject,
-          status: 'success',
+          status: "success",
           message_id: messageId,
           response_time_ms: responseTimeMs,
           rotation_strategy: this.config.strategy,
           was_fallback: false,
-          attempt_number: 1
+          attempt_number: 1,
         });
       }
-      
     } catch (error) {
-      console.error('[SMTPRotation] Error marking success:', error);
+      console.error("[SMTPRotation] Error marking success:", error);
     }
   }
 
@@ -260,17 +280,17 @@ export class SMTPRotationService {
    * ❌ Mark account as failed
    */
   async markFailure(
-    accountId: string, 
-    error: Error, 
-    responseTimeMs: number = 0, 
-    recipient: string = '',
-    subject: string = ''
+    accountId: string,
+    error: Error,
+    responseTimeMs: number = 0,
+    recipient: string = "",
+    subject: string = ""
   ): Promise<void> {
     try {
       const timestamp = new Date();
       const failureThreshold = this.config?.failure_threshold || 5;
       const cooldownMinutes = this.config?.failure_cooldown_minutes || 30;
-      
+
       // Update account with failure
       await this.sql`
         UPDATE smtp_accounts SET
@@ -297,17 +317,16 @@ export class SMTPRotationService {
           smtp_account_id: accountId,
           recipient_email: recipient,
           subject: subject,
-          status: 'failed',
+          status: "failed",
           response_time_ms: responseTimeMs,
-          rotation_strategy: this.config?.strategy || 'round_robin',
+          rotation_strategy: this.config?.strategy || "round_robin",
           was_fallback: false,
           attempt_number: 1,
-          error_message: error.message
+          error_message: error.message,
         });
       }
-      
     } catch (dbError) {
-      console.error('[SMTPRotation] Error marking failure:', dbError);
+      console.error("[SMTPRotation] Error marking failure:", dbError);
     }
   }
 
@@ -316,20 +335,27 @@ export class SMTPRotationService {
    */
   async performHealthCheck(accountId: string): Promise<boolean> {
     try {
-      const account = await this.getAccountById(accountId);
+      const [account] = await this.sql`
+          SELECT id, name, host, port, username, password_encrypted, encryption, 
+                 from_email, from_name, consecutive_failures
+          FROM smtp_accounts WHERE id = ${accountId}
+        `;
+
       if (!account) {
-        console.warn(`[SMTPRotation] Account ${accountId} not found for health check`);
+        console.warn(
+          `[SMTPRotation] Account ${accountId} not found for health check`
+        );
         return false;
       }
 
       // REAL SMTP CONNECTION TEST using WorkerMailer
       const startTime = Date.now();
       let isHealthy = false;
-      let errorMessage = '';
-      
+      let errorMessage = "";
+
       try {
-        const { WorkerMailer } = await import('worker-mailer');
-        
+        const { WorkerMailer } = await import("worker-mailer");
+
         // Test SMTP connection (don't send email, just connect)
         const testResult = await WorkerMailer.send(
           {
@@ -344,42 +370,50 @@ export class SMTPRotationService {
             authType: "plain",
           },
           {
-            from: { name: 'Health Check', email: account.username },
-            to: account.username, // Send to self for testing
-            subject: 'SMTP Health Check - Ignore',
-            text: 'This is an automated health check. Please ignore this email.',
-            html: '<p>This is an automated health check. Please ignore this email.</p>',
+            from: {
+              name: account.from_name || "Health Check",
+              email: account.from_email || "noreply@plazacms.com",
+            },
+            to: account.from_email || "noreply@plazacms.com", // Send to configured email
+            subject: "SMTP Health Check - Ignore",
+            text: "This is an automated health check. Please ignore this email.",
+            html: "<p>This is an automated health check. Please ignore this email.</p>",
           }
         );
-        
+
         // If we reach here, connection was successful
         isHealthy = true;
         console.log(`[SMTPRotation] Health check PASSED for ${account.name}`);
-        
       } catch (smtpError: any) {
         isHealthy = false;
-        errorMessage = smtpError.message || 'SMTP connection failed';
-        console.warn(`[SMTPRotation] Health check FAILED for ${account.name}:`, errorMessage);
-        
+        errorMessage = smtpError.message || "SMTP connection failed";
+        console.warn(
+          `[SMTPRotation] Health check FAILED for ${account.name}:`,
+          errorMessage
+        );
+
         // Also check based on recent performance as fallback
-        const fallbackHealthy = account.consecutive_failures < (this.config?.failure_threshold || 5);
+        const fallbackHealthy =
+          account.consecutive_failures < (this.config?.failure_threshold || 5);
         if (fallbackHealthy && account.consecutive_failures === 0) {
           // If account has no recent failures, maybe it's just a temporary issue
-          console.log(`[SMTPRotation] Using fallback health check for ${account.name} - no recent failures`);
+          console.log(
+            `[SMTPRotation] Using fallback health check for ${account.name} - no recent failures`
+          );
           isHealthy = true;
           errorMessage = `Connection test failed but no recent failures: ${errorMessage}`;
         }
       }
-      
+
       const responseTime = Date.now() - startTime;
-      
+
       // Save health check result
       await this.sql`
         INSERT INTO smtp_account_health_checks 
         (smtp_account_id, status, response_time_ms, test_email_sent, error_message, checked_at)
         VALUES (
           ${accountId}, 
-          ${isHealthy ? 'healthy' : 'connection_error'}, 
+          ${isHealthy ? "healthy" : "connection_error"}, 
           ${responseTime}, 
           TRUE,
           ${errorMessage || null},
@@ -402,9 +436,8 @@ export class SMTPRotationService {
       }
 
       return isHealthy;
-      
     } catch (error) {
-      console.error('[SMTPRotation] Error in health check:', error);
+      console.error("[SMTPRotation] Error in health check:", error);
       return false;
     }
   }
@@ -431,13 +464,12 @@ export class SMTPRotationService {
         this.configLastLoaded = new Date();
       } else {
         // Create and use default config
-        console.warn('[SMTPRotation] No config found, using default');
+        console.warn("[SMTPRotation] No config found, using default");
         this.config = this.getDefaultConfig();
         await this.createDefaultConfig();
       }
-      
     } catch (error) {
-      console.error('[SMTPRotation] Error loading config:', error);
+      console.error("[SMTPRotation] Error loading config:", error);
       // Use fallback config
       this.config = this.getDefaultConfig();
     }
@@ -448,10 +480,10 @@ export class SMTPRotationService {
    */
   private getDefaultConfig(): RotationConfig {
     return {
-      id: '',
+      id: "",
       enabled: true, // Enable by default for testing
       fallback_to_single: true,
-      strategy: 'round_robin',
+      strategy: "round_robin",
       max_retry_attempts: 3,
       retry_delay_seconds: 30,
       failure_cooldown_minutes: 30,
@@ -464,7 +496,7 @@ export class SMTPRotationService {
       emergency_fallback_enabled: true,
       track_performance_metrics: true,
       log_rotation_decisions: false,
-      settings: {}
+      settings: {},
     };
   }
 
@@ -494,7 +526,7 @@ export class SMTPRotationService {
         )
       `;
     } catch (error) {
-      console.error('[SMTPRotation] Error logging usage:', error);
+      console.error("[SMTPRotation] Error logging usage:", error);
     }
   }
 
@@ -511,7 +543,7 @@ export class SMTPRotationService {
           daily_reset_at = CURRENT_DATE
         WHERE daily_reset_at < CURRENT_DATE
       `;
-      
+
       // Reset hourly counters
       await this.sql`
         UPDATE smtp_accounts 
@@ -520,9 +552,8 @@ export class SMTPRotationService {
           hourly_reset_at = DATE_TRUNC('hour', NOW())
         WHERE hourly_reset_at < DATE_TRUNC('hour', NOW())
       `;
-      
     } catch (error) {
-      console.error('[SMTPRotation] Error resetting counters:', error);
+      console.error("[SMTPRotation] Error resetting counters:", error);
     }
   }
 
@@ -534,10 +565,10 @@ export class SMTPRotationService {
       const results = await this.sql`
         SELECT * FROM smtp_accounts WHERE id = ${accountId}
       `;
-      
-      return results.length > 0 ? results[0] as SMTPAccount : null;
+
+      return results.length > 0 ? (results[0] as SMTPAccount) : null;
     } catch (error) {
-      console.error('[SMTPRotation] Error fetching account:', error);
+      console.error("[SMTPRotation] Error fetching account:", error);
       return null;
     }
   }
@@ -551,26 +582,25 @@ export class SMTPRotationService {
         UPDATE smtp_accounts SET last_used_at = NOW() WHERE id = ${accountId}
       `;
     } catch (error) {
-      console.error('[SMTPRotation] Error updating last used:', error);
+      console.error("[SMTPRotation] Error updating last used:", error);
     }
   }
 
   /**
    * 🔐 Decrypt password (enhanced with proper encryption support)
    */
-  private decryptPassword(encryptedPassword: string): string {
-    // Enhanced decryption - in production should use proper AES encryption
-    // For now, check if it's already encrypted with our prefix
-    if (encryptedPassword.startsWith('encrypted_')) {
-      // Extract the actual password (in real implementation, use crypto library)
-      const parts = encryptedPassword.split('_');
+  public decryptPassword(password: string): string {
+    // NO ENCRYPTION - Plain text storage for development
+    // Fix for legacy encrypted_ format
+    if (password && password.startsWith("encrypted_")) {
+      const parts = password.split("_");
       if (parts.length >= 2) {
-        return parts[1]; // Return the password part
+        return parts[1]; // Extract password from old format
       }
     }
-    
-    // If not encrypted with our format, return as-is (for backwards compatibility)
-    return encryptedPassword;
+
+    // Return password as-is
+    return password || "";
   }
 
   /**
@@ -578,33 +608,39 @@ export class SMTPRotationService {
    */
   async runBackgroundHealthMonitoring(): Promise<void> {
     try {
-      console.log('[SMTPRotation] Starting background health monitoring...');
-      
+      console.log("[SMTPRotation] Starting background health monitoring...");
+
       // Get all active accounts
       const activeAccounts = await this.sql`
         SELECT id, name FROM smtp_accounts 
         WHERE is_active = TRUE
       `;
 
-      console.log(`[SMTPRotation] Monitoring ${activeAccounts.length} active accounts`);
+      console.log(
+        `[SMTPRotation] Monitoring ${activeAccounts.length} active accounts`
+      );
 
       // Perform health checks on all active accounts
       for (const account of activeAccounts) {
         try {
           await this.performHealthCheck(account.id);
-          
+
           // Small delay between checks to avoid overwhelming the system
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch (error) {
-          console.error(`[SMTPRotation] Health check error for ${account.name}:`, error);
+          console.error(
+            `[SMTPRotation] Health check error for ${account.name}:`,
+            error
+          );
         }
       }
 
-      console.log('[SMTPRotation] Background health monitoring completed');
-
+      console.log("[SMTPRotation] Background health monitoring completed");
     } catch (error) {
-      console.error('[SMTPRotation] Background health monitoring error:', error);
+      console.error(
+        "[SMTPRotation] Background health monitoring error:",
+        error
+      );
     }
   }
 
@@ -613,8 +649,8 @@ export class SMTPRotationService {
    */
   async runBackgroundCounterReset(): Promise<void> {
     try {
-      console.log('[SMTPRotation] Running background counter reset...');
-      
+      console.log("[SMTPRotation] Running background counter reset...");
+
       // Reset daily counters
       const dailyResetResult = await this.sql`
         UPDATE smtp_accounts 
@@ -623,7 +659,7 @@ export class SMTPRotationService {
           daily_reset_at = CURRENT_DATE
         WHERE daily_reset_at < CURRENT_DATE OR daily_reset_at IS NULL
       `;
-      
+
       // Reset hourly counters
       const hourlyResetResult = await this.sql`
         UPDATE smtp_accounts 
@@ -633,10 +669,11 @@ export class SMTPRotationService {
         WHERE hourly_reset_at < DATE_TRUNC('hour', NOW()) OR hourly_reset_at IS NULL
       `;
 
-      console.log(`[SMTPRotation] Counter reset completed - Daily: ${dailyResetResult.length}, Hourly: ${hourlyResetResult.length}`);
-
+      console.log(
+        `[SMTPRotation] Counter reset completed - Daily: ${dailyResetResult.length}, Hourly: ${hourlyResetResult.length}`
+      );
     } catch (error) {
-      console.error('[SMTPRotation] Background counter reset error:', error);
+      console.error("[SMTPRotation] Background counter reset error:", error);
     }
   }
 
@@ -644,10 +681,10 @@ export class SMTPRotationService {
    * 📊 Rate Limiting Analytics & Alerts
    */
   async checkRateLimitingStatus(): Promise<{
-    near_limit_accounts: any[],
-    exceeded_accounts: any[],
-    daily_usage: any,
-    hourly_usage: any
+    near_limit_accounts: any[];
+    exceeded_accounts: any[];
+    daily_usage: any;
+    hourly_usage: any;
   }> {
     try {
       // Get accounts near daily limit (>80%)
@@ -706,37 +743,45 @@ export class SMTPRotationService {
 
       // Combine near limit accounts
       const nearLimitAccounts = [
-        ...nearDailyLimit.map((acc: any) => ({ ...acc, limit_type: 'daily' })),
-        ...nearHourlyLimit.map((acc: any) => ({ ...acc, limit_type: 'hourly' }))
+        ...nearDailyLimit.map((acc: any) => ({ ...acc, limit_type: "daily" })),
+        ...nearHourlyLimit.map((acc: any) => ({
+          ...acc,
+          limit_type: "hourly",
+        })),
       ];
 
       // Log alerts for exceeded accounts
       if (exceededAccounts.length > 0) {
-        console.warn(`[SMTPRotation] RATE LIMIT EXCEEDED: ${exceededAccounts.length} accounts exceeded their limits`);
+        console.warn(
+          `[SMTPRotation] RATE LIMIT EXCEEDED: ${exceededAccounts.length} accounts exceeded their limits`
+        );
         exceededAccounts.forEach((acc: any) => {
-          console.warn(`[SMTPRotation] ${acc.name}: Daily ${acc.today_sent_count}/${acc.daily_limit}, Hourly ${acc.current_hour_sent}/${acc.hourly_limit}`);
+          console.warn(
+            `[SMTPRotation] ${acc.name}: Daily ${acc.today_sent_count}/${acc.daily_limit}, Hourly ${acc.current_hour_sent}/${acc.hourly_limit}`
+          );
         });
       }
 
       // Log warnings for near limit accounts
       if (nearLimitAccounts.length > 0) {
-        console.warn(`[SMTPRotation] APPROACHING LIMITS: ${nearLimitAccounts.length} accounts near rate limits`);
+        console.warn(
+          `[SMTPRotation] APPROACHING LIMITS: ${nearLimitAccounts.length} accounts near rate limits`
+        );
       }
 
       return {
         near_limit_accounts: nearLimitAccounts,
         exceeded_accounts: exceededAccounts,
         daily_usage: dailyUsage[0],
-        hourly_usage: hourlyUsage[0]
+        hourly_usage: hourlyUsage[0],
       };
-
     } catch (error) {
-      console.error('[SMTPRotation] Rate limiting check error:', error);
+      console.error("[SMTPRotation] Rate limiting check error:", error);
       return {
         near_limit_accounts: [],
         exceeded_accounts: [],
         daily_usage: null,
-        hourly_usage: null
+        hourly_usage: null,
       };
     }
   }
@@ -746,8 +791,8 @@ export class SMTPRotationService {
    */
   async runMaintenanceCleanup(): Promise<void> {
     try {
-      console.log('[SMTPRotation] Running maintenance cleanup...');
-      
+      console.log("[SMTPRotation] Running maintenance cleanup...");
+
       // Clean up old usage logs (keep last 30 days)
       const usageCleanup = await this.sql`
         DELETE FROM smtp_usage_logs 
@@ -760,10 +805,11 @@ export class SMTPRotationService {
         WHERE checked_at < NOW() - INTERVAL '7 days'
       `;
 
-      console.log(`[SMTPRotation] Cleanup completed - Usage logs: ${usageCleanup.length}, Health checks: ${healthCleanup.length}`);
-
+      console.log(
+        `[SMTPRotation] Cleanup completed - Usage logs: ${usageCleanup.length}, Health checks: ${healthCleanup.length}`
+      );
     } catch (error) {
-      console.error('[SMTPRotation] Maintenance cleanup error:', error);
+      console.error("[SMTPRotation] Maintenance cleanup error:", error);
     }
   }
 
@@ -795,9 +841,9 @@ export class SMTPRotationService {
         ON CONFLICT DO NOTHING
       `;
 
-      console.log('[SMTPRotation] Created default configuration');
+      console.log("[SMTPRotation] Created default configuration");
     } catch (error) {
-      console.error('[SMTPRotation] Error creating default config:', error);
+      console.error("[SMTPRotation] Error creating default config:", error);
     }
   }
 
@@ -808,7 +854,7 @@ export class SMTPRotationService {
     try {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
-      
+
       const stats = await this.sql`
         SELECT 
           s.name as account_name,
@@ -835,13 +881,28 @@ export class SMTPRotationService {
       return {
         period_days: days,
         accounts: stats,
-        total_emails: stats.reduce((sum: number, acc: any) => sum + (parseInt(acc.total_emails) || 0), 0),
-        total_successful: stats.reduce((sum: number, acc: any) => sum + (parseInt(acc.successful_emails) || 0), 0),
-        total_failed: stats.reduce((sum: number, acc: any) => sum + (parseInt(acc.failed_emails) || 0), 0)
+        total_emails: stats.reduce(
+          (sum: number, acc: any) => sum + (parseInt(acc.total_emails) || 0),
+          0
+        ),
+        total_successful: stats.reduce(
+          (sum: number, acc: any) =>
+            sum + (parseInt(acc.successful_emails) || 0),
+          0
+        ),
+        total_failed: stats.reduce(
+          (sum: number, acc: any) => sum + (parseInt(acc.failed_emails) || 0),
+          0
+        ),
       };
     } catch (error) {
-      console.error('[SMTPRotation] Error getting stats:', error);
-      return { accounts: [], total_emails: 0, total_successful: 0, total_failed: 0 };
+      console.error("[SMTPRotation] Error getting stats:", error);
+      return {
+        accounts: [],
+        total_emails: 0,
+        total_successful: 0,
+        total_failed: 0,
+      };
     }
   }
 
