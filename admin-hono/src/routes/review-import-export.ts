@@ -12,7 +12,7 @@ const reviewImportExportRoutes = new Hono<{
 // =====================================================
 
 // GET /api/admin/reviews/import-export/stats - Get import/export statistics
-reviewImportExportRoutes.get("/stats", adminMiddleware, async (c) => {
+reviewImportExportRoutes.get("/import-export/stats", adminMiddleware, async (c) => {
   try {
     const sql = getDb(c);
 
@@ -47,8 +47,8 @@ reviewImportExportRoutes.get("/stats", adminMiddleware, async (c) => {
   }
 });
 
-// GET /api/admin/reviews/export - Export reviews to CSV/Excel
-reviewImportExportRoutes.get("/export", adminMiddleware, async (c) => {
+// GET /api/admin/reviews/import-export/export - Export reviews to CSV/Excel
+reviewImportExportRoutes.get("/import-export/export", adminMiddleware, async (c) => {
   try {
     const url = new URL(c.req.url);
     const format = url.searchParams.get("format") || "csv";
@@ -222,8 +222,8 @@ reviewImportExportRoutes.get("/export", adminMiddleware, async (c) => {
   }
 });
 
-// POST /api/admin/reviews/import - Import reviews from CSV/JSON
-reviewImportExportRoutes.post("/import", adminMiddleware, async (c) => {
+// POST /api/admin/reviews/import-export/import - Import reviews from CSV/JSON
+reviewImportExportRoutes.post("/import-export/import", adminMiddleware, async (c) => {
   try {
     const body = await c.req.json();
     const { reviews, options = {} } = body;
@@ -406,8 +406,8 @@ reviewImportExportRoutes.post("/import", adminMiddleware, async (c) => {
   }
 });
 
-// GET /api/admin/reviews/import/template - Get import template
-reviewImportExportRoutes.get("/import/template", adminMiddleware, async (c) => {
+// GET /api/admin/reviews/import-export/template - Get import template
+reviewImportExportRoutes.get("/import-export/template", adminMiddleware, async (c) => {
   try {
     const url = new URL(c.req.url);
     const format = url.searchParams.get("format") || "csv";

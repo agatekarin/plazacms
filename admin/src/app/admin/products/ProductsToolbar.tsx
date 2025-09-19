@@ -22,9 +22,13 @@ import {
 
 interface ProductsToolbarProps {
   total: number;
+  onRefresh?: () => void;
 }
 
-export default function ProductsToolbar({ total }: ProductsToolbarProps) {
+export default function ProductsToolbar({
+  total,
+  onRefresh,
+}: ProductsToolbarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -212,7 +216,7 @@ export default function ProductsToolbar({ total }: ProductsToolbarProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => router.refresh()}
+                  onClick={onRefresh || (() => window.location.reload())}
                   className="p-2"
                   title="Refresh"
                 >

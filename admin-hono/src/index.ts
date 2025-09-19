@@ -46,6 +46,8 @@ import customersRoutes from "./routes/customers";
 import reviewsRoutes from "./routes/reviews";
 import reviewImagesRoutes from "./routes/review-images";
 import reviewImportExportRoutes from "./routes/review-import-export";
+import productImportExportRoutes from "./routes/product-import-export";
+import productAnalyticsRoutes from "./routes/product-analytics";
 import customerReviewsRoutes from "./routes/customer-reviews";
 import reviewEmailNotificationsRoutes from "./routes/review-email-notifications";
 import { emails as emailsRoutes } from "./routes/emails";
@@ -328,12 +330,16 @@ app.get("/", (c) => {
 // Mount routes
 app.route("/api/auth", authRoutes);
 app.route("/api/admin/attributes", attributesRoutes);
-app.route("/api/admin/products", productsRoutes);
+// Mount specific product routes FIRST (before generic /products route with :id)
 app.route("/api/admin/products/bulk", productBulkRoutes);
 app.route("/api/admin/products/import", productImportRoutes);
 app.route("/api/admin/products/export", productExportRoutes);
+app.route("/api/admin/products", productImportExportRoutes);
+app.route("/api/admin/products", productAnalyticsRoutes);
 app.route("/api/admin/products", productVariantsRoutes);
 app.route("/api/admin/products", productMediaRoutes);
+// Generic products route LAST (catches remaining paths with :id)
+app.route("/api/admin/products", productsRoutes);
 app.route("/api/admin/categories", categoriesRoutes);
 app.route("/api/admin/tax-classes", taxClassesRoutes);
 // Mount specific media routes FIRST (before generic /media route)

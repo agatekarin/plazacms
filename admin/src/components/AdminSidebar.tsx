@@ -91,6 +91,20 @@ const menuItems: MenuItem[] = [
         icon: SwatchIcon,
         iconSolid: SwatchIcon,
       },
+      {
+        id: "product-analytics",
+        label: "Analytics",
+        href: "/admin/products/analytics",
+        icon: ChartBarIcon,
+        iconSolid: ChartBarIconSolid,
+      },
+      {
+        id: "product-import-export",
+        label: "Import/Export",
+        href: "/admin/products/import-export",
+        icon: DocumentTextIcon,
+        iconSolid: DocumentTextIcon,
+      },
     ],
   },
   {

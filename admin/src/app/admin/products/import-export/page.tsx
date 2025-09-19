@@ -17,24 +17,35 @@ import {
   Download,
   Upload,
   FileText,
-  Image as ImageIcon,
+  Package,
   CheckCircle,
   AlertCircle,
   Calendar,
-  Filter,
-  Database,
+  DollarSign,
+  BarChart3,
+  Layers,
+  Archive,
+  Tag,
 } from "lucide-react";
 import PageContainer from "@/components/PageContainer";
 import toast from "react-hot-toast";
 
-interface ImportExportStats {
-  total_reviews: number;
-  reviews_with_images: number;
+interface ProductImportExportStats {
+  total_products: number;
+  published_products: number;
+  draft_products: number;
+  products_with_images: number;
+  products_with_variants: number;
+  total_variants: number;
+  out_of_stock_products: number;
+  on_sale_products: number;
+  average_price: number;
+  categories_count: number;
   last_export_date?: string;
   last_import_date?: string;
 }
 
-export default function ReviewImportExportPage() {
+export default function ProductImportExportPage() {
   const { apiCallJson, uploadWithProgress } = useAuthenticatedFetch({
     onError: (url, error) => {
       console.error(`API Error on ${url}:`, error);
@@ -42,7 +53,7 @@ export default function ReviewImportExportPage() {
     },
   });
 
-  const [stats, setStats] = useState<ImportExportStats | null>(null);
+  const [stats, setStats] = useState<ProductImportExportStats | null>(null);
   const [exportFormat, setExportFormat] = useState("csv");
   const [exportStatus, setExportStatus] = useState("pending");
   const [exportProgress, setExportProgress] = useState(0);
@@ -55,7 +66,7 @@ export default function ReviewImportExportPage() {
   const fetchStats = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiCallJson("/api/admin/reviews/import-export/stats");
+      const data = await apiCallJson("/api/admin/products/import-export/stats");
       setStats(data);
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -69,14 +80,14 @@ export default function ReviewImportExportPage() {
     fetchStats();
   }, [fetchStats]);
 
-  // Export reviews
+  // Export products
   const handleExport = async () => {
     try {
       setExportStatus("exporting");
       setExportProgress(0);
 
       const response = await fetch(
-        `/api/admin/reviews/import-export/export?format=${exportFormat}`,
+        `/api/admin/products/export?format=${exportFormat}`,
         {
           method: "GET",
           headers: {
@@ -104,7 +115,7 @@ export default function ReviewImportExportPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `reviews-export-${
+      a.download = `products-export-${
         new Date().toISOString().split("T")[0]
       }.${exportFormat}`;
       document.body.appendChild(a);
@@ -114,7 +125,7 @@ export default function ReviewImportExportPage() {
 
       setExportProgress(100);
       setExportStatus("completed");
-      toast.success("Reviews exported successfully");
+      toast.success("Products exported successfully");
 
       // Reset after delay
       setTimeout(() => {
@@ -123,11 +134,11 @@ export default function ReviewImportExportPage() {
       }, 3000);
     } catch (error) {
       setExportStatus("error");
-      toast.error("Failed to export reviews");
+      toast.error("Failed to export products");
     }
   };
 
-  // Import reviews
+  // Import products
   const handleImport = async (file: File) => {
     try {
       setImportStatus("importing");
@@ -138,7 +149,7 @@ export default function ReviewImportExportPage() {
       formData.append("file", file);
 
       const response = await uploadWithProgress(
-        "/api/admin/reviews/import-export/import",
+        "/api/admin/products/import?mode=upsert",
         formData,
         (progress) => {
           setImportProgress(progress);
@@ -147,13 +158,13 @@ export default function ReviewImportExportPage() {
 
       setImportResults(response);
       setImportStatus("completed");
-      toast.success("Reviews imported successfully");
+      toast.success("Products imported successfully");
 
       // Refresh stats
       fetchStats();
     } catch (error) {
       setImportStatus("error");
-      toast.error("Failed to import reviews");
+      toast.error("Failed to import products");
     }
   };
 
@@ -181,28 +192,28 @@ export default function ReviewImportExportPage() {
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            Import & Export Reviews
+            Products Import & Export
           </h1>
           <p className="text-gray-600">
-            Manage review data import and export operations
+            Manage product data import, export operations, and analytics
           </p>
         </div>
 
-        {/* Stats */}
+        {/* Stats Overview */}
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">
-                      Total Reviews
+                      Total Products
                     </p>
                     <p className="text-2xl font-bold text-gray-900">
-                      {stats.total_reviews.toLocaleString()}
+                      {stats.total_products.toLocaleString()}
                     </p>
                   </div>
-                  <Database className="w-8 h-8 text-blue-600" />
+                  <Package className="w-8 h-8 text-blue-600" />
                 </div>
               </CardContent>
             </Card>
@@ -212,13 +223,13 @@ export default function ReviewImportExportPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">
-                      Reviews with Images
+                      Published
                     </p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {stats.reviews_with_images.toLocaleString()}
+                    <p className="text-2xl font-bold text-green-700">
+                      {stats.published_products.toLocaleString()}
                     </p>
                   </div>
-                  <ImageIcon className="w-8 h-8 text-purple-600" />
+                  <CheckCircle className="w-8 h-8 text-green-600" />
                 </div>
               </CardContent>
             </Card>
@@ -228,28 +239,110 @@ export default function ReviewImportExportPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600">
-                      Last Export
+                      With Images
                     </p>
-                    <p className="text-sm text-gray-900">
-                      {stats.last_export_date
-                        ? new Date(stats.last_export_date).toLocaleDateString()
-                        : "Never"}
+                    <p className="text-2xl font-bold text-purple-700">
+                      {stats.products_with_images.toLocaleString()}
                     </p>
                   </div>
-                  <Calendar className="w-8 h-8 text-green-600" />
+                  <Layers className="w-8 h-8 text-purple-600" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Average Price
+                    </p>
+                    <p className="text-2xl font-bold text-emerald-700">
+                      ${Number(stats.average_price || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <DollarSign className="w-8 h-8 text-emerald-600" />
                 </div>
               </CardContent>
             </Card>
           </div>
         )}
 
+        {/* Additional Stats Row */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Total Variants
+                    </p>
+                    <p className="text-2xl font-bold text-indigo-700">
+                      {stats.total_variants.toLocaleString()}
+                    </p>
+                  </div>
+                  <BarChart3 className="w-8 h-8 text-indigo-600" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Out of Stock
+                    </p>
+                    <p className="text-2xl font-bold text-red-700">
+                      {stats.out_of_stock_products.toLocaleString()}
+                    </p>
+                  </div>
+                  <Archive className="w-8 h-8 text-red-600" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">On Sale</p>
+                    <p className="text-2xl font-bold text-orange-700">
+                      {stats.on_sale_products.toLocaleString()}
+                    </p>
+                  </div>
+                  <Tag className="w-8 h-8 text-orange-600" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Categories
+                    </p>
+                    <p className="text-2xl font-bold text-teal-700">
+                      {stats.categories_count.toLocaleString()}
+                    </p>
+                  </div>
+                  <Layers className="w-8 h-8 text-teal-600" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Import/Export Actions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Export Section */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Download className="w-5 h-5" />
-                Export Reviews
+                Export Products
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -263,8 +356,6 @@ export default function ReviewImportExportPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="csv">CSV (Excel compatible)</SelectItem>
-                    <SelectItem value="json">JSON (with images)</SelectItem>
-                    <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -274,33 +365,27 @@ export default function ReviewImportExportPage() {
                 <ul className="text-sm text-gray-600 space-y-1">
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    Review content and ratings
+                    Product information and pricing
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    Customer information
+                    Inventory and stock levels
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    Product details
+                    Categories and attributes
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    Order information
+                    Product variants and images
                   </li>
-                  {exportFormat === "json" && (
-                    <li className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                      Review images (URLs)
-                    </li>
-                  )}
                 </ul>
               </div>
 
               {exportStatus === "exporting" && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span>Exporting reviews...</span>
+                    <span>Exporting products...</span>
                     <span>{exportProgress}%</span>
                   </div>
                   <Progress value={exportProgress} className="h-2" />
@@ -329,7 +414,7 @@ export default function ReviewImportExportPage() {
                 className="w-full"
               >
                 <Download className="w-4 h-4 mr-2" />
-                Export Reviews
+                Export Products
               </Button>
             </CardContent>
           </Card>
@@ -339,7 +424,7 @@ export default function ReviewImportExportPage() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Upload className="w-5 h-5" />
-                Import Reviews
+                Import Products
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -350,11 +435,11 @@ export default function ReviewImportExportPage() {
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                   <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-sm text-gray-600 mb-2">
-                    Choose a CSV or JSON file to import
+                    Choose a CSV file to import products
                   </p>
                   <input
                     type="file"
-                    accept=".csv,.json,.xlsx"
+                    accept=".csv"
                     onChange={handleFileInput}
                     className="hidden"
                     id="import-file"
@@ -367,33 +452,43 @@ export default function ReviewImportExportPage() {
                     disabled={importStatus === "importing"}
                   >
                     <Upload className="w-4 h-4 mr-2" />
-                    Choose File
+                    Choose CSV File
                   </Button>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <p className="text-sm text-gray-600">Supported formats:</p>
+                <p className="text-sm text-gray-600">Template includes:</p>
                 <ul className="text-sm text-gray-600 space-y-1">
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    CSV (Excel compatible)
+                    Product rows and variant rows
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    JSON (with image URLs)
+                    Pricing and inventory data
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    Excel (.xlsx)
+                    Category and attribute mapping
                   </li>
                 </ul>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href="/data/products-template.csv"
+                  download
+                  className="text-sm text-blue-700 hover:underline"
+                >
+                  Download CSV template
+                </a>
               </div>
 
               {importStatus === "importing" && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span>Importing reviews...</span>
+                    <span>Importing products...</span>
                     <span>{importProgress}%</span>
                   </div>
                   <Progress value={importProgress} className="h-2" />
@@ -410,21 +505,30 @@ export default function ReviewImportExportPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div className="flex justify-between">
-                      <span>Imported:</span>
+                      <span>Created:</span>
                       <Badge
                         variant="outline"
                         className="bg-green-50 text-green-700"
                       >
-                        {importResults.imported_count}
+                        {importResults.createdProducts}
                       </Badge>
                     </div>
                     <div className="flex justify-between">
-                      <span>Skipped:</span>
+                      <span>Updated:</span>
                       <Badge
                         variant="outline"
-                        className="bg-yellow-50 text-yellow-700"
+                        className="bg-blue-50 text-blue-700"
                       >
-                        {importResults.skipped_count}
+                        {importResults.updatedProducts}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Variants:</span>
+                      <Badge
+                        variant="outline"
+                        className="bg-purple-50 text-purple-700"
+                      >
+                        +{importResults.createdVariants}
                       </Badge>
                     </div>
                     <div className="flex justify-between">
@@ -433,16 +537,7 @@ export default function ReviewImportExportPage() {
                         variant="outline"
                         className="bg-red-50 text-red-700"
                       >
-                        {importResults.error_count}
-                      </Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Images:</span>
-                      <Badge
-                        variant="outline"
-                        className="bg-purple-50 text-purple-700"
-                      >
-                        {importResults.images_processed}
+                        {importResults.errors?.length || 0}
                       </Badge>
                     </div>
                   </div>
@@ -476,19 +571,27 @@ export default function ReviewImportExportPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    <span>product_id (UUID)</span>
+                    <span>row_type (product/variant)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    <span>user_id (UUID)</span>
+                    <span>product_slug (unique)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    <span>rating (1-5)</span>
+                    <span>name (product name)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    <span>comment (text)</span>
+                    <span>status (published/draft)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span>currency (USD, EUR, etc.)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span>regular_price (decimal)</span>
                   </div>
                 </div>
               </div>
@@ -500,28 +603,37 @@ export default function ReviewImportExportPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-blue-600" />
-                    <span>order_id (UUID)</span>
+                    <span>description (product description)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-blue-600" />
-                    <span>order_item_id (UUID)</span>
+                    <span>category_id (UUID)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-blue-600" />
-                    <span>is_verified_purchase (boolean)</span>
+                    <span>stock (inventory count)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-blue-600" />
-                    <span>image_urls (comma-separated)</span>
+                    <span>sale_price (sale pricing)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-blue-600" />
+                    <span>variant_attributes (size=M|color=red)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-blue-600" />
+                    <span>product_images (media IDs)</span>
                   </div>
                 </div>
               </div>
 
               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
-                  <strong>Note:</strong> Duplicate reviews (same product_id +
-                  user_id) will be skipped. Image URLs will be downloaded and
-                  stored in R2 storage.
+                  <strong>Note:</strong> Products are identified by slug.
+                  Variants are identified by SKU. Use "upsert" mode to create
+                  new products or update existing ones. Image IDs should
+                  reference existing media in your media library.
                 </p>
               </div>
             </div>

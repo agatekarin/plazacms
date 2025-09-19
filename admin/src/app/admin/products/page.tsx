@@ -48,6 +48,7 @@ export default function ProductsPage() {
     { id: string; name: string; rate: string }[]
   >([]);
   const [loading, setLoading] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Enhanced API Helper with global error handling
   const { apiCallJson } = useAuthenticatedFetch({
@@ -56,6 +57,11 @@ export default function ProductsPage() {
       toast.error(error?.message || "Failed to load data");
     },
   });
+
+  // Refresh function to trigger data reload
+  const handleRefresh = () => {
+    setRefreshTrigger((prev) => prev + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -123,7 +129,7 @@ export default function ProductsPage() {
     return () => {
       cancelled = true;
     };
-  }, [q, filter, sort, page, pageSize]);
+  }, [q, filter, sort, page, pageSize, refreshTrigger]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((total || 0) / pageSize)),
@@ -138,7 +144,7 @@ export default function ProductsPage() {
         <div className="text-xs text-gray-500 px-1">Loading products...</div>
       )}
 
-      <ProductsToolbar total={total} />
+      <ProductsToolbar total={total} onRefresh={handleRefresh} />
 
       <ProductsTable
         products={rows}
