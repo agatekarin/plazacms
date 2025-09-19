@@ -43,7 +43,7 @@ interface EmailSettings {
   smtp_username?: string;
   smtp_password?: string;
   smtp_encryption?: string;
-  provider: "resend" | "smtp";
+  provider: "resend" | "smtp" | "cloudflare";
   is_active: boolean;
   webhook_url?: string;
   webhook_secret?: string;
@@ -182,7 +182,7 @@ export default function EmailSettingsManager({
                 <Label htmlFor="provider">Email Provider</Label>
                 <Select
                   value={settings.provider}
-                  onValueChange={(value: "resend" | "smtp") =>
+                  onValueChange={(value: "resend" | "smtp" | "cloudflare") =>
                     updateField("provider", value)
                   }
                 >
@@ -192,6 +192,9 @@ export default function EmailSettingsManager({
                   <SelectContent>
                     <SelectItem value="resend">Resend (Recommended)</SelectItem>
                     <SelectItem value="smtp">Custom SMTP</SelectItem>
+                    <SelectItem value="cloudflare">
+                      Cloudflare Email Workers
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -406,6 +409,81 @@ export default function EmailSettingsManager({
                       )}
                     </Button>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Cloudflare Email Workers Configuration */}
+          {settings.provider === "cloudflare" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ServerIcon className="h-5 w-5 text-orange-500" />
+                  Cloudflare Email Workers Configuration
+                </CardTitle>
+                <CardDescription>
+                  Native Cloudflare Workers email sending - no external
+                  dependencies needed
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-medium text-blue-900 mb-2">
+                    Setup Instructions:
+                  </h4>
+                  <ol className="text-sm text-blue-800 space-y-2 list-decimal list-inside">
+                    <li>
+                      <strong>Local Development:</strong> Add minimal binding to
+                      your{" "}
+                      <code className="bg-blue-100 px-1 rounded">
+                        wrangler.toml
+                      </code>
+                      :
+                      <pre className="bg-blue-100 p-2 rounded mt-1 text-xs overflow-x-auto">
+                        {`[[send_email]]
+name = "EMAIL"`}
+                      </pre>
+                      <span className="text-xs text-blue-600">
+                        → Emails will be saved as .eml files locally for testing
+                      </span>
+                    </li>
+                    <li>
+                      <strong>Production:</strong> Add verified destination
+                      address:
+                      <pre className="bg-blue-100 p-2 rounded mt-1 text-xs overflow-x-auto">
+                        {`[[send_email]]
+name = "EMAIL"
+destination_address = "your-verified-email@example.com"`}
+                      </pre>
+                    </li>
+                    <li>
+                      Verify your email domain in Cloudflare Dashboard → Email
+                      Routing
+                    </li>
+                    <li>
+                      Deploy with{" "}
+                      <code className="bg-blue-100 px-1 rounded">
+                        wrangler deploy
+                      </code>
+                    </li>
+                  </ol>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-sm text-green-800">
+                    ✅ <strong>Advantages:</strong> Native CF Workers
+                    integration, no external APIs, better performance, local
+                    testing with .eml file simulation, no TCP socket limitations
+                  </p>
+                </div>
+
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <p className="text-sm text-yellow-800">
+                    ⚠️ <strong>Local Testing:</strong> Emails are saved as .eml
+                    files during development. For production, requires domain
+                    verification in Cloudflare Dashboard.
+                  </p>
                 </div>
               </CardContent>
             </Card>

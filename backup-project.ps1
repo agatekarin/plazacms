@@ -34,8 +34,10 @@ Write-Host "[COPY] Copying project files..." -ForegroundColor Yellow
 # Copy project files excluding specified patterns
 try {
     # Separate directories and files for better robocopy handling
-    $excludeDirs = @("node_modules", ".next", "dist", "build", ".git", "coverage", ".nyc_output")
-    $excludeFiles = @("*.log", "*.tmp", "*.temp", "Thumbs.db", ".DS_Store", ".env.local", ".env.production")
+    $excludeDirs = @("node_modules", ".next", ".wrangler", "dist", "build", ".git", "coverage", ".nyc_output")
+    
+    # Exclude temporary files but INCLUDE important .env files (.env, .env.local, .env.production)
+    $excludeFiles = @("*.log", "*.tmp", "*.temp", "Thumbs.db", ".DS_Store", ".env.development.local", ".env.test.local")
     
     # Add node_modules to exclude if not explicitly included
     if (-not $IncludeNodeModules) {

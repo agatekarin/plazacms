@@ -1437,3 +1437,278 @@ API endpoints untuk WordPress-style media manager dengan folder organization:
 - **Touch Targets:** Ensure minimum 44px touch targets untuk mobile accessibility
 - **Grid Responsiveness:** Verify adaptive grid columns across breakpoints
 - **Icon Display:** Check Lucide React icon loading dan fallback states
+
+---
+
+## 📧 Email Management System
+
+### **Database Schema Overview**
+
+PlazaCMS Email Management System menggunakan 4 tabel utama untuk mengelola konfigurasi email, templates, notifications, dan event tracking dengan support untuk multiple email providers.
+
+### `email_settings`
+
+- **Tujuan:** Menyimpan konfigurasi email provider yang aktif dengan support untuk multiple providers (Resend, SMTP, Cloudflare Email Workers).
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `from_name` (VARCHAR(255)): Nama pengirim email (misal: "PlazaCMS Store").
+  - `from_email` (VARCHAR(255)): Alamat email pengirim (misal: "noreply@plazacms.com").
+  - `reply_to` (VARCHAR(255)): Email untuk reply (optional).
+  - `provider` (VARCHAR(50)): Provider email ("resend", "smtp", "cloudflare").
+  - `resend_api_key` (TEXT): API key untuk Resend service.
+  - `smtp_host` (VARCHAR(255)): SMTP server hostname.
+  - `smtp_port` (INTEGER): SMTP server port (biasanya 587 atau 465).
+  - `smtp_username` (VARCHAR(255)): SMTP authentication username.
+  - `smtp_password` (VARCHAR(255)): SMTP authentication password.
+  - `smtp_encryption` (VARCHAR(10)): Enkripsi SMTP ("tls", "ssl", "none").
+  - `is_active` (BOOLEAN): Status aktif konfigurasi.
+  - `webhook_url` (VARCHAR(500)): URL untuk webhook notifications.
+  - `webhook_secret` (VARCHAR(255)): Secret key untuk webhook security.
+  - `webhook_events` (TEXT[]): Array event yang di-track ("email.sent", "email.opened", dll).
+- **Fitur:**
+  - Multi-provider support dengan dynamic provider switching
+  - Database-driven configuration dengan admin panel management
+  - Webhook configuration untuk real-time email event tracking
+  - Secure credential storage dengan masked display di UI
+- **Hubungan:** Referenced by EmailService untuk dynamic configuration loading.
+
+### `email_templates`
+
+- **Tujuan:** Menyimpan template email untuk berbagai keperluan (welcome, order confirmation, review requests, dll.) dengan variable replacement support.
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `name` (VARCHAR(255)): Nama template (misal: "Welcome Email").
+  - `type` (VARCHAR(100)): Tipe template ("welcome", "order_confirmation", "review_request", dll).
+  - `category` (VARCHAR(100)): Kategori template ("transactional", "marketing").
+  - `subject` (TEXT): Subject line dengan variable support (misal: "Welcome to {{store_name}}!").
+  - `content` (TEXT): Konten email plain text dengan variables.
+  - `html_content` (TEXT): Konten email HTML format (optional).
+  - `from_name` (VARCHAR(255)): Override nama pengirim untuk template ini.
+  - `from_email` (VARCHAR(255)): Override email pengirim untuk template ini.
+  - `reply_to` (VARCHAR(255)): Override reply-to untuk template ini.
+  - `is_active` (BOOLEAN): Status aktif template.
+- **Variable System:**
+  - Support untuk dynamic variables: {{store_name}}, {{customer_name}}, {{order_number}}, dll.
+  - Template-specific from_name/from_email overrides
+  - Rich HTML content dengan TinyMCE editor integration
+- **Fitur:**
+  - Template preview dengan real variable replacement
+  - Template testing dengan sample data
+  - Category-based organization (transactional vs marketing)
+  - Template-specific email configuration overrides
+- **Hubungan:** Referenced by `email_notifications` untuk tracking template usage.
+
+### `email_notifications`
+
+- **Tujuan:** Log semua email yang dikirim sistem untuk audit trail dan analytics dengan comprehensive tracking information.
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `type` (VARCHAR(100)): Tipe email ("welcome", "order_confirmation", "custom", dll).
+  - `recipient_email` (VARCHAR(255)): Email penerima.
+  - `subject` (TEXT): Subject line email yang dikirim.
+  - `content` (TEXT): Konten email yang dikirim.
+  - `template_id` (UUID): Foreign Key ke `email_templates.id` (jika menggunakan template).
+  - `campaign_id` (UUID): ID campaign untuk bulk emails (optional).
+  - `order_id` (UUID): Foreign Key ke `orders.id` untuk order-related emails.
+  - `order_item_id` (UUID): Foreign Key ke `order_items.id` untuk item-specific emails.
+  - `status` (VARCHAR(50)): Status pengiriman ("sent", "failed", "pending").
+  - `resend_message_id` (VARCHAR(255)): Message ID dari provider (Resend, SMTP, dll).
+  - `error_message` (TEXT): Error message jika gagal kirim.
+  - `sent_at` (TIMESTAMPTZ): Waktu berhasil dikirim.
+- **Analytics Features:**
+  - Comprehensive email sending statistics
+  - Provider-specific message ID tracking
+  - Error logging dan failure analysis
+  - Campaign dan order association tracking
+- **Fitur:**
+  - Complete audit trail untuk semua email activities
+  - Support untuk bulk email campaigns
+  - Integration dengan order system untuk transactional emails
+  - Real-time status tracking dan error reporting
+- **Hubungan:** References `email_templates`, `orders`, `order_items` untuk contextual tracking.
+
+### `email_events`
+
+- **Tujuan:** Track email events (opened, clicked, bounced) dari webhook notifications untuk comprehensive analytics.
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key.
+  - `notification_id` (UUID): Foreign Key ke `email_notifications.id`.
+  - `event_type` (VARCHAR(50)): Tipe event ("opened", "clicked", "bounced", "complained").
+  - `timestamp` (TIMESTAMPTZ): Waktu event terjadi.
+  - `ip_address` (INET): IP address dari event (untuk opens/clicks).
+  - `user_agent` (TEXT): User agent dari browser/email client.
+  - `click_url` (TEXT): URL yang diklik (untuk click events).
+  - `metadata` (JSONB): Additional event metadata dari provider.
+- **Analytics Features:**
+  - Real-time email engagement tracking
+  - Open rate dan click rate calculations
+  - Geographic dan device analytics dari IP/user agent
+  - Link click tracking untuk email campaigns
+- **Fitur:**
+  - Webhook-driven real-time event processing
+  - Comprehensive email engagement analytics
+  - Support untuk multiple event types dari different providers
+  - Privacy-compliant tracking dengan IP anonymization options
+- **Hubungan:** References `email_notifications` untuk event association.
+
+### **Email Service Architecture**
+
+#### **Multi-Provider Support**
+
+PlazaCMS Email Service mendukung 3 provider utama:
+
+1. **Resend**
+
+   - API-based email service
+   - Built-in analytics dan webhook support
+   - Easy domain verification
+   - Production-ready untuk high volume
+
+2. **SMTP (worker-mailer)**
+
+   - Support untuk any SMTP provider (Gmail, Outlook, custom)
+   - Compatible dengan Cloudflare Workers runtime
+   - TCP socket-based connection
+   - Cost-effective untuk moderate volume
+
+3. **Cloudflare Email Workers**
+   - Native Cloudflare Workers email sending
+   - No external dependencies atau API calls
+   - Best performance untuk CF Workers environment
+   - Local development dengan .eml file simulation
+
+#### **Dynamic Configuration**
+
+```typescript
+// EmailService automatically detects provider dari database
+const emailService = await createEmailService(context);
+// Provider switching tanpa code changes
+```
+
+#### **Template System**
+
+- **Variable Replacement:** Dynamic content dengan {{variable}} syntax
+- **Template Preview:** Real-time preview dengan sample data
+- **Template Testing:** Send test emails dengan template-specific configuration
+- **Multi-format Support:** Plain text dan HTML content
+
+#### **Analytics Dashboard**
+
+- **Overview Statistics:** Total sent, delivery rate, open rate, click rate
+- **Time-based Analytics:** Daily/weekly/monthly trends dengan charts
+- **Template Performance:** Template comparison dengan engagement metrics
+- **Provider Analytics:** Performance comparison across different providers
+- **Event Tracking:** Real-time event streams dengan webhook integration
+
+### **API Endpoints**
+
+#### **Email Settings Management**
+
+- `GET /api/admin/settings/email` → Get active email configuration
+- `PATCH /api/admin/settings/email` → Update email settings
+- `POST /api/admin/settings/email/test` → Test email configuration
+
+#### **Template Management**
+
+- `GET /api/admin/emails/templates` → List all templates
+- `POST /api/admin/emails/templates` → Create new template
+- `GET /api/admin/emails/templates/[id]` → Get template details
+- `PATCH /api/admin/emails/templates/[id]` → Update template
+- `DELETE /api/admin/emails/templates/[id]` → Delete template
+- `GET /api/admin/emails/templates/[id]/preview` → Preview template dengan variables
+
+#### **Email Sending**
+
+- `POST /api/admin/emails/send` → Send custom email
+- `POST /api/admin/emails/test` → Send test email dengan template
+- `POST /api/admin/emails/webhook/resend` → Resend webhook handler
+
+#### **Analytics & Notifications**
+
+- `GET /api/admin/emails/analytics` → Get email analytics data
+- `GET /api/admin/emails/notifications` → List email notifications dengan filtering
+- `GET /api/admin/emails/events` → List email events dengan analytics
+
+### **Frontend Components**
+
+#### **Email Settings Manager**
+
+- Provider selection (Resend, SMTP, Cloudflare)
+- Configuration forms untuk each provider
+- Webhook configuration dengan auto-fill URL generation
+- Test email functionality dengan real provider testing
+
+#### **Email Templates Manager**
+
+- Template CRUD dengan modern tabbed interface
+- Rich text editor dengan TinyMCE integration
+- Variable replacement preview dengan real-time updates
+- Template testing dengan sample data injection
+
+#### **Email Analytics Dashboard**
+
+- Comprehensive analytics dengan charts dan metrics
+- Time range filtering (7, 30, 90 days)
+- Provider performance comparison
+- Template engagement statistics
+- Real-time event tracking
+
+#### **Send Email Interface**
+
+- Custom email composer dengan rich text editing
+- Template-based email dengan variable injection
+- Recipient management dengan validation
+- Send testing dengan multiple providers
+
+### **Development vs Production**
+
+#### **Local Development**
+
+- **Resend:** Uses sandbox emails (onboarding@resend.dev)
+- **SMTP:** Real SMTP connection untuk testing
+- **Cloudflare:** Emails saved as .eml files untuk inspection
+- **Webhooks:** ngrok tunnel untuk local webhook testing
+
+#### **Production Deployment**
+
+- **Resend:** Requires domain verification di Resend dashboard
+- **SMTP:** Production SMTP credentials dan authentication
+- **Cloudflare:** Domain verification di CF Dashboard dengan Email Routing
+- **Webhooks:** Public webhook URLs dengan SSL certificates
+
+### **Security & Privacy**
+
+#### **Credential Management**
+
+- Encrypted storage untuk sensitive data (API keys, passwords)
+- Masked display di admin interface ("••••••••••••••••")
+- Environment variable fallbacks untuk development
+- Secure webhook signature verification
+
+#### **Privacy Compliance**
+
+- IP anonymization options untuk event tracking
+- GDPR-compliant email logging dengan retention policies
+- Unsubscribe link automation dalam templates
+- Customer consent tracking untuk marketing emails
+
+### **Performance Optimization**
+
+#### **Database Indexing**
+
+- Optimized indexes untuk email_notifications queries
+- Composite indexes untuk analytics queries
+- Event timestamp indexing untuk real-time dashboard
+
+#### **Caching Strategy**
+
+- Email settings caching dengan database-first approach
+- Template caching untuk high-frequency sending
+- Analytics caching dengan configurable TTL
+
+#### **Scalability Features**
+
+- Async email sending dengan background processing
+- Batch email support untuk campaigns
+- Provider failover untuk high availability
+- Rate limiting dengan respectful sending practices

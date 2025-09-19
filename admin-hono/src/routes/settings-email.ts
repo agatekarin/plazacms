@@ -209,9 +209,12 @@ settingsEmail.post("/test", adminMiddleware as any, async (c) => {
       return c.json({ error: "No email settings configured" }, 400);
     }
 
+    // Actually send test email using EmailService
+    const { createEmailService } = await import("../lib/email-service");
+    const emailService = await createEmailService(c);
+
     // Test email content
-    const testContent = `
-Hello!
+    const testContent = `Hello!
 
 This is a test email from PlazaCMS Email Settings.
 
@@ -223,14 +226,37 @@ Settings Used:
 ${settings.reply_to ? `- Reply To: ${settings.reply_to}` : ""}
 
 Best regards,
-PlazaCMS Team
-    `;
+PlazaCMS Team`;
 
-    // Here you would integrate with your email service
-    // For now, return success
+    // Send actual test email
+    const result = await emailService.sendCustomEmail({
+      to: test_email,
+      subject: "PlazaCMS Email Configuration Test",
+      content: testContent,
+      fromName: settings.from_name,
+      fromEmail: settings.from_email,
+      replyTo: settings.reply_to || undefined,
+    });
+
+    if (!result.success) {
+      return c.json(
+        {
+          error: `Test email failed: ${result.error}`,
+          settings_used: {
+            provider: settings.provider,
+            from_name: settings.from_name,
+            from_email: settings.from_email,
+            reply_to: settings.reply_to,
+          },
+        },
+        500
+      );
+    }
+
     return c.json({
       success: true,
-      message: `Test email would be sent to ${test_email}`,
+      messageId: result.messageId,
+      message: `Test email sent to ${test_email}`,
       settings_used: {
         provider: settings.provider,
         from_name: settings.from_name,
