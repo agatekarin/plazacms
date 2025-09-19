@@ -1098,6 +1098,8 @@ app.post("/:id/test", async (c) => {
         UPDATE smtp_accounts 
         SET 
           total_success_count = total_success_count + 1,
+          today_sent_count = today_sent_count + 1,
+          current_hour_sent = current_hour_sent + 1,
           last_used_at = NOW(),
           consecutive_failures = 0,
           is_healthy = TRUE,
