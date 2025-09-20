@@ -38,13 +38,21 @@ interface AccountStats {
   consecutive_failures: number;
 }
 
+interface HealthOverview {
+  total_accounts: number;
+  healthy_accounts: number;
+  accounts_with_failures: number;
+  unused_accounts: number;
+}
+
 interface RotationStats {
   period_days: number;
   accounts: AccountStats[];
   total_emails: number;
   total_successful: number;
   total_failed: number;
-  rotation: {
+  health_overview: HealthOverview;
+  rotation?: {
     accounts: AccountStats[];
     total_emails: number;
     total_successful: number;
@@ -519,12 +527,8 @@ export default function SMTPAnalyticsPanel() {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Healthy Accounts</span>
                 <Badge variant="success">
-                  {
-                    stats.accounts.filter(
-                      (acc) => acc.is_healthy && acc.is_active
-                    ).length
-                  }{" "}
-                  / {stats.accounts.filter((acc) => acc.is_active).length}
+                  {stats.health_overview?.healthy_accounts || 0} /{" "}
+                  {stats.health_overview?.total_accounts || 0}
                 </Badge>
               </div>
 
@@ -533,20 +537,14 @@ export default function SMTPAnalyticsPanel() {
                   Accounts with Failures
                 </span>
                 <Badge variant="warning">
-                  {
-                    stats.accounts.filter((acc) => acc.consecutive_failures > 0)
-                      .length
-                  }
+                  {stats.health_overview?.accounts_with_failures || 0}
                 </Badge>
               </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Unused Accounts</span>
                 <Badge variant="outline">
-                  {
-                    stats.accounts.filter((acc) => acc.total_emails === 0)
-                      .length
-                  }
+                  {stats.health_overview?.unused_accounts || 0}
                 </Badge>
               </div>
             </div>

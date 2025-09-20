@@ -49,9 +49,13 @@ export interface RotationConfig {
   strategy:
     | "round_robin"
     | "weighted"
+    | "weighted_distribution"
     | "priority"
+    | "priority_based"
     | "health_based"
-    | "least_used";
+    | "health"
+    | "least_used"
+    | "least";
   max_retry_attempts: number;
   retry_delay_seconds: number;
   failure_cooldown_minutes: number;
@@ -75,13 +79,13 @@ export interface UsageLogEntry {
   recipient_email: string;
   subject: string;
   status: "success" | "failed" | "timeout" | "rate_limited";
-  message_id?: string;
+  message_id?: string | null;
   response_time_ms: number;
   rotation_strategy: string;
   was_fallback: boolean;
   attempt_number: number;
-  error_code?: string;
-  error_message?: string;
+  error_code?: string | null;
+  error_message?: string | null;
 }
 
 export interface DecryptedSMTPAccount
@@ -127,8 +131,8 @@ export class SMTPRotationService {
         return null;
       }
 
-      // Use round-robin selection (as requested by user)
-      let selectedAccount = this.selectRoundRobin(availableAccounts);
+      // Select account based on configured strategy
+      let selectedAccount = this.selectAccountByStrategy(availableAccounts);
 
       // Decrypt password for use
       const decryptedAccount: DecryptedSMTPAccount = {
@@ -142,7 +146,7 @@ export class SMTPRotationService {
 
       if (this.config.log_rotation_decisions) {
         console.log(
-          `[SMTPRotation] Selected ${selectedAccount.name} (round_robin)`
+          `[SMTPRotation] Selected ${selectedAccount.name} (${this.config.strategy})`
         );
       }
 
@@ -154,10 +158,46 @@ export class SMTPRotationService {
   }
 
   /**
+   * 🎯 Select account based on configured strategy
+   */
+  private selectAccountByStrategy(accounts: SMTPAccount[]): SMTPAccount {
+    const strategy = this.config?.strategy || "round_robin";
+
+    switch (strategy) {
+      case "round_robin":
+        return this.selectRoundRobin(accounts);
+      case "weighted_distribution":
+      case "weighted":
+        return this.selectWeightedDistribution(accounts);
+      case "priority_based":
+      case "priority":
+        return this.selectPriorityBased(accounts);
+      case "health_based":
+      case "health":
+        return this.selectHealthBased(accounts);
+      case "least_used":
+      case "least":
+        return this.selectLeastUsed(accounts);
+      default:
+        console.warn(
+          `[SMTPRotation] Unknown strategy: ${strategy}, falling back to round_robin`
+        );
+        return this.selectRoundRobin(accounts);
+    }
+  }
+
+  /**
    * 🔄 Round Robin Selection - Fair distribution
+   * Use LRU by last_used_at so rotation persists across requests
    */
   private selectRoundRobin(accounts: SMTPAccount[]): SMTPAccount {
-    // Avoid consecutive same account if configured
+    console.log(
+      `[SMTPRotation] Round Robin - Available accounts: ${accounts
+        .map((a) => a.name)
+        .join(", ")}`
+    );
+
+    // Avoid consecutive same account if configured (in-request guard)
     if (this.config?.avoid_consecutive_same_account && this.lastUsedAccountId) {
       const filteredAccounts = accounts.filter(
         (acc) => acc.id !== this.lastUsedAccountId
@@ -167,12 +207,119 @@ export class SMTPRotationService {
       }
     }
 
-    // Round-robin selection
-    this.roundRobinIndex = this.roundRobinIndex % accounts.length;
-    const selectedAccount = accounts[this.roundRobinIndex];
-    this.roundRobinIndex = (this.roundRobinIndex + 1) % accounts.length;
+    // LRU: sort by last_used_at (NULL first = never used → highest priority)
+    const sorted = [...accounts].sort((a, b) => {
+      const aTime = a.last_used_at ? new Date(a.last_used_at).getTime() : 0;
+      const bTime = b.last_used_at ? new Date(b.last_used_at).getTime() : 0;
+      return aTime - bTime; // older first
+    });
 
+    const selectedAccount = sorted[0];
+    console.log(
+      `[SMTPRotation] Round Robin - Selected: ${selectedAccount.name}`
+    );
     return selectedAccount;
+  }
+
+  /**
+   * ⚖️ Weighted Distribution Selection - Based on weight values
+   */
+  private selectWeightedDistribution(accounts: SMTPAccount[]): SMTPAccount {
+    // Calculate total weight
+    const totalWeight = accounts.reduce(
+      (sum, acc) => sum + (acc.weight || 1),
+      0
+    );
+
+    // Generate random number between 0 and totalWeight
+    const random = Math.random() * totalWeight;
+
+    // Find account based on weighted selection
+    let currentWeight = 0;
+    for (const account of accounts) {
+      currentWeight += account.weight || 1;
+      if (random <= currentWeight) {
+        return account;
+      }
+    }
+
+    // Fallback to first account if something goes wrong
+    return accounts[0];
+  }
+
+  /**
+   * 🎯 Priority Based Selection - Highest priority first
+   */
+  private selectPriorityBased(accounts: SMTPAccount[]): SMTPAccount {
+    // Sort by priority (highest first) then by weight as tiebreaker
+    const sortedAccounts = [...accounts].sort((a, b) => {
+      if (b.priority !== a.priority) {
+        return b.priority - a.priority; // Higher priority first
+      }
+      return (b.weight || 1) - (a.weight || 1); // Higher weight as tiebreaker
+    });
+
+    return sortedAccounts[0];
+  }
+
+  /**
+   * 💚 Health Based Selection - Prefer healthier accounts
+   */
+  private selectHealthBased(accounts: SMTPAccount[]): SMTPAccount {
+    // Sort by health metrics: fewer failures, better response time
+    const sortedAccounts = [...accounts].sort((a, b) => {
+      // Primary: fewer consecutive failures
+      if (a.consecutive_failures !== b.consecutive_failures) {
+        return a.consecutive_failures - b.consecutive_failures;
+      }
+
+      // Secondary: better success rate
+      const aSuccessRate =
+        a.total_success_count /
+        Math.max(1, a.total_success_count + a.total_failure_count);
+      const bSuccessRate =
+        b.total_success_count /
+        Math.max(1, b.total_success_count + b.total_failure_count);
+      if (Math.abs(aSuccessRate - bSuccessRate) > 0.1) {
+        return bSuccessRate - aSuccessRate; // Higher success rate first
+      }
+
+      // Tertiary: better response time
+      const aResponseTime = a.avg_response_time_ms || 1000;
+      const bResponseTime = b.avg_response_time_ms || 1000;
+      return aResponseTime - bResponseTime; // Faster response first
+    });
+
+    return sortedAccounts[0];
+  }
+
+  /**
+   * 📉 Least Used Selection - Balance usage across accounts
+   */
+  private selectLeastUsed(accounts: SMTPAccount[]): SMTPAccount {
+    // Sort by usage: least used first
+    const sortedAccounts = [...accounts].sort((a, b) => {
+      // Primary: today's usage
+      const aUsage = a.today_sent_count || 0;
+      const bUsage = b.today_sent_count || 0;
+      if (aUsage !== bUsage) {
+        return aUsage - bUsage; // Less used first
+      }
+
+      // Secondary: total usage
+      const aTotalUsage = a.total_success_count || 0;
+      const bTotalUsage = b.total_success_count || 0;
+      if (aTotalUsage !== bTotalUsage) {
+        return aTotalUsage - bTotalUsage; // Less used first
+      }
+
+      // Tertiary: last used time (older first)
+      const aLastUsed = a.last_used_at ? new Date(a.last_used_at).getTime() : 0;
+      const bLastUsed = b.last_used_at ? new Date(b.last_used_at).getTime() : 0;
+      return aLastUsed - bLastUsed; // Older usage first
+    });
+
+    return sortedAccounts[0];
   }
 
   /**
@@ -210,20 +357,42 @@ export class SMTPRotationService {
               ? this.sql`AND id NOT IN ${this.sql(excludeIds)}`
               : this.sql``
           }
-        ORDER BY priority ASC, weight DESC
+        ORDER BY priority ASC, weight DESC, name ASC
       `;
 
       // Apply health preference if configured
+      let filteredAccounts = accounts;
       if (this.config?.prefer_healthy_accounts) {
         const healthyAccounts = accounts.filter(
           (acc: SMTPAccount) => acc.is_healthy
         );
         if (healthyAccounts.length > 0) {
-          return healthyAccounts;
+          filteredAccounts = healthyAccounts;
         }
       }
 
-      return accounts;
+      // Apply response time balancing if configured
+      if (
+        this.config?.balance_by_response_time &&
+        filteredAccounts.length > 1
+      ) {
+        // Sort by response time (faster first) but keep some randomization
+        filteredAccounts = filteredAccounts.sort(
+          (a: SMTPAccount, b: SMTPAccount) => {
+            const aTime = a.avg_response_time_ms || 1000;
+            const bTime = b.avg_response_time_ms || 1000;
+
+            // Add small random factor to prevent always using same fastest account
+            const randomFactor = (Math.random() - 0.5) * 0.2; // ±10% variance
+            const aAdjusted = aTime * (1 + randomFactor);
+            const bAdjusted = bTime * (1 - randomFactor);
+
+            return aAdjusted - bAdjusted;
+          }
+        );
+      }
+
+      return filteredAccounts;
     } catch (error) {
       console.error("[SMTPRotation] Error fetching available accounts:", error);
       return [];
@@ -252,7 +421,7 @@ export class SMTPRotationService {
           current_hour_sent = current_hour_sent + 1,
           last_used_at = ${timestamp},
           is_healthy = TRUE,
-          avg_response_time_ms = ROUND((avg_response_time_ms * 0.9) + (${responseTimeMs} * 0.1)),
+          avg_response_time_ms = CAST((avg_response_time_ms * 0.9) + (${responseTimeMs} * 0.1) AS INTEGER),
           updated_at = ${timestamp}
         WHERE id = ${accountId}
       `;
@@ -269,6 +438,8 @@ export class SMTPRotationService {
           rotation_strategy: this.config.strategy,
           was_fallback: false,
           attempt_number: 1,
+          error_code: undefined,
+          error_message: undefined,
         });
       }
     } catch (error) {
@@ -318,10 +489,12 @@ export class SMTPRotationService {
           recipient_email: recipient,
           subject: subject,
           status: "failed",
+          message_id: undefined,
           response_time_ms: responseTimeMs,
           rotation_strategy: this.config?.strategy || "round_robin",
           was_fallback: false,
           attempt_number: 1,
+          error_code: undefined,
           error_message: error.message,
         });
       }
@@ -505,6 +678,9 @@ export class SMTPRotationService {
    */
   private async logUsage(entry: UsageLogEntry): Promise<void> {
     try {
+      const messageId = entry.message_id ?? null;
+      const errorCode = entry.error_code ?? null;
+      const errorMessage = entry.error_message ?? null;
       await this.sql`
         INSERT INTO smtp_usage_logs (
           smtp_account_id, recipient_email, subject, status, message_id,
@@ -515,13 +691,13 @@ export class SMTPRotationService {
           ${entry.recipient_email}, 
           ${entry.subject},
           ${entry.status}, 
-          ${entry.message_id}, 
+          ${messageId}, 
           ${entry.response_time_ms},
           ${entry.rotation_strategy}, 
           ${entry.was_fallback}, 
           ${entry.attempt_number},
-          ${entry.error_code}, 
-          ${entry.error_message}, 
+          ${errorCode}, 
+          ${errorMessage}, 
           NOW()
         )
       `;
@@ -690,7 +866,7 @@ export class SMTPRotationService {
       // Get accounts near daily limit (>80%)
       const nearDailyLimit = await this.sql`
         SELECT id, name, today_sent_count, daily_limit,
-               ROUND((today_sent_count::float / daily_limit) * 100, 1) as usage_percent
+               CAST(((today_sent_count::float / daily_limit) * 100) AS DECIMAL(5,1)) as usage_percent
         FROM smtp_accounts 
         WHERE is_active = TRUE 
           AND daily_limit > 0
@@ -701,7 +877,7 @@ export class SMTPRotationService {
       // Get accounts near hourly limit (>80%)
       const nearHourlyLimit = await this.sql`
         SELECT id, name, current_hour_sent, hourly_limit,
-               ROUND((current_hour_sent::float / hourly_limit) * 100, 1) as usage_percent
+               CAST(((current_hour_sent::float / hourly_limit) * 100) AS DECIMAL(5,1)) as usage_percent
         FROM smtp_accounts 
         WHERE is_active = TRUE 
           AND hourly_limit > 0
@@ -727,7 +903,7 @@ export class SMTPRotationService {
           SUM(today_sent_count) as total_sent_today,
           SUM(daily_limit) as total_daily_capacity,
           COUNT(*) as active_accounts,
-          ROUND(AVG((today_sent_count::float / NULLIF(daily_limit, 0)) * 100), 1) as avg_usage_percent
+          CAST(AVG((today_sent_count::float / NULLIF(daily_limit, 0)) * 100) AS DECIMAL(5,1)) as avg_usage_percent
         FROM smtp_accounts 
         WHERE is_active = TRUE AND daily_limit > 0
       `;
@@ -736,7 +912,7 @@ export class SMTPRotationService {
         SELECT 
           SUM(current_hour_sent) as total_sent_this_hour,
           SUM(hourly_limit) as total_hourly_capacity,
-          ROUND(AVG((current_hour_sent::float / NULLIF(hourly_limit, 0)) * 100), 1) as avg_usage_percent
+          CAST(AVG((current_hour_sent::float / NULLIF(hourly_limit, 0)) * 100) AS DECIMAL(5,1)) as avg_usage_percent
         FROM smtp_accounts 
         WHERE is_active = TRUE AND hourly_limit > 0
       `;
@@ -866,7 +1042,7 @@ export class SMTPRotationService {
           COUNT(l.*) as total_emails,
           COUNT(CASE WHEN l.status = 'success' THEN 1 END) as successful_emails,
           COUNT(CASE WHEN l.status = 'failed' THEN 1 END) as failed_emails,
-          ROUND(AVG(l.response_time_ms)) as avg_response_time,
+          CAST(AVG(l.response_time_ms) AS INTEGER) as avg_response_time,
           MAX(l.created_at) as last_used,
           s.consecutive_failures
         FROM smtp_accounts s
@@ -877,6 +1053,16 @@ export class SMTPRotationService {
                  s.today_sent_count, s.daily_limit, s.consecutive_failures
         ORDER BY successful_emails DESC
       `;
+
+      // Calculate health overview
+      const totalAccounts = stats.length;
+      const healthyAccounts = stats.filter((acc: any) => acc.is_healthy).length;
+      const accountsWithFailures = stats.filter(
+        (acc: any) => (acc.consecutive_failures || 0) > 0
+      ).length;
+      const unusedAccounts = stats.filter(
+        (acc: any) => (parseInt(acc.total_emails) || 0) === 0
+      ).length;
 
       return {
         period_days: days,
@@ -894,6 +1080,13 @@ export class SMTPRotationService {
           (sum: number, acc: any) => sum + (parseInt(acc.failed_emails) || 0),
           0
         ),
+        // Health Overview Data
+        health_overview: {
+          total_accounts: totalAccounts,
+          healthy_accounts: healthyAccounts,
+          accounts_with_failures: accountsWithFailures,
+          unused_accounts: unusedAccounts,
+        },
       };
     } catch (error) {
       console.error("[SMTPRotation] Error getting stats:", error);
@@ -902,6 +1095,12 @@ export class SMTPRotationService {
         total_emails: 0,
         total_successful: 0,
         total_failed: 0,
+        health_overview: {
+          total_accounts: 0,
+          healthy_accounts: 0,
+          accounts_with_failures: 0,
+          unused_accounts: 0,
+        },
       };
     }
   }
@@ -925,6 +1124,7 @@ export class SMTPRotationService {
 
 /**
  * 🏭 Factory function to create SMTPRotationService instance
+ * IMPORTANT: Must be per-request to avoid Cloudflare Workers I/O context errors
  */
 export function createSMTPRotationService(sql: any): SMTPRotationService {
   return new SMTPRotationService(sql);

@@ -313,6 +313,8 @@ app.use(
 // Mount Auth.js handler under a distinct base path to avoid conflicts with existing /api/auth routes
 app.use("/api/authjs/*", authHandler());
 
+// Background services disabled on Workers. Use manual maintenance endpoints instead.
+
 // Health check endpoint
 app.get("/", (c) => {
   return c.json({

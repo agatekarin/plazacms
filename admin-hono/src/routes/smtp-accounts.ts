@@ -460,7 +460,7 @@ app.post("/config", async (c) => {
 app.get("/stats/overview", async (c) => {
   try {
     const sql = getDb(c as any);
-    const rotationService = createSMTPRotationService(c as any);
+    const rotationService = createSMTPRotationService(sql);
 
     const stats = await rotationService.getRotationStats(7); // Last 7 days
 
