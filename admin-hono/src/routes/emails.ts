@@ -198,7 +198,7 @@ emails.get("/notifications", adminMiddleware as any, async (c) => {
 
   try {
     const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const limit = parseInt(c.req.query("limit") || "100");
     const offset = (page - 1) * limit;
     const type = c.req.query("type");
     const status = c.req.query("status");
@@ -316,6 +316,167 @@ emails.get("/export-history", adminMiddleware as any, async (c) => {
   } catch (err) {
     console.error("[emails:export-history]", err);
     return c.json({ error: "Failed to export email history" }, 500);
+  }
+});
+
+// DELETE /api/admin/emails/notifications/clear - Clear email history with safety options
+emails.delete("/notifications/clear", adminMiddleware as any, async (c) => {
+  const sql = getDb(c as any);
+
+  try {
+    const body = await c.req.json();
+
+    // Validation and safety checks
+    const {
+      olderThanDays = 30, // Default: older than 30 days
+      status = "all", // "all", "sent", "failed", "pending"
+      types = [], // Array of email types to clear
+      excludeImportant = true, // Keep order confirmations, etc.
+      confirmText = "", // Must type "CLEAR HISTORY" to confirm
+      maxRecords = 1000, // Safety limit
+    } = body;
+
+    // Security confirmation
+    if (confirmText !== "CLEAR HISTORY") {
+      return c.json(
+        {
+          error:
+            "Invalid confirmation. Please type 'CLEAR HISTORY' to confirm deletion.",
+          code: "INVALID_CONFIRMATION",
+        },
+        400
+      );
+    }
+
+    // Validate input
+    if (olderThanDays < 1 || olderThanDays > 365) {
+      return c.json(
+        {
+          error: "olderThanDays must be between 1 and 365 days",
+          code: "INVALID_DATE_RANGE",
+        },
+        400
+      );
+    }
+
+    if (maxRecords > 10000) {
+      return c.json(
+        {
+          error: "maxRecords cannot exceed 10,000 for safety",
+          code: "LIMIT_EXCEEDED",
+        },
+        400
+      );
+    }
+
+    // Calculate cutoff date
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+
+    // Build WHERE clause with safety conditions
+    let whereConditions = [
+      sql`created_at < ${cutoffDate.toISOString()}`, // Only old records
+    ];
+
+    // Status filter
+    if (status !== "all") {
+      whereConditions.push(sql`status = ${status}`);
+    }
+
+    // Type filter
+    if (types.length > 0) {
+      whereConditions.push(sql`type = ANY(${types})`);
+    }
+
+    // Exclude important emails (order confirmations, password resets)
+    if (excludeImportant) {
+      const importantTypes = [
+        "order_confirmation",
+        "password_reset",
+        "account_activation",
+      ];
+      whereConditions.push(
+        sql`type NOT IN (${sql.unsafe(
+          importantTypes.map((t) => `'${t}'`).join(",")
+        )})`
+      );
+    }
+
+    // Combine conditions
+    const whereClause = whereConditions.reduce((acc, condition, index) => {
+      return index === 0 ? condition : sql`${acc} AND ${condition}`;
+    });
+
+    // First, check how many records would be deleted (safety check)
+    const [{ count }] = await sql`
+      SELECT COUNT(*) as count 
+      FROM email_notifications 
+      WHERE ${whereClause}
+    `;
+
+    if (count > maxRecords) {
+      return c.json(
+        {
+          error: `Too many records to delete (${count}). Maximum allowed: ${maxRecords}. Please use more restrictive filters.`,
+          code: "TOO_MANY_RECORDS",
+          count: parseInt(count),
+        },
+        400
+      );
+    }
+
+    if (count === 0) {
+      return c.json({
+        success: true,
+        message: "No records match the specified criteria",
+        deletedCount: 0,
+      });
+    }
+
+    // Get list of records to be deleted (for audit log)
+    const recordsToDelete = await sql`
+      SELECT id, type, recipient_email, status, created_at 
+      FROM email_notifications 
+      WHERE ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+
+    // Perform the deletion (email_events will cascade delete automatically)
+    const deletedRecords = await sql`
+      DELETE FROM email_notifications 
+      WHERE ${whereClause}
+      RETURNING id, type, status, created_at
+    `;
+
+    console.log(
+      `[EmailHistory] Cleared ${deletedRecords.length} email notifications`,
+      {
+        olderThanDays,
+        status,
+        types,
+        excludeImportant,
+        cutoffDate: cutoffDate.toISOString(),
+        deletedCount: deletedRecords.length,
+      }
+    );
+
+    return c.json({
+      success: true,
+      message: `Successfully cleared ${deletedRecords.length} email notifications`,
+      deletedCount: deletedRecords.length,
+      cutoffDate: cutoffDate.toISOString(),
+      preview: recordsToDelete.slice(0, 5), // Show first 5 deleted records
+    });
+  } catch (error) {
+    console.error("Clear history error:", error);
+    return c.json(
+      {
+        error: "Failed to clear email history",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
   }
 });
 

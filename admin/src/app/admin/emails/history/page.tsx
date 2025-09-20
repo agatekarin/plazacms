@@ -53,6 +53,8 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
+  Trash2,
+  AlertCircle,
 } from "lucide-react";
 import { useAuthenticatedFetch } from "@/lib/useAuthenticatedFetch";
 import { toast } from "react-hot-toast";
@@ -75,6 +77,13 @@ interface EmailNotification {
   created_at: string;
   updated_at: string;
   template_name?: string;
+  // Rotation/Provider info
+  smtp_account_id?: string;
+  smtp_account_name?: string;
+  rotation_strategy?: string;
+  attempt_count?: number;
+  was_fallback?: boolean;
+  response_time_ms?: number;
 }
 
 export default function EmailHistoryPage() {
@@ -91,6 +100,18 @@ export default function EmailHistoryPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [emailsPerPage] = useState(20);
 
+  // Clear History Modal State
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearLoading, setClearLoading] = useState(false);
+  const [clearOptions, setClearOptions] = useState({
+    olderThanDays: 30,
+    status: "all",
+    types: [] as string[],
+    excludeImportant: true,
+    confirmText: "",
+    maxRecords: 1000,
+  });
+
   const { apiCallJson } = useAuthenticatedFetch({
     onError: (url: string, error: any) => {
       toast.error(error?.message || "Failed to load email history");
@@ -101,7 +122,19 @@ export default function EmailHistoryPage() {
   const loadEmails = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiCallJson("/api/admin/emails/notifications");
+      // Clear current data and add aggressive cache busting
+      setEmails([]);
+      setFilteredEmails([]);
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(7);
+      const data = await apiCallJson(
+        `/api/admin/emails/notifications?_t=${timestamp}&_r=${random}&page=1&limit=100`
+      );
+      console.log(
+        "Loaded emails:",
+        data.notifications?.length || 0,
+        "notifications"
+      );
       setEmails(data.notifications || []);
       setFilteredEmails(data.notifications || []);
     } catch (error) {
@@ -113,6 +146,20 @@ export default function EmailHistoryPage() {
 
   useEffect(() => {
     loadEmails();
+  }, [loadEmails]);
+
+  // Force refresh when component becomes visible (browser tab focus)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log("Tab focused, refreshing email data...");
+        loadEmails();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [loadEmails]);
 
   // Filter emails
@@ -245,6 +292,46 @@ export default function EmailHistoryPage() {
     }
   };
 
+  // Clear History Function
+  const clearHistory = async () => {
+    if (clearOptions.confirmText !== "CLEAR HISTORY") {
+      toast.error("Please type 'CLEAR HISTORY' to confirm deletion");
+      return;
+    }
+
+    try {
+      setClearLoading(true);
+
+      // Use authenticated fetch to Hono backend
+      const result = await apiCallJson(
+        "/api/admin/emails/notifications/clear",
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(clearOptions),
+        }
+      );
+
+      toast.success(
+        `${result.message}. Cleared ${result.deletedCount} emails.`
+      );
+      setShowClearModal(false);
+      setClearOptions({
+        ...clearOptions,
+        confirmText: "",
+      });
+
+      // Reload emails to reflect changes
+      loadEmails();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to clear email history");
+    } finally {
+      setClearLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <PageContainer>
@@ -305,6 +392,15 @@ export default function EmailHistoryPage() {
               <Download className="h-4 w-4 mr-2" />
               Export
             </Button>
+
+            <Button
+              variant="danger"
+              onClick={() => setShowClearModal(true)}
+              className="min-w-32"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Clear History
+            </Button>
           </div>
         </div>
 
@@ -313,7 +409,9 @@ export default function EmailHistoryPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-2xl font-bold text-green-600">
-                {emails.filter((e) => e.status === "sent").length}
+                {loading
+                  ? "..."
+                  : emails.filter((e) => e.status === "sent").length}
               </div>
               <p className="text-sm text-gray-600">Total Sent</p>
             </CardContent>
@@ -322,7 +420,9 @@ export default function EmailHistoryPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-2xl font-bold text-red-600">
-                {emails.filter((e) => e.status === "failed").length}
+                {loading
+                  ? "..."
+                  : emails.filter((e) => e.status === "failed").length}
               </div>
               <p className="text-sm text-gray-600">Failed</p>
             </CardContent>
@@ -331,7 +431,9 @@ export default function EmailHistoryPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-2xl font-bold text-yellow-600">
-                {emails.filter((e) => e.status === "pending").length}
+                {loading
+                  ? "..."
+                  : emails.filter((e) => e.status === "pending").length}
               </div>
               <p className="text-sm text-gray-600">Pending</p>
             </CardContent>
@@ -340,7 +442,7 @@ export default function EmailHistoryPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-2xl font-bold text-blue-600">
-                {emails.length}
+                {loading ? "..." : emails.length}
               </div>
               <p className="text-sm text-gray-600">Total Emails</p>
             </CardContent>
@@ -448,6 +550,7 @@ export default function EmailHistoryPage() {
                         <TableHead>Recipient</TableHead>
                         <TableHead>Subject</TableHead>
                         <TableHead>Type</TableHead>
+                        <TableHead>Provider</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Sent Date</TableHead>
                         <TableHead>Actions</TableHead>
@@ -489,6 +592,47 @@ export default function EmailHistoryPage() {
                             >
                               {email.type.replace(/_/g, " ")}
                             </Badge>
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="text-sm">
+                              {email.smtp_account_name ? (
+                                <div className="flex items-center space-x-1">
+                                  <span className="font-medium">
+                                    {email.smtp_account_name}
+                                  </span>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
+                                    SMTP
+                                  </Badge>
+                                </div>
+                              ) : email.rotation_strategy === "hybrid" ? (
+                                <div className="flex items-center space-x-1">
+                                  <span className="font-medium">
+                                    API Provider
+                                  </span>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs"
+                                  >
+                                    API
+                                  </Badge>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 text-xs">
+                                  N/A
+                                </span>
+                              )}
+                              {email.response_time_ms &&
+                                email.response_time_ms > 0 && (
+                                  <div className="text-xs text-gray-500">
+                                    {email.response_time_ms}ms
+                                    {email.was_fallback && " (fallback)"}
+                                  </div>
+                                )}
+                            </div>
                           </TableCell>
 
                           <TableCell>{getStatusBadge(email.status)}</TableCell>
@@ -648,6 +792,196 @@ export default function EmailHistoryPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Clear History Modal */}
+        <Dialog open={showClearModal} onOpenChange={setShowClearModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                Clear Email History
+              </DialogTitle>
+              <DialogDescription>
+                This action will permanently delete email notifications from the
+                database.
+                <strong className="text-red-600">
+                  {" "}
+                  This cannot be undone.
+                </strong>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6">
+              {/* Safety Warning */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-red-800">
+                      Important Notes:
+                    </h4>
+                    <ul className="text-sm text-red-700 mt-2 space-y-1">
+                      <li>• Email rotation analytics will NOT be affected</li>
+                      <li>• API/SMTP provider statistics remain intact</li>
+                      <li>• Only user email notifications will be deleted</li>
+                      <li>
+                        • Associated email events (opens, clicks) will also be
+                        deleted
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter Options */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Delete emails older than (days)
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={clearOptions.olderThanDays}
+                    onChange={(e) =>
+                      setClearOptions({
+                        ...clearOptions,
+                        olderThanDays: parseInt(e.target.value) || 30,
+                      })
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Status Filter
+                  </label>
+                  <Select
+                    value={clearOptions.status}
+                    onValueChange={(value) =>
+                      setClearOptions({ ...clearOptions, status: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="sent">Sent Only</SelectItem>
+                      <SelectItem value="failed">Failed Only</SelectItem>
+                      <SelectItem value="pending">Pending Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Max Records
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="10000"
+                    value={clearOptions.maxRecords}
+                    onChange={(e) =>
+                      setClearOptions({
+                        ...clearOptions,
+                        maxRecords: parseInt(e.target.value) || 1000,
+                      })
+                    }
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Safety limit (max 10,000)
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="excludeImportant"
+                    checked={clearOptions.excludeImportant}
+                    onChange={(e) =>
+                      setClearOptions({
+                        ...clearOptions,
+                        excludeImportant: e.target.checked,
+                      })
+                    }
+                    className="rounded"
+                  />
+                  <label htmlFor="excludeImportant" className="text-sm">
+                    Exclude important emails
+                    <br />
+                    <span className="text-xs text-gray-500">
+                      (order confirmations, password resets, etc.)
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Confirmation Input */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Type{" "}
+                  <code className="bg-gray-100 px-2 py-1 rounded">
+                    CLEAR HISTORY
+                  </code>{" "}
+                  to confirm:
+                </label>
+                <Input
+                  value={clearOptions.confirmText}
+                  onChange={(e) =>
+                    setClearOptions({
+                      ...clearOptions,
+                      confirmText: e.target.value,
+                    })
+                  }
+                  placeholder="Type CLEAR HISTORY to confirm"
+                  className={
+                    clearOptions.confirmText === "CLEAR HISTORY"
+                      ? "border-green-500"
+                      : clearOptions.confirmText.length > 0
+                      ? "border-red-500"
+                      : ""
+                  }
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowClearModal(false);
+                    setClearOptions({ ...clearOptions, confirmText: "" });
+                  }}
+                  disabled={clearLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={clearHistory}
+                  disabled={
+                    clearOptions.confirmText !== "CLEAR HISTORY" || clearLoading
+                  }
+                >
+                  {clearLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Clearing...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Clear History
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageContainer>
   );

@@ -22,7 +22,6 @@ import {
   CreditCardIcon,
   ChatBubbleLeftRightIcon,
   DocumentTextIcon,
-  UserIcon,
   GlobeAltIcon,
   MapIcon,
   EnvelopeIcon,
@@ -321,7 +320,6 @@ export default function AdminSidebar({
   const { data: session } = useSession();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [siteLogoUrl, setSiteLogoUrl] = useState<string | null>(null);
-  const [defaultAvatarUrl, setDefaultAvatarUrl] = useState<string | null>(null);
 
   // Enhanced API Helper with global error handling
   const { apiCallJson } = useAuthenticatedFetch({
@@ -340,15 +338,13 @@ export default function AdminSidebar({
         if (!(session as any)?.accessToken) return; // Wait for session
 
         const data: {
-          settings?: { logo_url?: string; default_avatar_url?: string };
+          settings?: { logo_url?: string };
         } = await apiCallJson("/api/admin/settings/general", {
           cache: "no-store",
         });
 
         if (!mounted) return;
         if (data?.settings?.logo_url) setSiteLogoUrl(data.settings.logo_url);
-        if (data?.settings?.default_avatar_url)
-          setDefaultAvatarUrl(data.settings.default_avatar_url);
       } catch {
         // Error already handled by useAuthenticatedFetch interceptor
         // Keep fallback UI on error
@@ -547,34 +543,6 @@ export default function AdminSidebar({
             </button>
           )}
         </div>
-
-        {/* User Info */}
-        {session?.user && (isOpen || isMobile) && (
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
-                {session.user.image || defaultAvatarUrl ? (
-                  <img
-                    src={(session.user.image || defaultAvatarUrl) as string}
-                    alt={session.user.name || "User"}
-                    className="w-10 h-10 object-cover"
-                  />
-                ) : (
-                  <UserIcon className="h-6 w-6 text-gray-500" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
-                  {session.user.name || session.user.email}
-                </p>
-                <p className="text-xs text-gray-500 capitalize">
-                  {(session.user as unknown as { role?: string }).role ||
-                    "Admin"}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">

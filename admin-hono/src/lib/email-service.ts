@@ -70,6 +70,13 @@ export interface EmailNotificationLog {
   status: "sent" | "failed" | "pending";
   resend_message_id?: string;
   error_message?: string;
+  // Rotation/SMTP fields
+  smtp_account_id?: string;
+  smtp_account_name?: string;
+  rotation_strategy?: string;
+  attempt_count?: number;
+  was_fallback?: boolean;
+  response_time_ms?: number;
 }
 
 interface EmailSettings {
@@ -831,7 +838,7 @@ export class EmailService {
 
       const emailResult = await this.sendEmail(emailOptions);
 
-      // Log email notification
+      // Log email notification with rotation info
       const notificationLog: EmailNotificationLog = {
         type: template?.type || "custom",
         recipient_email: recipientEmail,
@@ -843,6 +850,24 @@ export class EmailService {
         order_item_id: options.orderItemId,
         status: "sent",
         resend_message_id: emailResult.data?.id,
+        // Rotation/SMTP info from hybrid result
+        smtp_account_id:
+          emailResult.data?.provider_type === "smtp" &&
+          emailResult.data?.provider_id
+            ? emailResult.data.provider_id.startsWith("smtp:")
+              ? emailResult.data.provider_id.replace("smtp:", "") // Remove "smtp:" prefix
+              : emailResult.data.provider_id // Already clean UUID
+            : undefined,
+        smtp_account_name:
+          emailResult.data?.provider_type === "smtp"
+            ? emailResult.data?.provider_name
+            : undefined,
+        rotation_strategy: emailResult.data?.provider_type
+          ? "hybrid"
+          : undefined,
+        attempt_count: emailResult.data?.attempt || 1,
+        was_fallback: (emailResult.data?.attempt || 1) > 1,
+        response_time_ms: emailResult.data?.response_time_ms || 0,
       };
 
       await this.logEmailNotification(notificationLog);
@@ -1009,13 +1034,17 @@ export class EmailService {
         status: log.status,
         messageId: log.resend_message_id,
         templateId: log.template_id,
+        smtp_account_id: log.smtp_account_id,
+        smtp_account_name: log.smtp_account_name,
+        rotation_strategy: log.rotation_strategy,
       });
 
       await this.sql`
         INSERT INTO email_notifications (
           type, recipient_email, subject, content, template_id, campaign_id,
           order_id, order_item_id, status, resend_message_id, error_message,
-          sent_at
+          sent_at, smtp_account_id, smtp_account_name, rotation_strategy,
+          attempt_count, was_fallback, response_time_ms
         ) VALUES (
           ${log.type}, ${log.recipient_email}, ${log.subject}, ${log.content},
           ${log.template_id || null}, ${log.campaign_id || null},
@@ -1023,7 +1052,10 @@ export class EmailService {
           ${log.status}, ${log.resend_message_id || null}, ${
         log.error_message || null
       },
-          ${log.status === "sent" ? new Date() : null}
+          ${log.status === "sent" ? new Date() : null},
+          ${log.smtp_account_id || null}, ${log.smtp_account_name || null}, 
+          ${log.rotation_strategy || null}, ${log.attempt_count || 1},
+          ${log.was_fallback || false}, ${log.response_time_ms || 0}
         )
       `;
 
