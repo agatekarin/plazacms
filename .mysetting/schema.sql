@@ -88,6 +88,110 @@ update
     public.countries for each row execute function set_updated_at();
 
 
+-- public.email_api_providers definition
+
+-- Drop table
+
+-- DROP TABLE public.email_api_providers;
+
+CREATE TABLE public.email_api_providers (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	"name" varchar(255) NOT NULL,
+	provider_type varchar(20) NOT NULL,
+	api_key_encrypted text NOT NULL,
+	api_secret_encrypted text NULL,
+	base_url varchar(500) DEFAULT NULL::character varying NULL,
+	weight int4 DEFAULT 1 NULL,
+	priority int4 DEFAULT 100 NULL,
+	daily_limit int4 DEFAULT 10000 NULL,
+	hourly_limit int4 DEFAULT 1000 NULL,
+	is_active bool DEFAULT true NULL,
+	is_healthy bool DEFAULT true NULL,
+	last_used_at timestamptz NULL,
+	last_health_check_at timestamptz DEFAULT now() NULL,
+	consecutive_failures int4 DEFAULT 0 NULL,
+	total_success_count int4 DEFAULT 0 NULL,
+	total_failure_count int4 DEFAULT 0 NULL,
+	cooldown_until timestamptz NULL,
+	today_sent_count int4 DEFAULT 0 NULL,
+	current_hour_sent int4 DEFAULT 0 NULL,
+	daily_reset_at date DEFAULT CURRENT_DATE NULL,
+	hourly_reset_at timestamptz DEFAULT date_trunc('hour'::text, now()) NULL,
+	avg_response_time_ms int4 DEFAULT 0 NULL,
+	last_error_message text NULL,
+	last_error_at timestamptz NULL,
+	provider_config jsonb DEFAULT '{}'::jsonb NULL,
+	tags jsonb DEFAULT '[]'::jsonb NULL,
+	metadata jsonb DEFAULT '{}'::jsonb NULL,
+	created_at timestamptz DEFAULT now() NULL,
+	updated_at timestamptz DEFAULT now() NULL,
+	from_email varchar(255) DEFAULT NULL::character varying NULL, -- Verified sender email address for this provider. Must be verified with the provider to send emails successfully.
+	CONSTRAINT email_api_providers_daily_limit_check CHECK ((daily_limit > 0)),
+	CONSTRAINT email_api_providers_hourly_limit_check CHECK ((hourly_limit > 0)),
+	CONSTRAINT email_api_providers_name_key UNIQUE (name),
+	CONSTRAINT email_api_providers_pkey PRIMARY KEY (id),
+	CONSTRAINT email_api_providers_provider_type_check CHECK (((provider_type)::text = ANY ((ARRAY['resend'::character varying, 'brevo'::character varying, 'mailjet'::character varying])::text[]))),
+	CONSTRAINT email_api_providers_weight_check CHECK ((weight > 0))
+);
+CREATE INDEX idx_api_providers_active_healthy ON public.email_api_providers USING btree (is_active, is_healthy);
+CREATE INDEX idx_api_providers_daily_usage ON public.email_api_providers USING btree (daily_reset_at, today_sent_count);
+CREATE INDEX idx_api_providers_from_email ON public.email_api_providers USING btree (from_email) WHERE (from_email IS NOT NULL);
+CREATE INDEX idx_api_providers_last_used ON public.email_api_providers USING btree (last_used_at);
+CREATE INDEX idx_api_providers_priority ON public.email_api_providers USING btree (priority) WHERE (is_active = true);
+CREATE INDEX idx_api_providers_tags ON public.email_api_providers USING gin (tags);
+CREATE INDEX idx_api_providers_type ON public.email_api_providers USING btree (provider_type);
+CREATE INDEX idx_api_providers_weight ON public.email_api_providers USING btree (weight) WHERE ((is_active = true) AND (is_healthy = true));
+
+-- Column comments
+
+COMMENT ON COLUMN public.email_api_providers.from_email IS 'Verified sender email address for this provider. Must be verified with the provider to send emails successfully.';
+
+-- Table Triggers
+
+create trigger trg_set_updated_at_email_api_providers before
+update
+    on
+    public.email_api_providers for each row execute function set_updated_at();
+
+
+-- public.email_rotation_config definition
+
+-- Drop table
+
+-- DROP TABLE public.email_rotation_config;
+
+CREATE TABLE public.email_rotation_config (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	enabled bool DEFAULT true NULL,
+	include_api_providers bool DEFAULT true NULL,
+	strategy varchar(20) DEFAULT 'round_robin'::character varying NULL,
+	api_smtp_balance_ratio numeric(3, 2) DEFAULT 0.70 NULL,
+	prefer_api_over_smtp bool DEFAULT true NULL,
+	api_fallback_to_smtp bool DEFAULT true NULL,
+	smtp_fallback_to_api bool DEFAULT true NULL,
+	emergency_fallback_enabled bool DEFAULT true NULL,
+	max_retry_attempts int4 DEFAULT 3 NULL,
+	retry_delay_ms int4 DEFAULT 1000 NULL,
+	circuit_breaker_threshold int4 DEFAULT 5 NULL,
+	prefer_healthy_accounts bool DEFAULT true NULL,
+	balance_by_response_time bool DEFAULT false NULL,
+	avoid_consecutive_same_account bool DEFAULT false NULL,
+	track_performance_metrics bool DEFAULT true NULL,
+	log_rotation_decisions bool DEFAULT false NULL,
+	created_at timestamptz DEFAULT now() NULL,
+	updated_at timestamptz DEFAULT now() NULL,
+	created_by varchar(255) DEFAULT 'system'::character varying NULL,
+	notes text NULL,
+	CONSTRAINT email_rotation_config_api_smtp_balance_ratio_check CHECK (((api_smtp_balance_ratio >= (0)::numeric) AND (api_smtp_balance_ratio <= (1)::numeric))),
+	CONSTRAINT email_rotation_config_circuit_breaker_threshold_check CHECK ((circuit_breaker_threshold > 0)),
+	CONSTRAINT email_rotation_config_max_retry_attempts_check CHECK ((max_retry_attempts > 0)),
+	CONSTRAINT email_rotation_config_pkey PRIMARY KEY (id),
+	CONSTRAINT email_rotation_config_retry_delay_ms_check CHECK ((retry_delay_ms >= 0)),
+	CONSTRAINT email_rotation_config_strategy_check CHECK (((strategy)::text = ANY ((ARRAY['round_robin'::character varying, 'weighted'::character varying, 'priority'::character varying, 'health_based'::character varying, 'least_used'::character varying])::text[])))
+);
+CREATE INDEX idx_email_rotation_config_active ON public.email_rotation_config USING btree (created_at DESC) WHERE (enabled = true);
+
+
 -- public.email_setting_values definition
 
 -- Drop table
@@ -135,8 +239,11 @@ CREATE TABLE public.email_settings (
 	multi_smtp_enabled bool DEFAULT false NULL,
 	multi_smtp_fallback_enabled bool DEFAULT true NULL,
 	last_multi_smtp_sync_at timestamptz NULL,
+	hybrid_rotation_enabled bool DEFAULT false NULL,
+	include_api_providers bool DEFAULT false NULL,
 	CONSTRAINT email_settings_pkey PRIMARY KEY (id)
 );
+CREATE INDEX idx_email_settings_hybrid_rotation ON public.email_settings USING btree (hybrid_rotation_enabled, include_api_providers) WHERE (is_active = true);
 
 -- Table Triggers
 
@@ -551,6 +658,30 @@ update
     public.carts for each row execute function set_updated_at();
 
 
+-- public.email_api_health_checks definition
+
+-- Drop table
+
+-- DROP TABLE public.email_api_health_checks;
+
+CREATE TABLE public.email_api_health_checks (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	api_provider_id uuid NOT NULL,
+	status varchar(20) NOT NULL,
+	response_time_ms int4 DEFAULT 0 NULL,
+	error_message text NULL,
+	error_code varchar(50) NULL,
+	test_endpoint varchar(500) NULL,
+	http_status_code int4 NULL,
+	checked_at timestamptz DEFAULT now() NULL,
+	CONSTRAINT email_api_health_checks_pkey PRIMARY KEY (id),
+	CONSTRAINT email_api_health_checks_status_check CHECK (((status)::text = ANY ((ARRAY['healthy'::character varying, 'unhealthy'::character varying, 'timeout'::character varying, 'connection_error'::character varying, 'auth_error'::character varying])::text[]))),
+	CONSTRAINT email_api_health_checks_api_provider_id_fkey FOREIGN KEY (api_provider_id) REFERENCES public.email_api_providers(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_api_health_checks_checked_at ON public.email_api_health_checks USING btree (checked_at);
+CREATE INDEX idx_api_health_checks_provider_status ON public.email_api_health_checks USING btree (api_provider_id, status);
+
+
 -- public.email_campaigns definition
 
 -- Drop table
@@ -640,6 +771,53 @@ create trigger update_email_subscribers_updated_at before
 update
     on
     public.email_subscribers for each row execute function update_updated_at_column();
+
+
+-- public.email_usage_logs definition
+
+-- Drop table
+
+-- DROP TABLE public.email_usage_logs;
+
+CREATE TABLE public.email_usage_logs (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	account_id uuid NULL,
+	provider_type varchar(10) NOT NULL,
+	provider_name varchar(255) NOT NULL,
+	api_provider_id uuid NULL,
+	recipient_email varchar(255) NOT NULL,
+	subject text NOT NULL,
+	status varchar(20) NOT NULL,
+	message_id varchar(255) NULL,
+	response_time_ms int4 DEFAULT 0 NULL,
+	error_code varchar(50) NULL,
+	error_message text NULL,
+	rotation_strategy varchar(20) NOT NULL,
+	was_fallback bool DEFAULT false NULL,
+	attempt_number int4 DEFAULT 1 NULL,
+	queue_time_ms int4 DEFAULT 0 NULL,
+	processing_time_ms int4 DEFAULT 0 NULL,
+	user_agent text NULL,
+	client_ip inet NULL,
+	tags jsonb DEFAULT '[]'::jsonb NULL,
+	metadata jsonb DEFAULT '{}'::jsonb NULL,
+	created_at timestamptz DEFAULT now() NULL,
+	sent_at timestamptz NULL,
+	delivered_at timestamptz NULL,
+	bounced_at timestamptz NULL,
+	CONSTRAINT email_usage_logs_attempt_number_check CHECK ((attempt_number > 0)),
+	CONSTRAINT email_usage_logs_pkey PRIMARY KEY (id),
+	CONSTRAINT email_usage_logs_provider_type_check CHECK (((provider_type)::text = ANY ((ARRAY['smtp'::character varying, 'api'::character varying])::text[]))),
+	CONSTRAINT email_usage_logs_status_check CHECK (((status)::text = ANY ((ARRAY['success'::character varying, 'failed'::character varying, 'timeout'::character varying, 'rate_limited'::character varying, 'bounced'::character varying])::text[]))),
+	CONSTRAINT email_usage_logs_api_provider_id_fkey FOREIGN KEY (api_provider_id) REFERENCES public.email_api_providers(id)
+);
+CREATE INDEX idx_email_usage_logs_api_provider ON public.email_usage_logs USING btree (api_provider_id) WHERE (api_provider_id IS NOT NULL);
+CREATE INDEX idx_email_usage_logs_created_at ON public.email_usage_logs USING btree (created_at DESC);
+CREATE INDEX idx_email_usage_logs_performance ON public.email_usage_logs USING btree (response_time_ms, created_at) WHERE ((status)::text = 'success'::text);
+CREATE INDEX idx_email_usage_logs_provider ON public.email_usage_logs USING btree (provider_type, provider_name);
+CREATE INDEX idx_email_usage_logs_recipient ON public.email_usage_logs USING btree (recipient_email, created_at);
+CREATE INDEX idx_email_usage_logs_rotation ON public.email_usage_logs USING btree (rotation_strategy, was_fallback, created_at);
+CREATE INDEX idx_email_usage_logs_status ON public.email_usage_logs USING btree (status, created_at);
 
 
 -- public.media_folders definition
@@ -2105,15 +2283,6 @@ CREATE OR REPLACE FUNCTION public.pgp_key_id(bytea)
 AS '$libdir/pgcrypto', $function$pgp_key_id_w$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
-;
-
 -- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
@@ -2132,18 +2301,18 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
 AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
 ;
 
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
 -- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text)
  RETURNS bytea
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -2159,13 +2328,13 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text
 AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text)
  RETURNS bytea
  LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
 ;
 
 -- DROP FUNCTION public.pgp_pub_encrypt(text, bytea, text);
@@ -2177,18 +2346,27 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
+-- DROP FUNCTION public.pgp_pub_encrypt(text, bytea);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
@@ -2213,15 +2391,6 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
-;
-
 -- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
@@ -2231,13 +2400,13 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt(text, text);
+-- DROP FUNCTION public.pgp_sym_decrypt_bytea(bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text)
  RETURNS bytea
  LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
 ;
 
 -- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
@@ -2249,13 +2418,13 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
 ;
 
 -- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text);
@@ -2265,6 +2434,63 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text)
  LANGUAGE c
  PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.reset_api_provider_daily_counters();
+
+CREATE OR REPLACE FUNCTION public.reset_api_provider_daily_counters()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+    updated_count INTEGER;
+BEGIN
+    UPDATE email_api_providers 
+    SET 
+        today_sent_count = 0,
+        daily_reset_at = CURRENT_DATE
+    WHERE daily_reset_at < CURRENT_DATE;
+    
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
+    
+    IF updated_count > 0 THEN
+        RAISE NOTICE 'Reset daily counters for % API providers', updated_count;
+    END IF;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.reset_api_provider_hourly_counters();
+
+CREATE OR REPLACE FUNCTION public.reset_api_provider_hourly_counters()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+    updated_count INTEGER;
+BEGIN
+    UPDATE email_api_providers 
+    SET 
+        current_hour_sent = 0,
+        hourly_reset_at = DATE_TRUNC('hour', NOW())
+    WHERE hourly_reset_at < DATE_TRUNC('hour', NOW());
+    
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
+    
+    IF updated_count > 0 THEN
+        RAISE NOTICE 'Reset hourly counters for % API providers', updated_count;
+    END IF;
+END;
+$function$
 ;
 
 -- DROP FUNCTION public.reset_smtp_daily_counters();

@@ -2177,3 +2177,402 @@ PlazaCMS includes an advanced multi-SMTP load balancing system that provides ent
 - Usage tracking for billing and quota management
 
 This multi-SMTP system provides enterprise-grade email infrastructure with automatic load balancing, health monitoring, and performance optimization - ensuring maximum email deliverability and reliability for PlazaCMS.
+
+---
+
+## 📮 Email API Rotation System ✅ **FULLY IMPLEMENTED**
+
+### **Overview**
+
+Sistem Email API Rotation adalah upgrade terbaru PlazaCMS yang mengintegrasikan API email providers (Resend, Brevo, Mailjet) dengan sistem SMTP yang sudah ada. Ini memberikan hybrid architecture yang memungkinkan intelligent load balancing antara SMTP accounts dan API providers untuk maximum email deliverability dan performance.
+
+### **Core Architecture**
+
+#### **Hybrid Email System**
+
+- **SMTP Integration** → Menggunakan existing multi-SMTP system untuk traditional email sending
+- **API Provider Integration** → Support untuk modern email APIs (Resend, Brevo, Mailjet)
+- **Unified Interface** → Single service untuk manage semua email sending dengan automatic provider selection
+- **Intelligent Load Balancing** → Smart distribution berdasarkan provider health, performance, dan configuration
+
+#### **Provider Adapters**
+
+- **Unified Interface** → `EmailAPIProviderAdapter` untuk consistent API across different providers
+- **Cross-Platform Compatibility** → Support untuk Node.js, browser, dan Cloudflare Workers
+- **Error Handling** → Robust error handling dengan automatic retry dan fallback mechanisms
+- **Performance Tracking** → Response time monitoring dan success rate tracking untuk each provider
+
+### **Database Schema**
+
+#### **`email_api_providers`**
+
+- **Tujuan:** Stores configuration untuk email API providers (Resend, Brevo, Mailjet)
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key
+  - `name` (VARCHAR): Friendly name untuk provider (e.g., "Resend Primary")
+  - `provider_type` (VARCHAR): Type of provider ('resend', 'brevo', 'mailjet')
+  - `api_key_encrypted` (TEXT): Encrypted API key
+  - `api_secret_encrypted` (TEXT): Encrypted API secret (untuk Mailjet)
+  - `base_url` (VARCHAR): API base URL untuk provider
+  - `from_email` (VARCHAR): Default sender email address untuk provider
+  - `weight` (INTEGER): Weight untuk weighted load balancing (1-100)
+  - `priority` (INTEGER): Priority level untuk priority-based selection
+  - `daily_limit` (INTEGER): Maximum emails per day untuk provider
+  - `hourly_limit` (INTEGER): Maximum emails per hour untuk provider
+  - `is_active` (BOOLEAN): Whether provider is enabled
+  - `is_healthy` (BOOLEAN): Current health status
+  - `last_used_at` (TIMESTAMPTZ): Last time provider was used (for round-robin)
+  - `consecutive_failures` (INTEGER): Number of consecutive failed attempts
+  - `total_success_count` (INTEGER): Total successful email sends
+  - `total_failure_count` (INTEGER): Total failed email sends
+  - `cooldown_until` (TIMESTAMPTZ): Cooldown period end time after failures
+  - `today_sent_count` (INTEGER): Emails sent today (resets daily)
+  - `current_hour_sent` (INTEGER): Emails sent this hour (resets hourly)
+  - `avg_response_time_ms` (INTEGER): Average response time in milliseconds
+  - `last_error_message` (TEXT): Last error message for debugging
+  - `last_error_at` (TIMESTAMPTZ): Timestamp of last error
+  - `tags` (JSONB): Additional metadata tags
+  - `metadata` (JSONB): Extra configuration data
+- **Features:**
+  - Encrypted credential storage untuk security
+  - Health monitoring dengan automatic recovery
+  - Rate limiting per provider dengan daily/hourly quotas
+  - Performance tracking dengan response time averages
+  - Flexible configuration dengan JSONB metadata
+
+#### **`email_api_health_checks`**
+
+- **Tujuan:** Tracks health check results untuk API providers
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key
+  - `provider_id` (UUID): Foreign Key ke `email_api_providers.id`
+  - `check_type` (VARCHAR): Type of health check ('api_test', 'send_test', 'connectivity')
+  - `status` (VARCHAR): Result status ('healthy', 'unhealthy', 'degraded', 'unknown')
+  - `response_time_ms` (INTEGER): Health check response time
+  - `error_message` (TEXT): Error details if unhealthy
+  - `metadata` (JSONB): Additional check data
+  - `checked_at` (TIMESTAMPTZ): Timestamp of health check
+- **Features:**
+  - Comprehensive health monitoring dengan different check types
+  - Historical health data untuk trend analysis
+  - Performance tracking dengan response time measurement
+  - Error logging untuk debugging dan troubleshooting
+
+#### **`email_usage_logs`**
+
+- **Tujuan:** Comprehensive logging untuk all email sending attempts (both SMTP dan API)
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key
+  - `account_id` (UUID): Foreign Key ke `smtp_accounts.id` (nullable for API providers)
+  - `api_provider_id` (UUID): Foreign Key ke `email_api_providers.id` (nullable for SMTP)
+  - `provider_type` (VARCHAR): Type of provider ('smtp', 'api')
+  - `provider_name` (VARCHAR): Name of the provider used
+  - `recipient_email` (VARCHAR): Email address of recipient
+  - `subject` (VARCHAR): Email subject line
+  - `status` (VARCHAR): Send status ('success', 'failed', 'timeout', 'rate_limited', 'bounced', 'deferred', 'complained')
+  - `message_id` (VARCHAR): Provider-specific message ID
+  - `response_time_ms` (INTEGER): Time taken to send email
+  - `error_code` (VARCHAR): Error code if send failed
+  - `error_message` (TEXT): Detailed error message
+  - `rotation_strategy` (VARCHAR): Strategy used untuk provider selection
+  - `was_fallback` (BOOLEAN): Whether this was a fallback attempt
+  - `attempt_number` (INTEGER): Attempt number dalam retry sequence
+  - `created_at` (TIMESTAMPTZ): Timestamp of send attempt
+- **Features:**
+  - Unified logging untuk both SMTP dan API providers
+  - Detailed error tracking dengan codes dan messages
+  - Performance analytics dengan response time tracking
+  - Retry tracking dengan attempt numbering
+  - Provider selection strategy logging
+
+#### **`email_rotation_config`**
+
+- **Tujuan:** Global configuration untuk hybrid email rotation system
+- **Kolom Penting:**
+  - `id` (UUID): Primary Key
+  - `enabled` (BOOLEAN): Whether rotation system is enabled
+  - `include_api_providers` (BOOLEAN): Whether to include API providers dalam rotation
+  - `strategy` (VARCHAR): Load balancing strategy ('round_robin', 'weighted', 'priority', 'health_based', 'least_used')
+  - `api_smtp_balance_ratio` (NUMERIC): Ratio of API vs SMTP usage (0.0-1.0)
+  - `prefer_api_over_smtp` (BOOLEAN): Whether to prefer API providers
+  - `api_fallback_to_smtp` (BOOLEAN): Allow fallback from API to SMTP
+  - `smtp_fallback_to_api` (BOOLEAN): Allow fallback from SMTP to API
+  - `emergency_fallback_enabled` (BOOLEAN): Enable emergency fallback mechanisms
+  - `max_retry_attempts` (INTEGER): Maximum retry attempts for failed sends
+  - `retry_delay_ms` (INTEGER): Delay between retry attempts
+  - `circuit_breaker_threshold` (INTEGER): Failures needed to trip circuit breaker
+  - `circuit_breaker_timeout_ms` (INTEGER): Circuit breaker cooldown period
+  - `prefer_healthy_accounts` (BOOLEAN): Prioritize healthy providers
+  - `balance_by_response_time` (BOOLEAN): Consider response time dalam selection
+  - `avoid_consecutive_same_account` (BOOLEAN): Avoid using same provider consecutively
+  - `track_performance_metrics` (BOOLEAN): Enable performance tracking
+  - `log_rotation_decisions` (BOOLEAN): Log provider selection decisions
+  - `notes` (TEXT): Configuration notes
+  - `created_by` (VARCHAR): User who created configuration
+  - `created_at` (TIMESTAMPTZ): Configuration creation time
+  - `updated_at` (TIMESTAMPTZ): Last configuration update
+- **Features:**
+  - Comprehensive configuration untuk all rotation strategies
+  - Circuit breaker implementation untuk automatic recovery
+  - Flexible fallback mechanisms dengan bi-directional support
+  - Performance optimization settings
+  - Audit trail dengan creation/update tracking
+
+### **Load Balancing Strategies**
+
+#### **Round Robin**
+
+- **Implementation:** Database-backed rotation state dengan persistent ordering
+- **Features:** Consistent provider ordering, persistent state across restarts
+- **Use Case:** Equal distribution across all providers
+
+#### **Weighted Distribution**
+
+- **Implementation:** Probability-based selection menggunakan provider weights
+- **Features:** Configurable weights (1-100), proportional load distribution
+- **Use Case:** Different capacity providers, premium/free tier mixing
+
+#### **Priority-Based**
+
+- **Implementation:** Hierarchical selection berdasarkan priority levels
+- **Features:** Primary/secondary/tertiary tiers, automatic failover
+- **Use Case:** Cost optimization, preferred provider setup
+
+#### **Health-Based**
+
+- **Implementation:** Dynamic selection berdasarkan real-time health status
+- **Features:** Automatic unhealthy provider exclusion, performance consideration
+- **Use Case:** Maximum reliability, automatic failure recovery
+
+#### **Least Used**
+
+- **Implementation:** Selection berdasarkan historical usage statistics
+- **Features:** Automatic load leveling, usage tracking integration
+- **Use Case:** Equal resource utilization, quota optimization
+
+### **Health Monitoring System**
+
+#### **Real-Time Health Checks**
+
+- **Frequency:** Continuous monitoring dengan configurable intervals
+- **Types:** API connectivity tests, send test emails, response time checks
+- **Thresholds:** Configurable success/failure thresholds untuk each provider
+- **Recovery:** Automatic recovery detection dengan gradual re-enablement
+
+#### **Circuit Breaker Implementation**
+
+- **Trigger:** Configurable consecutive failure threshold
+- **Behavior:** Automatic provider isolation untuk cooldown period
+- **Recovery:** Gradual recovery dengan health verification
+- **Fallback:** Automatic fallback ke healthy providers
+
+#### **Performance Tracking**
+
+- **Metrics:** Response time, success rate, error patterns
+- **Aggregation:** Real-time averages dengan historical trending
+- **Optimization:** Performance-based provider selection
+- **Alerting:** Performance degradation detection
+
+### **Security Features**
+
+#### **Credential Management**
+
+- **Encryption:** AES encryption untuk API keys dan secrets dalam database
+- **Storage:** Secure credential storage dengan separate encrypted fields
+- **Access:** Controlled access dengan admin-only credential management
+- **Rotation:** Support untuk credential rotation dan updates
+
+#### **Provider Isolation**
+
+- **Account Separation:** Each provider operates independently
+- **Failure Isolation:** Provider failures don't affect others
+- **Rate Limiting:** Individual rate limits prevent provider overuse
+- **Security Boundaries:** Encrypted credentials dengan provider-specific access
+
+### **API Management System**
+
+#### **Provider Adapters**
+
+##### **ResendAdapter**
+
+- **Features:** Complete Resend API integration dengan email formatting
+- **Configuration:** API key authentication, from email configuration
+- **Error Handling:** Detailed error parsing dengan specific Resend error codes
+- **Compatibility:** Full Resend API feature support dengan proper formatting
+
+##### **BrevoAdapter**
+
+- **Features:** Sendinblue/Brevo API integration dengan template support
+- **Configuration:** API key authentication, sender configuration
+- **Error Handling:** Brevo-specific error handling dengan status code mapping
+- **Compatibility:** Modern Brevo API dengan advanced features
+
+##### **MailjetAdapter**
+
+- **Features:** Mailjet API v3.1 integration dengan dual authentication
+- **Configuration:** API key + secret authentication, template support
+- **Error Handling:** Comprehensive Mailjet error handling
+- **Compatibility:** Full Mailjet feature set dengan proper message formatting
+
+#### **Unified Provider Interface**
+
+- **Standardization:** Common interface untuk all providers
+- **Type Safety:** Full TypeScript support dengan proper typing
+- **Error Handling:** Consistent error handling across providers
+- **Performance:** Optimized untuk high-volume sending
+
+### **Admin Interface Components**
+
+#### **Email Rotation Dashboard**
+
+- **Overview Cards:** Total emails sent, success rate, average response time, active providers
+- **Provider Health:** Real-time health status dengan visual indicators
+- **Performance Metrics:** Provider comparison dengan charts dan statistics
+- **Recent Activity:** Live activity feed dengan detailed logging
+- **Quick Actions:** Direct access ke provider management dan configuration
+
+#### **API Provider Management**
+
+- **CRUD Interface:** Complete create, read, update, delete untuk providers
+- **Configuration Forms:** User-friendly forms untuk each provider type
+- **Testing Tools:** Built-in connection testing dengan real-time results
+- **Health Monitoring:** Provider health dashboard dengan historical data
+- **Credential Management:** Secure credential input dengan visibility toggles
+
+#### **Analytics & Reporting**
+
+- **Performance Analytics:** Comprehensive charts dengan provider performance data
+- **Usage Statistics:** Detailed usage tracking dengan time-based filtering
+- **Health Trends:** Historical health data dengan trend analysis
+- **Error Analysis:** Error pattern detection dengan detailed logging
+- **Export Capabilities:** Data export untuk external analysis
+
+#### **Configuration Management**
+
+- **Strategy Selection:** Visual strategy selector dengan live preview
+- **Load Balancing Config:** Interactive configuration untuk all strategies
+- **Fallback Settings:** Comprehensive fallback mechanism configuration
+- **Rate Limiting:** Per-provider dan global rate limit management
+- **Testing Interface:** Configuration testing dengan real-time validation
+
+### **Integration Architecture**
+
+#### **Email Service Integration**
+
+- **Provider Detection:** Automatic detection of hybrid rotation capability
+- **Seamless Switching:** Transparent switching between providers
+- **Fallback Mechanisms:** Multi-level fallback dari API ke SMTP
+- **Configuration Driven:** Database-driven configuration dengan real-time updates
+
+#### **SMTP System Integration**
+
+- **Unified Service:** Single service managing both SMTP dan API providers
+- **Load Balancing:** Combined load balancing across all provider types
+- **Health Monitoring:** Unified health monitoring untuk SMTP dan API
+- **Performance Tracking:** Combined performance metrics dan analytics
+
+#### **Background Services**
+
+- **Health Monitoring:** Continuous background health checks
+- **Counter Management:** Automatic daily/hourly counter resets
+- **Performance Calculation:** Background performance metric calculations
+- **Cleanup Services:** Automatic log cleanup dan data archival
+
+### **API Endpoints**
+
+#### **Provider Management**
+
+- `GET /api/admin/email-api-providers` - List all API providers dengan filtering
+- `POST /api/admin/email-api-providers` - Create new API provider
+- `PUT /api/admin/email-api-providers/:id` - Update provider configuration
+- `DELETE /api/admin/email-api-providers/:id` - Remove API provider
+- `POST /api/admin/email-api-providers/:id/test` - Test provider connection
+- `POST /api/admin/email-api-providers/:id/health-check` - Manual health check
+- `POST /api/admin/email-api-providers/:id/reset-counters` - Reset usage counters
+
+#### **Rotation Configuration**
+
+- `GET /api/admin/email-rotation-config` - Get current rotation configuration
+- `PUT /api/admin/email-rotation-config` - Update rotation settings
+- `POST /api/admin/email-rotation-config/test` - Test rotation configuration
+- `POST /api/admin/email-rotation-config/reset` - Reset rotation state
+- `GET /api/admin/email-rotation-config/stats` - Get rotation statistics
+- `GET /api/admin/email-rotation-config/analytics` - Get detailed analytics
+- `GET /api/admin/email-rotation-config/logs` - Get usage logs dengan filtering
+
+#### **Health & Monitoring**
+
+- `GET /api/admin/email-api-providers/:id/health` - Get provider health status
+- `GET /api/admin/email-api-providers/:id/stats` - Get provider statistics
+- `GET /api/admin/email-api-providers/health/overview` - Overall health overview
+
+### **Performance Features**
+
+#### **Caching Strategy**
+
+- **Provider Cache:** In-memory caching untuk provider adapters
+- **Configuration Cache:** 5-minute TTL untuk rotation configuration
+- **Health Status Cache:** Real-time health status caching
+- **Performance Metrics:** Aggregated metrics caching untuk faster queries
+
+#### **Database Optimization**
+
+- **Indexing:** Comprehensive indexes untuk fast query performance
+- **Partitioning:** Log table partitioning untuk large datasets
+- **Cleanup:** Automatic old log cleanup dan archival
+- **Query Optimization:** Optimized queries untuk analytics dan reporting
+
+#### **Background Processing**
+
+- **Async Operations:** Non-blocking background health checks
+- **Batch Processing:** Efficient batch operations untuk large datasets
+- **Queue Management:** Email queue management dengan priority handling
+- **Resource Management:** Efficient resource utilization dengan connection pooling
+
+### **Migration & Deployment**
+
+#### **Database Migrations**
+
+- **Schema Updates:** Automated schema migrations untuk new tables
+- **Data Migration:** Safe data migration dengan backup procedures
+- **Index Creation:** Optimized index creation untuk performance
+- **Compatibility:** Backward compatibility dengan existing email system
+
+#### **Configuration Migration**
+
+- **Settings Transfer:** Migration dari existing email settings
+- **Provider Setup:** Automatic provider configuration dari existing settings
+- **Validation:** Configuration validation dan error checking
+- **Rollback:** Safe rollback procedures untuk deployment issues
+
+### **Use Cases & Benefits**
+
+#### **High Availability**
+
+- **Provider Redundancy:** Multiple provider failover untuk maximum uptime
+- **Health Monitoring:** Proactive health monitoring dengan automatic recovery
+- **Circuit Breakers:** Automatic isolation of failing providers
+- **Emergency Fallback:** Multi-level fallback mechanisms
+
+#### **Performance Optimization**
+
+- **Load Distribution:** Intelligent load balancing across providers
+- **Response Time Optimization:** Performance-based provider selection
+- **Rate Limit Management:** Intelligent rate limiting dengan quota optimization
+- **Capacity Scaling:** Easy capacity scaling dengan additional providers
+
+#### **Cost Management**
+
+- **Provider Mixing:** Mix of free dan paid providers untuk cost optimization
+- **Usage Optimization:** Intelligent usage distribution untuk quota maximization
+- **Performance vs Cost:** Configurable balance between performance dan cost
+- **Analytics:** Detailed cost analysis dengan usage tracking
+
+#### **Reliability & Monitoring**
+
+- **Comprehensive Logging:** Detailed logging untuk all email operations
+- **Real-time Analytics:** Live performance monitoring dan analytics
+- **Error Tracking:** Comprehensive error tracking dengan pattern detection
+- **Health Dashboards:** Visual health monitoring dengan historical data
+
+The Email API Rotation System provides enterprise-grade email infrastructure yang combines the reliability of SMTP dengan the modern capabilities of API providers, ensuring maximum email deliverability, performance, dan scalability untuk PlazaCMS.
