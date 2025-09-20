@@ -24,6 +24,7 @@ interface SMTPAccount {
   host: string;
   port: number;
   username: string;
+  password_encrypted: string;
   encryption: string;
   weight: number;
   priority: number;
@@ -131,7 +132,7 @@ export default function SMTPAccountModal({
         host: editingAccount.host,
         port: editingAccount.port,
         username: editingAccount.username,
-        password: "", // Don't populate password for security
+        password: editingAccount.password_encrypted || "", // Pre-fill for easier editing
         encryption: editingAccount.encryption,
         weight: editingAccount.weight,
         priority: editingAccount.priority,
@@ -196,8 +197,8 @@ export default function SMTPAccountModal({
       newErrors.username = "Username is required";
     }
 
-    if (!editingAccount && !formData.password.trim()) {
-      newErrors.password = "Password is required for new accounts";
+    if (!formData.password.trim()) {
+      newErrors.password = "Password is required";
     }
 
     // Validate from_email if provided
@@ -238,16 +239,8 @@ export default function SMTPAccountModal({
 
     setSaving(true);
     try {
-      // Don't send empty password for updates
-      const saveData =
-        editingAccount && !formData.password.trim()
-          ? (() => {
-              const { password, ...dataWithoutPassword } = formData;
-              return dataWithoutPassword;
-            })()
-          : { ...formData };
-
-      await onSave(saveData);
+      // Always send the password since it's pre-filled
+      await onSave({ ...formData });
     } catch (error) {
       console.error("Error saving SMTP account:", error);
     } finally {
@@ -537,7 +530,7 @@ export default function SMTPAccountModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Password {!editingAccount && "*"}
+                  Password *
                 </label>
                 <div className="relative">
                   <Input
@@ -549,11 +542,7 @@ export default function SMTPAccountModal({
                         password: e.target.value,
                       }))
                     }
-                    placeholder={
-                      editingAccount
-                        ? "Leave empty to keep current password"
-                        : "Your password or app password"
-                    }
+                    placeholder="Your password or app password"
                     className={
                       errors.password ? "border-red-500 pr-10" : "pr-10"
                     }
@@ -574,11 +563,6 @@ export default function SMTPAccountModal({
                   <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
                     <AlertCircle className="h-3 w-3" />
                     {errors.password}
-                  </p>
-                )}
-                {editingAccount && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Leave empty to keep the current password
                   </p>
                 )}
               </div>
@@ -604,7 +588,7 @@ export default function SMTPAccountModal({
                       from_email: e.target.value,
                     }))
                   }
-                  placeholder="noreply@plazacms.com"
+                  placeholder="noreply@plazaku.my.id"
                   className={errors.from_email ? "border-red-500" : ""}
                 />
                 {errors.from_email && (

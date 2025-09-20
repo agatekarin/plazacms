@@ -1,19 +1,19 @@
 /**
  * 🔄 SMTP Background Services Scheduler
  * PlazaCMS Multi-SMTP Background Monitoring & Maintenance
- * 
+ *
  * Handles:
  * - Periodic health checks for all SMTP accounts
- * - Automatic rate limiting counter resets 
+ * - Automatic rate limiting counter resets
  * - Rate limit monitoring and alerts
  * - Database maintenance and cleanup
  * - Auto-recovery for unhealthy accounts
- * 
+ *
  * Services run on configurable intervals via Cloudflare Workers Cron
  */
 
-import { createSMTPRotationService } from './smtp-rotation-service';
-import { getDb } from './db';
+import { createSMTPRotationService } from "./smtp-rotation-service";
+import { getDb } from "./db";
 
 interface BackgroundServiceConfig {
   healthCheckInterval: number; // minutes
@@ -27,12 +27,12 @@ export class SMTPBackgroundService {
   private config: BackgroundServiceConfig;
   private sql: any;
   private rotationService: any;
-  private timers: Map<string, NodeJS.Timeout> = new Map();
+  private timers: Map<string, any> = new Map();
 
   constructor(sql: any, config?: Partial<BackgroundServiceConfig>) {
     this.sql = sql;
     this.rotationService = createSMTPRotationService(sql);
-    
+
     // Default configuration
     this.config = {
       healthCheckInterval: 5, // Every 5 minutes
@@ -40,7 +40,7 @@ export class SMTPBackgroundService {
       rateLimitCheckInterval: 10, // Every 10 minutes
       cleanupInterval: 24 * 60, // Every 24 hours
       enabled: true,
-      ...config
+      ...config,
     };
   }
 
@@ -49,11 +49,11 @@ export class SMTPBackgroundService {
    */
   async startServices(): Promise<void> {
     if (!this.config.enabled) {
-      console.log('[SMTPBackgroundService] Background services disabled');
+      console.log("[SMTPBackgroundService] Background services disabled");
       return;
     }
 
-    console.log('[SMTPBackgroundService] Starting background services...');
+    console.log("[SMTPBackgroundService] Starting background services...");
 
     try {
       // Start health monitoring service
@@ -68,10 +68,11 @@ export class SMTPBackgroundService {
       // Start cleanup service
       await this.startCleanupService();
 
-      console.log('[SMTPBackgroundService] All background services started successfully');
-
+      console.log(
+        "[SMTPBackgroundService] All background services started successfully"
+      );
     } catch (error) {
-      console.error('[SMTPBackgroundService] Error starting services:', error);
+      console.error("[SMTPBackgroundService] Error starting services:", error);
       throw error;
     }
   }
@@ -80,7 +81,7 @@ export class SMTPBackgroundService {
    * 🛑 Stop all background services
    */
   stopServices(): void {
-    console.log('[SMTPBackgroundService] Stopping background services...');
+    console.log("[SMTPBackgroundService] Stopping background services...");
 
     // Clear all timers
     for (const [serviceName, timer] of this.timers) {
@@ -89,7 +90,7 @@ export class SMTPBackgroundService {
     }
 
     this.timers.clear();
-    console.log('[SMTPBackgroundService] All background services stopped');
+    console.log("[SMTPBackgroundService] All background services stopped");
   }
 
   /**
@@ -97,17 +98,19 @@ export class SMTPBackgroundService {
    */
   private async startHealthMonitoring(): Promise<void> {
     const intervalMs = this.config.healthCheckInterval * 60 * 1000;
-    
+
     // Run immediately on startup
     await this.runHealthCheck();
-    
+
     // Schedule recurring checks
     const timer = setInterval(async () => {
       await this.runHealthCheck();
     }, intervalMs);
 
-    this.timers.set('healthMonitoring', timer);
-    console.log(`[SMTPBackgroundService] Health monitoring started (interval: ${this.config.healthCheckInterval}m)`);
+    this.timers.set("healthMonitoring", timer);
+    console.log(
+      `[SMTPBackgroundService] Health monitoring started (interval: ${this.config.healthCheckInterval}m)`
+    );
   }
 
   /**
@@ -115,17 +118,19 @@ export class SMTPBackgroundService {
    */
   private async startCounterResetService(): Promise<void> {
     const intervalMs = this.config.counterResetInterval * 60 * 1000;
-    
+
     // Run immediately on startup
     await this.runCounterReset();
-    
+
     // Schedule recurring resets
     const timer = setInterval(async () => {
       await this.runCounterReset();
     }, intervalMs);
 
-    this.timers.set('counterReset', timer);
-    console.log(`[SMTPBackgroundService] Counter reset started (interval: ${this.config.counterResetInterval}m)`);
+    this.timers.set("counterReset", timer);
+    console.log(
+      `[SMTPBackgroundService] Counter reset started (interval: ${this.config.counterResetInterval}m)`
+    );
   }
 
   /**
@@ -133,17 +138,19 @@ export class SMTPBackgroundService {
    */
   private async startRateLimitMonitoring(): Promise<void> {
     const intervalMs = this.config.rateLimitCheckInterval * 60 * 1000;
-    
+
     // Run immediately on startup
     await this.runRateLimitCheck();
-    
+
     // Schedule recurring checks
     const timer = setInterval(async () => {
       await this.runRateLimitCheck();
     }, intervalMs);
 
-    this.timers.set('rateLimitMonitoring', timer);
-    console.log(`[SMTPBackgroundService] Rate limit monitoring started (interval: ${this.config.rateLimitCheckInterval}m)`);
+    this.timers.set("rateLimitMonitoring", timer);
+    console.log(
+      `[SMTPBackgroundService] Rate limit monitoring started (interval: ${this.config.rateLimitCheckInterval}m)`
+    );
   }
 
   /**
@@ -151,14 +158,18 @@ export class SMTPBackgroundService {
    */
   private async startCleanupService(): Promise<void> {
     const intervalMs = this.config.cleanupInterval * 60 * 1000;
-    
+
     // Schedule recurring cleanup (don't run immediately)
     const timer = setInterval(async () => {
       await this.runCleanup();
     }, intervalMs);
 
-    this.timers.set('cleanup', timer);
-    console.log(`[SMTPBackgroundService] Cleanup service started (interval: ${this.config.cleanupInterval / 60}h)`);
+    this.timers.set("cleanup", timer);
+    console.log(
+      `[SMTPBackgroundService] Cleanup service started (interval: ${
+        this.config.cleanupInterval / 60
+      }h)`
+    );
   }
 
   /**
@@ -169,11 +180,12 @@ export class SMTPBackgroundService {
       const startTime = Date.now();
       await this.rotationService.runBackgroundHealthMonitoring();
       const duration = Date.now() - startTime;
-      
-      console.log(`[SMTPBackgroundService] Health check completed in ${duration}ms`);
-      
+
+      console.log(
+        `[SMTPBackgroundService] Health check completed in ${duration}ms`
+      );
     } catch (error) {
-      console.error('[SMTPBackgroundService] Health check error:', error);
+      console.error("[SMTPBackgroundService] Health check error:", error);
     }
   }
 
@@ -185,11 +197,12 @@ export class SMTPBackgroundService {
       const startTime = Date.now();
       await this.rotationService.runBackgroundCounterReset();
       const duration = Date.now() - startTime;
-      
-      console.log(`[SMTPBackgroundService] Counter reset completed in ${duration}ms`);
-      
+
+      console.log(
+        `[SMTPBackgroundService] Counter reset completed in ${duration}ms`
+      );
     } catch (error) {
-      console.error('[SMTPBackgroundService] Counter reset error:', error);
+      console.error("[SMTPBackgroundService] Counter reset error:", error);
     }
   }
 
@@ -201,20 +214,25 @@ export class SMTPBackgroundService {
       const startTime = Date.now();
       const status = await this.rotationService.checkRateLimitingStatus();
       const duration = Date.now() - startTime;
-      
+
       // Log summary
       if (status.exceeded_accounts.length > 0) {
-        console.warn(`[SMTPBackgroundService] ⚠️  ${status.exceeded_accounts.length} accounts exceeded rate limits`);
+        console.warn(
+          `[SMTPBackgroundService] ⚠️  ${status.exceeded_accounts.length} accounts exceeded rate limits`
+        );
       }
-      
+
       if (status.near_limit_accounts.length > 0) {
-        console.warn(`[SMTPBackgroundService] ⚠️  ${status.near_limit_accounts.length} accounts approaching rate limits`);
+        console.warn(
+          `[SMTPBackgroundService] ⚠️  ${status.near_limit_accounts.length} accounts approaching rate limits`
+        );
       }
-      
-      console.log(`[SMTPBackgroundService] Rate limit check completed in ${duration}ms`);
-      
+
+      console.log(
+        `[SMTPBackgroundService] Rate limit check completed in ${duration}ms`
+      );
     } catch (error) {
-      console.error('[SMTPBackgroundService] Rate limit check error:', error);
+      console.error("[SMTPBackgroundService] Rate limit check error:", error);
     }
   }
 
@@ -226,11 +244,10 @@ export class SMTPBackgroundService {
       const startTime = Date.now();
       await this.rotationService.runMaintenanceCleanup();
       const duration = Date.now() - startTime;
-      
+
       console.log(`[SMTPBackgroundService] Cleanup completed in ${duration}ms`);
-      
     } catch (error) {
-      console.error('[SMTPBackgroundService] Cleanup error:', error);
+      console.error("[SMTPBackgroundService] Cleanup error:", error);
     }
   }
 
@@ -247,7 +264,10 @@ export class SMTPBackgroundService {
       enabled: this.config.enabled,
       activeServices: Array.from(this.timers.keys()),
       config: this.config,
-      uptime: process.uptime ? `${Math.floor(process.uptime())}s` : 'N/A'
+      uptime:
+        typeof (globalThis as any).process?.uptime === "function"
+          ? `${Math.floor((globalThis as any).process.uptime())}s`
+          : "N/A",
     };
   }
 
@@ -257,23 +277,32 @@ export class SMTPBackgroundService {
   updateConfig(newConfig: Partial<BackgroundServiceConfig>): void {
     const oldConfig = { ...this.config };
     this.config = { ...this.config, ...newConfig };
-    
-    console.log('[SMTPBackgroundService] Configuration updated:', {
+
+    console.log("[SMTPBackgroundService] Configuration updated:", {
       old: oldConfig,
-      new: this.config
+      new: this.config,
     });
 
     // Restart services if intervals changed
-    const intervalFields = ['healthCheckInterval', 'counterResetInterval', 'rateLimitCheckInterval', 'cleanupInterval'];
-    const intervalsChanged = intervalFields.some(field => 
-      newConfig[field as keyof BackgroundServiceConfig] && 
-      newConfig[field as keyof BackgroundServiceConfig] !== oldConfig[field as keyof BackgroundServiceConfig]
+    const intervalFields = [
+      "healthCheckInterval",
+      "counterResetInterval",
+      "rateLimitCheckInterval",
+      "cleanupInterval",
+    ];
+    const intervalsChanged = intervalFields.some(
+      (field) =>
+        newConfig[field as keyof BackgroundServiceConfig] &&
+        newConfig[field as keyof BackgroundServiceConfig] !==
+          oldConfig[field as keyof BackgroundServiceConfig]
     );
 
     if (intervalsChanged) {
-      console.log('[SMTPBackgroundService] Intervals changed, restarting services...');
+      console.log(
+        "[SMTPBackgroundService] Intervals changed, restarting services..."
+      );
       this.stopServices();
-      
+
       if (this.config.enabled) {
         setTimeout(() => {
           this.startServices().catch(console.error);
@@ -286,23 +315,23 @@ export class SMTPBackgroundService {
    * 🧪 Manual Service Execution (for testing)
    */
   async runManualHealthCheck(): Promise<void> {
-    console.log('[SMTPBackgroundService] Manual health check requested');
+    console.log("[SMTPBackgroundService] Manual health check requested");
     await this.runHealthCheck();
   }
 
   async runManualCounterReset(): Promise<void> {
-    console.log('[SMTPBackgroundService] Manual counter reset requested');
+    console.log("[SMTPBackgroundService] Manual counter reset requested");
     await this.runCounterReset();
   }
 
   async runManualRateLimitCheck(): Promise<any> {
-    console.log('[SMTPBackgroundService] Manual rate limit check requested');
+    console.log("[SMTPBackgroundService] Manual rate limit check requested");
     await this.runRateLimitCheck();
     return await this.rotationService.checkRateLimitingStatus();
   }
 
   async runManualCleanup(): Promise<void> {
-    console.log('[SMTPBackgroundService] Manual cleanup requested');
+    console.log("[SMTPBackgroundService] Manual cleanup requested");
     await this.runCleanup();
   }
 }
@@ -311,7 +340,7 @@ export class SMTPBackgroundService {
  * 🏭 Factory function to create SMTPBackgroundService
  */
 export function createSMTPBackgroundService(
-  c: any, 
+  c: any,
   config?: Partial<BackgroundServiceConfig>
 ): SMTPBackgroundService {
   const sql = getDb(c);

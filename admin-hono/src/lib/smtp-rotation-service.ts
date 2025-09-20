@@ -545,9 +545,9 @@ export class SMTPRotationService {
           {
             from: {
               name: account.from_name || "Health Check",
-              email: account.from_email || "noreply@plazacms.com",
+              email: account.from_email || "noreply@plazaku.my.id",
             },
-            to: account.from_email || "noreply@plazacms.com", // Send to configured email
+            to: account.from_email || "noreply@plazaku.my.id", // Send to configured email
             subject: "SMTP Health Check - Ignore",
             text: "This is an automated health check. Please ignore this email.",
             html: "<p>This is an automated health check. Please ignore this email.</p>",

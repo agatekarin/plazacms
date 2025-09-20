@@ -96,7 +96,7 @@ export default function CreateTemplatePage() {
     type: "custom",
     category: "transactional",
     from_name: "PlazaCMS",
-    from_email: "noreply@plazacms.com",
+    from_email: "noreply@plazaku.my.id",
     reply_to: "",
     is_active: true,
     is_default: false,
@@ -461,7 +461,7 @@ The {{store_name}} Team`}
                         <Input
                           id="from_email"
                           type="email"
-                          placeholder="noreply@plazacms.com"
+                          placeholder="noreply@plazaku.my.id"
                           value={formData.from_email}
                           onChange={(e) =>
                             handleInputChange("from_email", e.target.value)

@@ -51,6 +51,8 @@ import productAnalyticsRoutes from "./routes/product-analytics";
 import customerReviewsRoutes from "./routes/customer-reviews";
 import reviewEmailNotificationsRoutes from "./routes/review-email-notifications";
 import { emails as emailsRoutes } from "./routes/emails";
+import emailApiProvidersRoutes from "./routes/email-api-providers";
+import emailRotationConfigRoutes from "./routes/email-rotation-config";
 
 // Create main app
 const app = new Hono<{
@@ -373,6 +375,9 @@ app.route("/api/customer/reviews", customerReviewsRoutes);
 // Email management routes
 app.route("/api/admin/emails", emailsRoutes);
 app.route("/api/emails", emailsRoutes); // For webhooks (no auth required)
+// Email API providers and rotation config
+app.route("/api/admin/email-api-providers", emailApiProvidersRoutes);
+app.route("/api/admin/email-rotation-config", emailRotationConfigRoutes);
 app.route("/api/account/change-password", changePasswordRoutes);
 
 // 404 handler

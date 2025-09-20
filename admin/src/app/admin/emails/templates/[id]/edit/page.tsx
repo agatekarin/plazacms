@@ -118,7 +118,7 @@ export default function EditTemplatePage() {
     type: "custom",
     category: "transactional",
     from_name: "PlazaCMS",
-    from_email: "noreply@plazacms.com",
+    from_email: "noreply@plazaku.my.id",
     reply_to: "",
     is_active: true,
     is_default: false,
@@ -156,7 +156,7 @@ export default function EditTemplatePage() {
             type: template.type || "custom",
             category: template.category || "transactional",
             from_name: template.from_name || "PlazaCMS",
-            from_email: template.from_email || "noreply@plazacms.com",
+            from_email: template.from_email || "noreply@plazaku.my.id",
             reply_to: template.reply_to || "",
             is_active: template.is_active !== false,
             is_default: template.is_default === true,
@@ -594,7 +594,7 @@ export default function EditTemplatePage() {
                         <Input
                           id="from_email"
                           type="email"
-                          placeholder="noreply@plazacms.com"
+                          placeholder="noreply@plazaku.my.id"
                           value={formData.from_email}
                           onChange={(e) =>
                             handleInputChange("from_email", e.target.value)

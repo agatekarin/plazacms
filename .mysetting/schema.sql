@@ -88,6 +88,26 @@ update
     public.countries for each row execute function set_updated_at();
 
 
+-- public.email_setting_values definition
+
+-- Drop table
+
+-- DROP TABLE public.email_setting_values;
+
+CREATE TABLE public.email_setting_values (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	setting_key varchar(100) NOT NULL,
+	value text NOT NULL,
+	description text DEFAULT ''::text NULL,
+	data_type varchar(20) DEFAULT 'string'::character varying NULL,
+	created_at timestamptz DEFAULT now() NULL,
+	updated_at timestamptz DEFAULT now() NULL,
+	CONSTRAINT email_setting_values_pkey PRIMARY KEY (id),
+	CONSTRAINT email_setting_values_setting_key_key UNIQUE (setting_key)
+);
+CREATE INDEX idx_email_setting_values_key ON public.email_setting_values USING btree (setting_key);
+
+
 -- public.email_settings definition
 
 -- Drop table
@@ -117,6 +137,13 @@ CREATE TABLE public.email_settings (
 	last_multi_smtp_sync_at timestamptz NULL,
 	CONSTRAINT email_settings_pkey PRIMARY KEY (id)
 );
+
+-- Table Triggers
+
+create trigger trg_email_settings_updated_at before
+update
+    on
+    public.email_settings for each row execute function update_email_settings_updated_at();
 
 
 -- public.email_templates definition
@@ -359,6 +386,8 @@ CREATE TABLE public.smtp_accounts (
 	metadata jsonb DEFAULT '{}'::jsonb NULL,
 	created_at timestamptz DEFAULT now() NULL,
 	updated_at timestamptz DEFAULT now() NULL,
+	from_email varchar(255) NULL,
+	from_name varchar(255) DEFAULT 'PlazaCMS'::character varying NULL,
 	CONSTRAINT smtp_accounts_daily_limit_check CHECK ((daily_limit > 0)),
 	CONSTRAINT smtp_accounts_encryption_check CHECK (((encryption)::text = ANY ((ARRAY['tls'::character varying, 'ssl'::character varying, 'none'::character varying])::text[]))),
 	CONSTRAINT smtp_accounts_hourly_limit_check CHECK ((hourly_limit > 0)),
@@ -2076,15 +2105,6 @@ CREATE OR REPLACE FUNCTION public.pgp_key_id(bytea)
 AS '$libdir/pgcrypto', $function$pgp_key_id_w$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
-;
-
 -- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text)
@@ -2103,6 +2123,24 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea, text, text)
 AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
 ;
 
+-- DROP FUNCTION public.pgp_pub_decrypt(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt(bytea, bytea)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
+
+CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
+;
+
 -- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text)
@@ -2115,15 +2153,6 @@ AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
 -- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea, text, text)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_decrypt_bytea$function$
-;
-
--- DROP FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_decrypt_bytea(bytea, bytea)
  RETURNS bytea
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -2148,15 +2177,6 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt(text, bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
-
-CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
-;
-
 -- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
@@ -2166,18 +2186,27 @@ CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea, text)
 AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
+-- DROP FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_pub_encrypt_bytea(bytea, bytea)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_pub_encrypt_bytea$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_decrypt(bytea, text);
+-- DROP FUNCTION public.pgp_sym_decrypt(bytea, text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt(bytea, text, text)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -2202,15 +2231,6 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_decrypt_bytea(bytea, text, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_decrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
-
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
- RETURNS bytea
- LANGUAGE c
- PARALLEL SAFE STRICT
-AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
-;
-
 -- DROP FUNCTION public.pgp_sym_encrypt(text, text);
 
 CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
@@ -2220,18 +2240,27 @@ CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text)
 AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text);
+-- DROP FUNCTION public.pgp_sym_encrypt(text, text, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt(text, text, text)
+ RETURNS bytea
+ LANGUAGE c
+ PARALLEL SAFE STRICT
+AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_text$function$
+;
+
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
 AS '$libdir/pgcrypto', $function$pgp_sym_encrypt_bytea$function$
 ;
 
--- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text);
+-- DROP FUNCTION public.pgp_sym_encrypt_bytea(bytea, text);
 
-CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text, text)
+CREATE OR REPLACE FUNCTION public.pgp_sym_encrypt_bytea(bytea, text)
  RETURNS bytea
  LANGUAGE c
  PARALLEL SAFE STRICT
@@ -2307,6 +2336,19 @@ AS $function$
 BEGIN
   NEW.updated_at = CURRENT_TIMESTAMP;
   RETURN NEW;
+END;
+$function$
+;
+
+-- DROP FUNCTION public.update_email_settings_updated_at();
+
+CREATE OR REPLACE FUNCTION public.update_email_settings_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
 END;
 $function$
 ;

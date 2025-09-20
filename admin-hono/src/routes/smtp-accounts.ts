@@ -87,7 +87,7 @@ app.get("/", async (c) => {
     // Build the full query using sql.unsafe() for dynamic parts
     let baseQuery = `
       SELECT 
-        id, name, description, host, port, username, encryption,
+        id, name, description, host, port, username, password_encrypted, encryption,
         weight, priority, daily_limit, hourly_limit,
         is_active, is_healthy, last_used_at, consecutive_failures,
         total_success_count, total_failure_count, cooldown_until,
@@ -134,7 +134,7 @@ app.get("/", async (c) => {
       data: {
         accounts: accounts.map((account) => ({
           ...account,
-          password_encrypted: "[ENCRYPTED]", // Mask password in response
+          // Return actual password for editing (not masked)
           tags: Array.isArray(account.tags) ? account.tags : [],
         })),
         pagination: {
@@ -264,7 +264,7 @@ app.post("/", async (c) => {
           body.from_email ||
           (body.username && body.username.includes("@")
             ? body.username
-            : "noreply@plazacms.com")
+            : "noreply@plazaku.my.id")
         },
         ${body.from_name || "PlazaCMS"}
       ) RETURNING id, name, host, port, is_active, from_email, from_name, created_at
@@ -1035,7 +1035,7 @@ app.post("/:id/test", async (c) => {
         {
           from: {
             name: account.from_name || "SMTP Test",
-            email: account.from_email || "noreply@plazacms.com",
+            email: account.from_email || "noreply@plazaku.my.id",
           },
           to: testEmail, // Send to the specified test email
           subject: `Test Email from ${account.name}`,

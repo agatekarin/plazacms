@@ -252,6 +252,13 @@ const menuItems: MenuItem[] = [
         icon: ServerIcon,
         iconSolid: ServerIconSolid,
       },
+      {
+        id: "email-rotation",
+        label: "Email Rotation",
+        href: "/admin/emails/rotation",
+        icon: AdjustmentsHorizontalIcon,
+        iconSolid: AdjustmentsHorizontalIconSolid,
+      },
     ],
   },
   {

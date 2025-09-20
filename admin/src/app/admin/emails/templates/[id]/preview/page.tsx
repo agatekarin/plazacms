@@ -319,7 +319,7 @@ export default function PreviewTemplatePage() {
                           <div>
                             <strong>From:</strong>{" "}
                             {template.from_name || "PlazaCMS"} &lt;
-                            {template.from_email || "noreply@plazacms.com"}&gt;
+                            {template.from_email || "noreply@plazaku.my.id"}&gt;
                           </div>
                           <div>
                             <strong>To:</strong> john.doe@example.com

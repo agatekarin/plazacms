@@ -12,6 +12,12 @@ import {
   SMTPRotationService,
   DecryptedSMTPAccount,
 } from "./smtp-rotation-service";
+import {
+  createHybridEmailRotationService,
+  HybridEmailRotationService,
+  UnifiedEmailProvider,
+} from "./hybrid-email-rotation-service";
+import { SendEmailParams as APIEmailParams } from "./email-api-adapters";
 
 // Types
 export interface EmailTemplate {
@@ -67,7 +73,7 @@ export interface EmailNotificationLog {
 }
 
 interface EmailSettings {
-  provider: "resend" | "smtp" | "cloudflare" | "multi_smtp";
+  provider: "resend" | "smtp" | "cloudflare" | "multi_smtp" | "hybrid";
   from_name: string;
   from_email: string;
   resend_api_key?: string;
@@ -79,6 +85,9 @@ interface EmailSettings {
   // Multi-SMTP settings
   multi_smtp_enabled?: boolean;
   multi_smtp_fallback_enabled?: boolean;
+  // Hybrid rotation settings
+  hybrid_rotation_enabled?: boolean;
+  include_api_providers?: boolean;
 }
 
 export class EmailService {
@@ -87,6 +96,7 @@ export class EmailService {
   private settings: EmailSettings;
   private env?: any; // Cloudflare Workers environment
   private rotationService?: SMTPRotationService;
+  private hybridRotationService?: HybridEmailRotationService;
 
   constructor(settings: EmailSettings, sql: any, env?: any) {
     this.settings = settings;
@@ -101,6 +111,16 @@ export class EmailService {
     // Initialize multi-SMTP rotation service if enabled
     if (settings.multi_smtp_enabled || settings.provider === "multi_smtp") {
       this.rotationService = createSMTPRotationService(sql);
+    }
+
+    // Initialize hybrid rotation service if enabled
+    if (
+      settings.hybrid_rotation_enabled ||
+      settings.provider === "hybrid" ||
+      settings.include_api_providers
+    ) {
+      this.hybridRotationService = createHybridEmailRotationService(sql);
+      console.log("[EmailService] Hybrid rotation service initialized");
     }
   }
 
@@ -117,7 +137,13 @@ export class EmailService {
     replyTo?: string;
     template?: EmailTemplate;
   }): Promise<any> {
-    if (this.settings.provider === "resend") {
+    if (
+      this.settings.provider === "hybrid" ||
+      this.settings.hybrid_rotation_enabled ||
+      this.settings.include_api_providers
+    ) {
+      return this.sendViaHybrid(options);
+    } else if (this.settings.provider === "resend") {
       return this.sendViaResend(options);
     } else if (this.settings.provider === "smtp") {
       return this.sendViaWorkerMailer(options);
@@ -521,6 +547,198 @@ export class EmailService {
     }
 
     throw new Error("All fallback providers failed");
+  }
+
+  /**
+   * 🔄 Send email via Hybrid Rotation (API + SMTP)
+   */
+  private async sendViaHybrid(options: {
+    fromName: string;
+    fromEmail: string;
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+    replyTo?: string;
+    template?: EmailTemplate;
+  }): Promise<any> {
+    if (!this.hybridRotationService) {
+      throw new Error("Hybrid rotation service not initialized");
+    }
+
+    const maxAttempts = 3; // Max retry attempts
+    const excludedProviders: string[] = [];
+    let lastError: any = null;
+    let attempt = 0;
+
+    console.log("[HybridRotation] Starting hybrid email send process");
+
+    while (attempt < maxAttempts) {
+      attempt++;
+
+      try {
+        // Get next provider (SMTP or API)
+        const provider = await this.hybridRotationService.getNextProvider(
+          excludedProviders
+        );
+
+        if (!provider) {
+          console.warn(
+            "[HybridRotation] No providers available, trying fallback"
+          );
+          return this.fallbackToSingleProvider(options);
+        }
+
+        console.log(
+          `[HybridRotation] Attempt ${attempt}: Using ${provider.type.toUpperCase()} provider: ${
+            provider.name
+          }`
+        );
+
+        // Convert options to SendEmailParams format for API providers
+        const emailParams: APIEmailParams = {
+          to: options.to,
+          subject: options.subject,
+          html: options.html,
+          text: options.text,
+          // For API providers, don't pass from - let adapter use provider's from_email
+          // For SMTP providers, pass global from settings
+          ...(provider.type === "api"
+            ? {}
+            : {
+                from: {
+                  name: options.fromName,
+                  email: options.fromEmail,
+                },
+              }),
+          replyTo: options.replyTo,
+          tags: options.template
+            ? [
+                `source:plazacms`,
+                `type:${options.template.type}`,
+                `category:${options.template.category}`,
+              ]
+            : [`source:plazacms`],
+        };
+
+        // Record start time for performance tracking
+        const startTime = Date.now();
+
+        try {
+          let result;
+
+          if (provider.type === "api" && provider.apiAdapter) {
+            // Send via API provider adapter
+            result = await provider.apiAdapter.sendEmail(emailParams);
+
+            const responseTime = Date.now() - startTime;
+
+            if (result.success) {
+              console.log(
+                `[HybridRotation] API send successful via ${provider.name} (${responseTime}ms)`
+              );
+
+              return {
+                data: {
+                  id: result.messageId || `hybrid_api_${Date.now()}`,
+                  provider_name: provider.name,
+                  provider_type: provider.type,
+                  provider_id: provider.id,
+                  response_time_ms: responseTime,
+                  attempt: attempt,
+                },
+              };
+            } else {
+              throw new Error(result.error || "API send failed");
+            }
+          } else if (provider.type === "smtp" && provider.smtpAccount) {
+            // Send via SMTP account
+            result = await WorkerMailer.send(
+              {
+                host: provider.smtpAccount.host,
+                port: provider.smtpAccount.port,
+                secure: provider.smtpAccount.encryption === "ssl",
+                startTls: provider.smtpAccount.encryption === "tls",
+                credentials: {
+                  username: provider.smtpAccount.username,
+                  password: provider.smtpAccount.password,
+                },
+                authType: "plain",
+              },
+              {
+                from: { name: options.fromName, email: options.fromEmail },
+                to: options.to,
+                subject: options.subject,
+                text: options.text,
+                html: options.html,
+                reply: options.replyTo ? options.replyTo : undefined,
+              }
+            );
+
+            const responseTime = Date.now() - startTime;
+
+            console.log(
+              `[HybridRotation] SMTP send successful via ${provider.name} (${responseTime}ms)`
+            );
+
+            return {
+              data: {
+                id: `hybrid_smtp_${Date.now()}_${Math.random()
+                  .toString(36)
+                  .substr(2, 9)}`,
+                provider_name: provider.name,
+                provider_type: provider.type,
+                provider_id: provider.id,
+                response_time_ms: responseTime,
+                attempt: attempt,
+              },
+            };
+          } else {
+            throw new Error("Invalid provider configuration");
+          }
+        } catch (providerError) {
+          const responseTime = Date.now() - startTime;
+
+          console.warn(
+            `[HybridRotation] Provider ${provider.name} failed:`,
+            providerError
+          );
+
+          // Exclude this provider from next attempts
+          excludedProviders.push(provider.id);
+          lastError = providerError;
+
+          // Continue to next attempt
+          continue;
+        }
+      } catch (error) {
+        console.error(`[HybridRotation] Attempt ${attempt} error:`, error);
+        lastError = error;
+
+        // Wait before retry (exponential backoff)
+        if (attempt < maxAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5s delay
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    // All attempts failed
+    console.error(
+      "[HybridRotation] All hybrid attempts failed, trying final fallback"
+    );
+
+    try {
+      return await this.fallbackToSingleProvider(options);
+    } catch (fallbackError) {
+      throw new Error(
+        `Hybrid rotation failed after ${maxAttempts} attempts. Last error: ${
+          lastError?.message || lastError
+        }. Fallback also failed: ${
+          fallbackError instanceof Error ? fallbackError.message : fallbackError
+        }`
+      );
+    }
   }
 
   /**
@@ -1000,6 +1218,9 @@ export async function createEmailService(c: any): Promise<EmailService> {
     multi_smtp_enabled: emailSettings?.multi_smtp_enabled || false,
     multi_smtp_fallback_enabled:
       emailSettings?.multi_smtp_fallback_enabled !== false, // Default true
+    // Hybrid rotation settings
+    hybrid_rotation_enabled: emailSettings?.hybrid_rotation_enabled || false,
+    include_api_providers: emailSettings?.include_api_providers || false,
   };
 
   // Override provider to multi_smtp if multi_smtp_enabled is true
@@ -1007,6 +1228,14 @@ export async function createEmailService(c: any): Promise<EmailService> {
     settings.provider = "multi_smtp";
     console.log(
       "[EmailService] Multi-SMTP enabled, switching to multi_smtp provider"
+    );
+  }
+
+  // Override provider to hybrid if hybrid_rotation_enabled is true
+  if (settings.hybrid_rotation_enabled || settings.include_api_providers) {
+    settings.provider = "hybrid";
+    console.log(
+      "[EmailService] Hybrid rotation enabled, switching to hybrid provider"
     );
   }
 
@@ -1075,6 +1304,53 @@ export async function createEmailService(c: any): Promise<EmailService> {
           "Multi-SMTP enabled but cannot verify SMTP accounts and fallback is disabled."
         );
       }
+    }
+  }
+
+  // Validate hybrid rotation configuration
+  if (settings.provider === "hybrid") {
+    try {
+      // Check if there are any providers available (SMTP accounts + API providers)
+      const [smtpCount, apiCount] = await Promise.all([
+        sql`SELECT COUNT(*) as count FROM smtp_accounts WHERE is_active = TRUE`,
+        sql`SELECT COUNT(*) as count FROM email_api_providers WHERE is_active = TRUE`,
+      ]);
+
+      const smtpAccountCount = parseInt(smtpCount[0]?.count || "0");
+      const apiProviderCount = parseInt(apiCount[0]?.count || "0");
+      const totalProviders = smtpAccountCount + apiProviderCount;
+
+      if (totalProviders === 0) {
+        console.warn(
+          "[EmailService] No active providers found for hybrid rotation, will use fallback"
+        );
+
+        // Fall back to single provider if available
+        if (settings.resend_api_key) {
+          console.log("[EmailService] Falling back to Resend");
+          settings.provider = "resend";
+        } else if (
+          settings.smtp_host &&
+          settings.smtp_username &&
+          settings.smtp_password
+        ) {
+          console.log("[EmailService] Falling back to single SMTP");
+          settings.provider = "smtp";
+        } else {
+          throw new Error(
+            "Hybrid rotation enabled but no active providers found and no fallback configuration available. Please add SMTP accounts, API providers, or configure a single provider."
+          );
+        }
+      } else {
+        console.log(
+          `[EmailService] Hybrid rotation initialized with ${smtpAccountCount} SMTP accounts and ${apiProviderCount} API providers`
+        );
+      }
+    } catch (error) {
+      console.warn("[EmailService] Error checking hybrid providers:", error);
+      throw new Error(
+        "Hybrid rotation enabled but cannot verify provider availability."
+      );
     }
   }
 
