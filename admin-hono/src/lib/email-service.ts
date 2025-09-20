@@ -627,65 +627,24 @@ export class EmailService {
         try {
           let result;
 
-          if (provider.type === "api" && provider.apiAdapter) {
-            // Send via API provider adapter
-            result = await provider.apiAdapter.sendEmail(emailParams);
+          // Use HybridEmailRotationService for proper logging
+          result = await this.hybridRotationService.sendEmail(
+            provider,
+            emailParams
+          );
 
-            const responseTime = Date.now() - startTime;
+          const responseTime = result.responseTime || Date.now() - startTime;
 
-            if (result.success) {
-              console.log(
-                `[HybridRotation] API send successful via ${provider.name} (${responseTime}ms)`
-              );
-
-              return {
-                data: {
-                  id: result.messageId || `hybrid_api_${Date.now()}`,
-                  provider_name: provider.name,
-                  provider_type: provider.type,
-                  provider_id: provider.id,
-                  response_time_ms: responseTime,
-                  attempt: attempt,
-                },
-              };
-            } else {
-              throw new Error(result.error || "API send failed");
-            }
-          } else if (provider.type === "smtp" && provider.smtpAccount) {
-            // Send via SMTP account
-            result = await WorkerMailer.send(
-              {
-                host: provider.smtpAccount.host,
-                port: provider.smtpAccount.port,
-                secure: provider.smtpAccount.encryption === "ssl",
-                startTls: provider.smtpAccount.encryption === "tls",
-                credentials: {
-                  username: provider.smtpAccount.username,
-                  password: provider.smtpAccount.password,
-                },
-                authType: "plain",
-              },
-              {
-                from: { name: options.fromName, email: options.fromEmail },
-                to: options.to,
-                subject: options.subject,
-                text: options.text,
-                html: options.html,
-                reply: options.replyTo ? options.replyTo : undefined,
-              }
-            );
-
-            const responseTime = Date.now() - startTime;
-
+          if (result.success) {
             console.log(
-              `[HybridRotation] SMTP send successful via ${provider.name} (${responseTime}ms)`
+              `[HybridRotation] ${provider.type.toUpperCase()} send successful via ${
+                provider.name
+              } (${responseTime}ms)`
             );
 
             return {
               data: {
-                id: `hybrid_smtp_${Date.now()}_${Math.random()
-                  .toString(36)
-                  .substr(2, 9)}`,
+                id: result.messageId || `hybrid_${provider.type}_${Date.now()}`,
                 provider_name: provider.name,
                 provider_type: provider.type,
                 provider_id: provider.id,
@@ -694,7 +653,9 @@ export class EmailService {
               },
             };
           } else {
-            throw new Error("Invalid provider configuration");
+            throw new Error(
+              result.error || `${provider.type.toUpperCase()} send failed`
+            );
           }
         } catch (providerError) {
           const responseTime = Date.now() - startTime;

@@ -7,6 +7,7 @@ import {
   ChartBarIcon,
   Cog6ToothIcon,
   AdjustmentsHorizontalIcon,
+  DocumentTextIcon,
 } from "@heroicons/react/24/outline";
 
 interface BreadcrumbItem {
@@ -48,6 +49,24 @@ export default function EmailRotationBreadcrumb() {
           current: true,
         }
       );
+    } else if (pathname === "/admin/emails/rotation/analytics") {
+      items.push(
+        { label: "Rotation", href: "/admin/emails/rotation" },
+        {
+          label: "Analytics",
+          icon: ChartBarIcon,
+          current: true,
+        }
+      );
+    } else if (pathname === "/admin/emails/rotation/logs") {
+      items.push(
+        { label: "Rotation", href: "/admin/emails/rotation" },
+        {
+          label: "Logs",
+          icon: DocumentTextIcon,
+          current: true,
+        }
+      );
     } else if (pathname.startsWith("/admin/emails/rotation")) {
       items.push({
         label: "Email Rotation",
@@ -70,7 +89,7 @@ export default function EmailRotationBreadcrumb() {
               {index > 0 && (
                 <ChevronRightIcon className="flex-shrink-0 h-4 w-4 text-gray-400 mx-1 md:mx-2" />
               )}
-              
+
               {item.current ? (
                 <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
                   {item.icon && <item.icon className="h-4 w-4" />}

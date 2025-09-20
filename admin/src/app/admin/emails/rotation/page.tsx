@@ -492,10 +492,8 @@ export default function EmailRotationDashboard() {
                 </span>
               </Link>
 
-              <button
-                onClick={() => {
-                  /* TODO: Navigate to analytics */
-                }}
+              <Link
+                href="/admin/emails/rotation/analytics"
                 className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 px-4 py-3 rounded-lg flex items-center justify-between transition-colors group"
               >
                 <div className="flex items-center gap-3">
@@ -503,12 +501,10 @@ export default function EmailRotationDashboard() {
                   <span className="font-medium">View Analytics</span>
                 </div>
                 <EyeIcon className="h-4 w-4 group-hover:scale-110 transition-transform" />
-              </button>
+              </Link>
 
-              <button
-                onClick={() => {
-                  /* TODO: Navigate to logs */
-                }}
+              <Link
+                href="/admin/emails/rotation/logs"
                 className="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 px-4 py-3 rounded-lg flex items-center justify-between transition-colors group"
               >
                 <div className="flex items-center gap-3">
@@ -516,7 +512,7 @@ export default function EmailRotationDashboard() {
                   <span className="font-medium">View Logs</span>
                 </div>
                 <EyeIcon className="h-4 w-4 group-hover:scale-110 transition-transform" />
-              </button>
+              </Link>
             </div>
           </div>
         </div>

@@ -569,7 +569,7 @@ export class EmailAPIRotationService {
           attempt_number,
           created_at
         ) VALUES (
-          ${params.providerId},
+          NULL,
           'api',
           ${params.providerId},
           ${provider.name},
