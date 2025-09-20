@@ -26,6 +26,7 @@ import {
   SendEmailParams,
   EmailSendResult,
 } from "./email-api-adapters";
+import { WorkerMailer } from "worker-mailer";
 
 export type ProviderType = "smtp" | "api";
 
@@ -109,6 +110,63 @@ export class HybridEmailRotationService {
   }
 
   /**
+   * 🔄 Sync hybrid config to SMTP rotation service
+   */
+  private async syncConfigToSMTPService(
+    config: HybridRotationConfig
+  ): Promise<void> {
+    try {
+      // Check if SMTP config exists
+      const [existingConfig] = await this.sql`
+        SELECT id FROM smtp_rotation_config LIMIT 1
+      `;
+
+      if (existingConfig) {
+        // Update existing config
+        await this.sql`
+          UPDATE smtp_rotation_config SET
+            strategy = ${config.strategy},
+            enabled = ${config.enabled},
+            prefer_healthy_accounts = ${config.prefer_healthy_accounts},
+            balance_by_response_time = ${config.balance_by_response_time},
+            avoid_consecutive_same_account = ${config.avoid_consecutive_same_account},
+            max_retry_attempts = ${config.max_retry_attempts},
+            retry_delay_seconds = ${config.retry_delay_seconds},
+            failure_cooldown_minutes = ${config.failure_cooldown_minutes},
+            track_performance_metrics = ${config.track_performance_metrics},
+            log_rotation_decisions = ${config.log_rotation_decisions},
+            updated_at = NOW()
+        `;
+      } else {
+        // Insert new config (first time)
+        await this.sql`
+          INSERT INTO smtp_rotation_config (
+            strategy, enabled, prefer_healthy_accounts, balance_by_response_time,
+            avoid_consecutive_same_account, max_retry_attempts, retry_delay_seconds,
+            failure_cooldown_minutes, track_performance_metrics, log_rotation_decisions
+          ) VALUES (
+            ${config.strategy}, ${config.enabled}, ${config.prefer_healthy_accounts}, 
+            ${config.balance_by_response_time}, ${config.avoid_consecutive_same_account}, 
+            ${config.max_retry_attempts}, ${config.retry_delay_seconds}, 
+            ${config.failure_cooldown_minutes}, ${config.track_performance_metrics}, 
+            ${config.log_rotation_decisions}
+          )
+        `;
+      }
+
+      // Force SMTP rotation service to reload config
+      this.smtpRotationService.clearCache();
+
+      console.log("[HybridRotation] Config synced to SMTP rotation service");
+    } catch (error) {
+      console.warn(
+        "[HybridRotation] Failed to sync config to SMTP service:",
+        error
+      );
+    }
+  }
+
+  /**
    * 🎯 Get next email provider (SMTP or API) based on hybrid strategy
    */
   async getNextProvider(
@@ -123,6 +181,9 @@ export class HybridEmailRotationService {
         );
         return await this.getFallbackProvider();
       }
+
+      // Sync config to SMTP service to ensure consistency
+      await this.syncConfigToSMTPService(config);
 
       // Decide between SMTP and API providers
       const selectedType = this.selectProviderType(config);
@@ -211,15 +272,105 @@ export class HybridEmailRotationService {
 
         return result;
       } else if (provider.type === "smtp" && provider.smtpAccount) {
-        // Send via SMTP provider
-        // This would need to be implemented based on your existing SMTP sending logic
-        // For now, returning a placeholder result
-        return {
-          success: false,
-          error: "SMTP sending not implemented in hybrid service yet",
-          errorCode: "NOT_IMPLEMENTED",
-          responseTime: Date.now() - startTime,
-        };
+        // Send via SMTP provider using WorkerMailer
+        try {
+          const fromName = provider.smtpAccount.from_name || "PlazaCMS";
+          const fromEmail =
+            provider.smtpAccount.from_email || "noreply@plazaku.my.id";
+
+          console.log(`[HybridRotation] SMTP Account Debug:`, {
+            name: provider.smtpAccount.name,
+            db_from_name: provider.smtpAccount.from_name,
+            db_from_email: provider.smtpAccount.from_email,
+            final_from: `${fromName} <${fromEmail}>`,
+          });
+
+          console.log(
+            `[HybridRotation] Sending via SMTP: ${provider.smtpAccount.name}, From: ${fromName} <${fromEmail}>`
+          );
+
+          try {
+            // WorkerMailer.send() returns void, success is determined by no exception
+            await WorkerMailer.send(
+              {
+                host: provider.smtpAccount.host,
+                port: provider.smtpAccount.port,
+                secure: provider.smtpAccount.encryption === "ssl",
+                startTls: provider.smtpAccount.encryption === "tls",
+                credentials: {
+                  username: provider.smtpAccount.username,
+                  password: provider.smtpAccount.password, // Already decrypted
+                },
+                authType: "plain",
+              },
+              {
+                from: {
+                  name: fromName,
+                  email: fromEmail,
+                },
+                to: params.to,
+                subject: params.subject,
+                text: params.text,
+                html: params.html,
+                reply: params.replyTo ? params.replyTo : undefined,
+              }
+            );
+
+            const responseTime = Date.now() - startTime;
+
+            console.log(
+              `[HybridRotation] SMTP send successful via ${provider.smtpAccount.name}`
+            );
+
+            // Generate a simple messageId for tracking (since WorkerMailer doesn't return one)
+            const messageId = `smtp-${Date.now()}-${Math.random()
+              .toString(36)
+              .substr(2, 9)}`;
+
+            // Mark SMTP account as successful
+            await this.smtpRotationService.markSuccess(
+              provider.smtpAccount.id,
+              messageId,
+              responseTime,
+              Array.isArray(params.to) ? params.to.join(", ") : params.to,
+              params.subject
+            );
+
+            return {
+              success: true,
+              messageId,
+              responseTime,
+            };
+          } catch (workerMailerError: any) {
+            console.error(
+              `[HybridRotation] WorkerMailer error:`,
+              workerMailerError
+            );
+            throw new Error(
+              `SMTP connection failed: ${
+                workerMailerError.message || "Unknown WorkerMailer error"
+              }`
+            );
+          }
+        } catch (error: any) {
+          const responseTime = Date.now() - startTime;
+
+          // Mark SMTP account as failed
+          await this.smtpRotationService.markFailure(
+            provider.smtpAccount.id,
+            error,
+            responseTime,
+            Array.isArray(params.to) ? params.to.join(", ") : params.to,
+            params.subject
+          );
+
+          return {
+            success: false,
+            error: error.message || "SMTP send failed",
+            errorCode: "SMTP_ERROR",
+            responseTime,
+          };
+        }
       } else {
         return {
           success: false,

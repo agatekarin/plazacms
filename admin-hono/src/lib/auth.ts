@@ -1,11 +1,6 @@
 import { Context } from "hono";
-import { sign, verify } from "hono/jwt";
 
-// Extend Hono context with user variable
-type Variables = {
-  user: User;
-};
-
+// AuthJS-based user interface
 export interface User {
   id: string;
   email: string;
@@ -13,22 +8,82 @@ export interface User {
   role: string;
 }
 
-export interface CustomJWTPayload {
-  sub: string; // user id
-  email: string;
-  name: string;
-  role: string;
-  iat: number;
-  exp: number;
-  [key: string]: any; // Index signature for Hono compatibility
+// Helper to extract session from AuthJS Bearer token
+async function verifyAuthJSSession(c: Context): Promise<User | null> {
+  try {
+    // Check Authorization header for Bearer token (this is the accessToken from AuthJS)
+    const authHeader = c.req.header("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return null;
+    }
+
+    const token = authHeader.substring(7);
+
+    // Verify the JWT token (our custom accessToken from AuthJS callback)
+    const { verify } = await import("hono/jwt");
+    try {
+      const payload = (await verify(token, c.env.JWT_SECRET)) as any;
+      return {
+        id: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        role: payload.role,
+      };
+    } catch (jwtError) {
+      console.error("JWT verification failed:", jwtError);
+      return null;
+    }
+  } catch (error) {
+    console.error("Session verification failed:", error);
+    return null;
+  }
 }
 
-// Generate JWT token
+// AuthJS-based auth middleware
+export async function authMiddleware(
+  c: Context<{ Bindings: Env; Variables: { user: User } }>,
+  next: () => Promise<void>
+) {
+  const user = await verifyAuthJSSession(c);
+
+  if (!user) {
+    return c.json({ success: false, error: "Authentication required" }, 401);
+  }
+
+  // Add user info to context
+  c.set("user", user);
+  await next();
+}
+
+// AuthJS-based admin middleware
+export async function adminMiddleware(
+  c: Context<{ Bindings: Env; Variables: { user: User } }>,
+  next: () => Promise<void>
+): Promise<any> {
+  const user = await verifyAuthJSSession(c);
+
+  if (!user) {
+    return c.json({ success: false, error: "Authentication required" }, 401);
+  }
+
+  // Set user in context
+  c.set("user", user);
+
+  // Check admin role
+  if (user.role !== "admin") {
+    return c.json({ success: false, error: "Admin access required" }, 403);
+  }
+
+  await next();
+}
+
+// Generate JWT token for AuthJS accessToken integration
 export async function generateToken(
   user: User,
   secret: string
 ): Promise<string> {
-  const payload: CustomJWTPayload = {
+  const { sign } = await import("hono/jwt");
+  const payload = {
     sub: user.id,
     email: user.email,
     name: user.name,
@@ -38,88 +93,4 @@ export async function generateToken(
   };
 
   return await sign(payload, secret);
-}
-
-// Verify JWT token
-export async function verifyToken(
-  token: string,
-  secret: string
-): Promise<CustomJWTPayload | null> {
-  try {
-    const payload = await verify(token, secret);
-    return payload as CustomJWTPayload;
-  } catch (error) {
-    console.error("Token verification failed:", error);
-    return null;
-  }
-}
-
-// Auth middleware
-export async function authMiddleware(
-  c: Context<{ Bindings: Env; Variables: Variables }>,
-  next: () => Promise<void>
-) {
-  const authHeader = c.req.header("Authorization");
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json(
-      { success: false, error: "Missing or invalid authorization header" },
-      401
-    );
-  }
-
-  const token = authHeader.substring(7); // Remove "Bearer " prefix
-  const payload = await verifyToken(token, c.env.JWT_SECRET);
-
-  if (!payload) {
-    return c.json({ success: false, error: "Invalid or expired token" }, 401);
-  }
-
-  // Add user info to context
-  c.set("user", {
-    id: payload.sub,
-    email: payload.email,
-    name: payload.name,
-    role: payload.role,
-  });
-
-  await next();
-}
-
-// Admin-only middleware
-export async function adminMiddleware(
-  c: Context<{ Bindings: Env; Variables: Variables }>,
-  next: () => Promise<void>
-): Promise<any> {
-  // First check auth
-  const authHeader = c.req.header("Authorization");
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json(
-      { success: false, error: "Missing or invalid authorization header" },
-      401
-    );
-  }
-
-  const token = authHeader.substring(7);
-  const payload = await verifyToken(token, c.env.JWT_SECRET);
-
-  if (!payload) {
-    return c.json({ success: false, error: "Invalid or expired token" }, 401);
-  }
-
-  // Set user in context
-  c.set("user", {
-    id: payload.sub,
-    email: payload.email,
-    name: payload.name,
-    role: payload.role,
-  });
-
-  // Check admin role
-  if (payload.role !== "admin") {
-    return c.json({ success: false, error: "Admin access required" }, 403);
-  }
-
-  await next();
 }

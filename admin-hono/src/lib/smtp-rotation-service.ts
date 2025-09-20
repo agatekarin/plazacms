@@ -20,6 +20,8 @@ export interface SMTPAccount {
   username: string;
   password_encrypted: string;
   encryption: "tls" | "ssl" | "none";
+  from_email?: string;
+  from_name?: string;
   weight: number;
   priority: number;
   daily_limit: number;
@@ -341,7 +343,7 @@ export class SMTPRotationService {
       const accounts = await this.sql`
         SELECT 
           id, name, description, host, port, username, password_encrypted,
-          encryption, weight, priority, daily_limit, hourly_limit,
+          encryption, from_email, from_name, weight, priority, daily_limit, hourly_limit,
           is_active, is_healthy, last_used_at, consecutive_failures,
           total_success_count, total_failure_count, cooldown_until,
           today_sent_count, current_hour_sent, avg_response_time_ms,
@@ -475,7 +477,7 @@ export class SMTPRotationService {
           END,
           cooldown_until = CASE 
             WHEN consecutive_failures + 1 >= ${failureThreshold} 
-            THEN NOW() + INTERVAL '${cooldownMinutes} minutes'
+            THEN NOW() + (${cooldownMinutes} || ' minutes')::INTERVAL
             ELSE cooldown_until
           END,
           updated_at = ${timestamp}
@@ -646,6 +648,15 @@ export class SMTPRotationService {
       // Use fallback config
       this.config = this.getDefaultConfig();
     }
+  }
+
+  /**
+   * 🗑️ Clear config cache to force reload from database
+   */
+  clearCache(): void {
+    this.config = null;
+    this.configLastLoaded = null;
+    console.log("[SMTPRotation] Config cache cleared");
   }
 
   /**

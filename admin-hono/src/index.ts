@@ -140,82 +140,27 @@ app.use("/api/authjs/callback/credentials", (c, next) => {
   })(c, next);
 });
 
-// 2) General API rate limit (prefer per-user when available, fallback to IP)
-//    Scope only to business APIs; exclude Auth.js endpoints (/api/authjs/*)
+// 2) General API rate limit (DISABLED)
+//    Previously limited /api/admin/*, /api/auth/*, /api/account/* but now disabled
 for (const prefix of ["/api/admin/*", "/api/auth/*", "/api/account/*"]) {
-  app.use(prefix, (c, next) =>
-    isRateLimitDisabled(c) || c.req.path.startsWith("/api/admin/locations")
-      ? next()
-      : safeRateLimiter({
-          windowMs: 180_000,
-          limit: 2000,
-          standardHeaders: "draft-6",
-          keyGenerator: (c) => {
-            try {
-              const auth =
-                c.req.header("authorization") || c.req.header("Authorization");
-              if (auth?.startsWith("Bearer ")) {
-                const token = auth.slice(7);
-                const parts = token.split(".");
-                if (parts.length === 3) {
-                  const payloadStr = atob(
-                    parts[1].replace(/-/g, "+").replace(/_/g, "/")
-                  );
-                  const payload = JSON.parse(payloadStr);
-                  if (typeof payload?.sub === "string")
-                    return `user:${payload.sub}`;
-                }
-              }
-            } catch {}
-            return c.req.header("cf-connecting-ip") ?? "unknown";
-          },
-          store: new WorkersKVStore({
-            namespace: c.env.RATE_LIMIT_KV,
-            prefix: "rl:api:",
-          }),
-        })(c, next)
-  );
+  app.use(prefix, (c, next) => {
+    // Rate limiting disabled - always pass through
+    return next();
+  });
 }
 
-// 3) Heavy endpoints – stricter limits per user (fallback IP)
+// 3) Heavy endpoints rate limit (DISABLED)
+//    Previously limited import/export/upload/bulk endpoints but now disabled
 for (const p of [
   "/api/admin/products/import-export/import",
   "/api/admin/products/import-export/export",
   "/api/admin/media/upload",
   "/api/admin/media/bulk",
 ]) {
-  app.use(p, (c, next) =>
-    isRateLimitDisabled(c)
-      ? next()
-      : safeRateLimiter({
-          windowMs: 180_000,
-          limit: 120,
-          standardHeaders: "draft-6",
-          keyGenerator: (c) => {
-            try {
-              const auth =
-                c.req.header("authorization") || c.req.header("Authorization");
-              if (auth?.startsWith("Bearer ")) {
-                const token = auth.slice(7);
-                const parts = token.split(".");
-                if (parts.length === 3) {
-                  const payloadStr = atob(
-                    parts[1].replace(/-/g, "+").replace(/_/g, "/")
-                  );
-                  const payload = JSON.parse(payloadStr);
-                  if (typeof payload?.sub === "string")
-                    return `user:${payload.sub}`;
-                }
-              }
-            } catch {}
-            return c.req.header("cf-connecting-ip") ?? "unknown";
-          },
-          store: new WorkersKVStore({
-            namespace: c.env.RATE_LIMIT_KV,
-            prefix: "rl:api:heavy:",
-          }),
-        })(c, next)
-  );
+  app.use(p, (c, next) => {
+    // Rate limiting disabled - always pass through
+    return next();
+  });
 }
 
 // Auth.js configuration (Hono middleware)
